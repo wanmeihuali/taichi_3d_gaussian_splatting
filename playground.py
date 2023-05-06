@@ -217,3 +217,22 @@ J_uv_translation = uv.jacobian(translation)
 print(J_uv_translation.shape)
 print(sympy.python(J_uv_translation))
 # %%
+fx = sympy.Symbol('fx')
+fy = sympy.Symbol('fy')
+cx = sympy.Symbol('cx')
+cy = sympy.Symbol('cy')
+x = sympy.Symbol('x')
+y = sympy.Symbol('y')
+z = sympy.Symbol('z')
+K = sympy.Matrix([
+    [fx, 0, cx],
+    [0, fy, cy],
+    [0, 0, 1]
+])
+uv1 = K @ sympy.Matrix([[x], [y], [z]]) / z
+uv = sympy.Matrix([uv1[0, 0], uv1[1, 0]])
+J = uv.jacobian(sympy.Matrix([[x], [y], [z]]))
+print(J.shape)
+print(sympy.python(J))
+
+# %%
