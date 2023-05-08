@@ -1,7 +1,9 @@
 import taichi as ti
 import taichi.math as tm
 import unittest
-from utils import intersect_ray_with_ellipsoid
+from utils import intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera
+from Camera import CameraInfo
+import torch
 import numpy as np
 
 
@@ -116,3 +118,41 @@ class TestUtils(unittest.TestCase):
                         total_has_intersection_np_ratio, atol=1e-2),
             msg=f"has_intersection_ratio={has_intersection_ratio}, total_has_intersection_np_ratio={total_has_intersection_np_ratio}"
         )
+
+
+class TestGetRayOriginAndDirectionFromCamera(unittest.TestCase):
+
+    def setUp(self):
+        self.camera_info = CameraInfo(
+            camera_id=0,
+            camera_width=640,
+            camera_height=480,
+            camera_intrinsics=torch.tensor([
+                [500, 0, 320],
+                [0, 500, 240],
+                [0, 0, 1]
+            ], dtype=torch.float32)
+        )
+        self.T_pointcloud_camera = torch.tensor([
+            [1, 0, 0, 1],
+            [0, 1, 0, 2],
+            [0, 0, 1, 3],
+            [0, 0, 0, 1]
+        ], dtype=torch.float32)
+
+    def test_ray_origin_shape(self):
+        ray_origin, _ = get_ray_origin_and_direction_from_camera(
+            self.T_pointcloud_camera, self.camera_info)
+        self.assertEqual(ray_origin.shape, (3,))
+
+    def test_direction_shape(self):
+        _, direction = get_ray_origin_and_direction_from_camera(
+            self.T_pointcloud_camera, self.camera_info)
+        self.assertEqual(
+            direction.shape, (self.camera_info.camera_height, self.camera_info.camera_width, 3))
+
+    def test_ray_origin_values(self):
+        ray_origin, _ = get_ray_origin_and_direction_from_camera(
+            self.T_pointcloud_camera, self.camera_info)
+        expected_ray_origin = torch.tensor([1.0, 2.0, 3.0])
+        self.assertTrue(torch.allclose(ray_origin, expected_ray_origin))

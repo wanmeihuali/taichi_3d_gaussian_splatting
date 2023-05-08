@@ -1,5 +1,7 @@
 import taichi as ti
 import taichi.math as tm
+import torch
+from Camera import CameraInfo
 
 
 @ti.func
@@ -99,3 +101,55 @@ def get_point_to_line_vector(
     q = o + scale_factor * d
     qp = p - q
     return qp
+
+
+def get_ray_origin_and_direction_from_camera(
+    T_pointcloud_camera: torch.Tensor,
+    camera_info: CameraInfo
+):
+    """ get the ray origin and direction from the camera
+
+    Args:
+        T_pointcloud_camera (torch.Tensor): 4x4 SE(3) matrix, transforms points from the camera frame to the pointcloud frame
+        camera_info (CameraInfo): the camera info
+
+    Returns:
+        (torch.Tensor, torch.Tensor): the ray origin and direction, ray_origin: (3,), direction: (H, W, 3)
+    """
+    T_camera_pointcloud = torch.inverse(T_pointcloud_camera)
+    ray_origin = T_pointcloud_camera[:3, 3]
+    """ consider how we get a point(x, y, z)'s position in the camera frame:
+    p_in_camera_frame = T_camera_pointcloud * [x, y, z, 1]^T
+    let p_in_camera_frame be [x', y', z', 1]^T
+    |u|   |fx  0  cx|   |x'/z'|                     
+    |v| = |0   fy cy| * |y'/z'|, where u, v are the pixel coordinates in the image
+    |1|   |0   0  1 |   | 1  |
+    now, we want to get the direction of the ray, which is the vector from the camera center to the point
+    we take z' = 1, so we have:
+    |x'|   |fx  0  cx|^-1   |u|
+    |y'| = |0   fy cy|    * |v|
+    |1 |   |0   0  1 |      |1|
+    , where x', y' are the coordinates of the point in the camera frame, 
+    then we can get the direction of the ray by:
+    [x, y, z, 1]^T = T_pointcloud_camera * [x', y', 1, 1]^T
+    direction = [x, y, z, 1]^T - ray_origin
+    """
+    pixel_u, pixel_v = torch.meshgrid(torch.arange(
+        camera_info.camera_width), torch.arange(camera_info.camera_height))
+    pixel_u, pixel_v = pixel_u.float(), pixel_v.float()
+    pixel_u += 0.5  # add 0.5 to make the pixel coordinates be the center of the pixel
+    pixel_v += 0.5  # add 0.5 to make the pixel coordinates be the center of the pixel
+    pixel_uv_1 = torch.stack(
+        [pixel_u, pixel_v, torch.ones_like(pixel_u)], dim=-1)  # (H, W, 3)
+    pixel_uv_1 = pixel_uv_1.reshape(-1, 3)  # (H*W, 3)
+    pixel_xy_1 = torch.inverse(
+        camera_info.camera_intrinsics) @ pixel_uv_1.T  # (3, H*W)
+    pixel_xy_1 = pixel_xy_1.T  # (H*W, 3)
+    pixel_xy_1 = torch.cat([pixel_xy_1, torch.ones_like(
+        pixel_xy_1[:, :1])], dim=-1)  # (H*W, 4)
+    pixel_xyz_1 = T_camera_pointcloud @ pixel_xy_1.T  # (4, H*W)
+    pixel_xyz_1 = pixel_xyz_1.T  # (H*W, 4)
+    pixel_xyz = pixel_xyz_1[:, :3].reshape(
+        camera_info.camera_height, camera_info.camera_width, 3)  # (H, W, 3)
+    direction = pixel_xyz - ray_origin.reshape(1, 1, 3)
+    return ray_origin, direction
