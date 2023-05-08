@@ -3,6 +3,9 @@ import taichi.math as tm
 import torch
 from Camera import CameraInfo
 
+data_type = ti.f32
+torch_type = torch.float32
+
 
 @ti.func
 def intersect_ray_with_ellipsoid(
@@ -153,3 +156,43 @@ def get_ray_origin_and_direction_from_camera(
         camera_info.camera_height, camera_info.camera_width, 3)  # (H, W, 3)
     direction = pixel_xyz - ray_origin.reshape(1, 1, 3)
     return ray_origin, direction
+
+
+@ti.kernel
+def torch2ti(field: ti.template(), data: ti.types.ndarray()):
+    for I in ti.grouped(data):
+        field[I] = data[I]
+
+
+@ti.kernel
+def ti2torch(field: ti.template(), data: ti.types.ndarray()):
+    for I in ti.grouped(data):
+        data[I] = field[I]
+
+
+@ti.kernel
+def ti2torch_grad(field: ti.template(), grad: ti.types.ndarray()):
+    for I in ti.grouped(grad):
+        grad[I] = field.grad[I]
+
+
+@ti.kernel
+def torch2ti_grad(field: ti.template(), grad: ti.types.ndarray()):
+    for I in ti.grouped(grad):
+        field.grad[I] = grad[I]
+
+
+@ti.func
+def project_point_to_camera(
+    translation: tm.vec3,
+    T_camera_world: ti.math.mat4,
+    projective_transform: ti.math.mat3,
+):
+    homogeneous_translation_camera = T_camera_world @ ti.math.vec4(
+        translation.x, translation.y, translation.z, 1)
+    translation_camera = ti.math.vec3(
+        homogeneous_translation_camera.x, homogeneous_translation_camera.y, homogeneous_translation_camera.z)
+    uv1 = (projective_transform @ translation_camera) / \
+        translation_camera.z
+    uv = ti.math.vec2(uv1.x, uv1.y)
+    return uv, translation_camera

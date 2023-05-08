@@ -11,6 +11,22 @@ mat9x4f = ti.types.matrix(n=9, m=4, dtype=ti.f32)
 
 
 @ti.func
+def project_point_to_camera(
+    translation: ti.math.vec3,
+    T_camera_world: ti.math.mat4,
+    projective_transform: ti.math.mat3,
+):
+    homogeneous_translation_camera = T_camera_world @ ti.math.vec4(
+        translation.x, translation.y, translation.z, 1)
+    translation_camera = ti.math.vec3(
+        homogeneous_translation_camera.x, homogeneous_translation_camera.y, homogeneous_translation_camera.z)
+    uv1 = (projective_transform @ translation_camera) / \
+        translation_camera.z
+    uv = ti.math.vec2(uv1.x, uv1.y)
+    return uv, translation_camera
+
+
+@ti.func
 def rotation_matrix_from_quaternion(q: ti.math.vec4) -> ti.math.mat3:
     """
     Convert a quaternion to a rotation matrix.
@@ -83,14 +99,7 @@ class GaussianPoint3D:
         T_camera_world: ti.math.mat4,
         projective_transform: ti.math.mat3,
     ):
-        homogeneous_translation_camera = T_camera_world @ ti.math.vec4(
-            self.translation.x, self.translation.y, self.translation.z, 1)
-        translation_camera = ti.math.vec3(
-            homogeneous_translation_camera.x, homogeneous_translation_camera.y, homogeneous_translation_camera.z)
-        uv1 = (projective_transform @ translation_camera) / \
-            translation_camera.z
-        uv = ti.math.vec2(uv1.x, uv1.y)
-        return uv, translation_camera
+        return project_point_to_camera(self.translation, T_camera_world, projective_transform)
 
     @ti.func
     def project_to_camera_position_jacobian(
