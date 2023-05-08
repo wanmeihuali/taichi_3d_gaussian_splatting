@@ -2,9 +2,9 @@
 import taichi as ti
 import taichi.math as tm
 # %%
-vec5f = ti.types.Vector(5, float)
-vec7f = ti.types.Vector(7, float)
-vec16f = ti.types.Vector(16, float)
+vec5f = ti.types.vector(5, float)
+vec7f = ti.types.vector(7, float)
+vec16f = ti.types.vector(16, float)
 
 
 @ti.func
@@ -31,6 +31,7 @@ def get_spherical_harmonic_from_xyz(
     l3p3 = 0.59004358992664352 * x * (-x * x + 3.0 * y * y)
     return vec16f(l0m0, l1m1, l1m0, l1p1, l2m2, l2m1, l2m0, l2p1, l2p2, l3m3, l3m2, l3m1, l3m0, l3p1, l3p2, l3p3)
 
+
 @ti.dataclass
 class SphericalHarmonics:
     factor: vec16f
@@ -39,9 +40,9 @@ class SphericalHarmonics:
         self,
         xyz: tm.vec3
     ) -> ti.float32:
-        spherical_harmonic = get_spherical_harmonic_from_xyz(xyz)      
+        spherical_harmonic = get_spherical_harmonic_from_xyz(xyz)
         return tm.dot(self.factor, spherical_harmonic)
-    
+
     @ti.func
     def jacobian(
         self,
@@ -49,4 +50,3 @@ class SphericalHarmonics:
     ):
         spherical_harmonic = get_spherical_harmonic_from_xyz(xyz)
         return spherical_harmonic
-    
