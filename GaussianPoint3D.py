@@ -1,6 +1,7 @@
 # %%
 import taichi as ti
 import taichi.math
+from SphericalHarmonics import SphericalHarmonics
 
 mat2x3f = ti.types.matrix(n=2, m=3, dtype=ti.f32)
 mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
@@ -72,6 +73,9 @@ class GaussianPoint3D:
     cov_scale: ti.math.vec3  # cov_scale of x, y, z
     translation: ti.math.vec3  # translation of x, y, z
     alpha: ti.f32  # opacity of the point
+    color_r: SphericalHarmonics  # color of the point, r
+    color_g: SphericalHarmonics  # color of the point, g
+    color_b: SphericalHarmonics  # color of the point, b
 
     @ti.func
     def project_to_camera_position(
@@ -236,8 +240,23 @@ class GaussianPoint3D:
         d_Sigma_prime_d_q = d_Sigma_prime_d_M @ d_M_d_q  # 4x4
         return d_Sigma_prime_d_q, d_Sigma_prime_d_s
 
+    @ti.func
+    def get_color_by_ray(
+        self,
+        ray_origin: ti.math.vec3,
+        ray_direction: ti.math.vec3,
+    ) -> ti.math.vec3:
+        o = ray_origin
+        d = ray_direction
+        # TODO: try other methods to get the query point for SH, e.g. the intersection point of the ray and the ellipsoid
+        r = self.color_r.evaluate(d)
+        g = self.color_g.evaluate(d)
+        b = self.color_b.evaluate(d)
+        return ti.math.vec3(r, g, b)
+
 
 # %%
+"""
 ti.init(ti.cpu)
 
 a = GaussianPoint3D.field(shape=())
@@ -265,6 +284,7 @@ def test():
 
 
 test()
+"""
 
 
 # %%
