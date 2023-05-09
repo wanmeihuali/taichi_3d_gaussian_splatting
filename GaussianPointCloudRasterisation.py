@@ -4,7 +4,10 @@ import taichi as ti
 from dataclasses import dataclass
 from Camera import CameraInfo, CameraView
 from torch.cuda.amp import custom_bwd, custom_fwd
-from utils import torch_type, data_type, ti2torch, torch2ti, ti2torch_grad, torch2ti_grad, get_ray_origin_and_direction_from_camera
+from utils import (torch_type, data_type, ti2torch, torch2ti,
+                   ti2torch_grad, torch2ti_grad,
+                   get_ray_origin_and_direction_from_camera,
+                   get_point_probability_density_from_2d_gaussian)
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
 from SphericalHarmonics import SphericalHarmonics, vec16f
 
@@ -186,14 +189,23 @@ def gaussian_point_rasterisation(
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
+    pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
+    # (H, W)
+    pixel_depth_of_last_effective_point: ti.types.ndarray(ti.f32, ndim=2),
 ):
     ray_origin_ti = ti.math.vec3([ray_origin[0], ray_origin[1], ray_origin[2]])
+    # taichi does not support thread block, so we just have a single thread for each pixel
+    # hope the missing for shared block memory will not hurt the performance too much
     for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
         tile_u = ti.cast(pixel_u / 16, ti.i32)
         tile_v = ti.cast(pixel_v / 16, ti.i32)
         tile_id = tile_u + tile_v * (camera_width // 16)
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
+        accumulated_alpha = 0.
+        accumulated_color = ti.math.vec3([0., 0., 0.])
+        depth_of_last_effective_point = 0.
         for point_offset in range(start_offset, end_offset):
             point_id = point_in_camera_id[point_offset]
             uv = ti.math.vec2([point_uv[point_offset, 0],
@@ -208,8 +220,36 @@ def gaussian_point_rasterisation(
                 point_id=point_id)
             ray_direction_ti = ti.math.vec3([ray_direction[pixel_v, pixel_u, 0],
                                              ray_direction[pixel_v, pixel_u, 1], ray_direction[pixel_v, pixel_u, 2]])
-            # gaussian_alpha =
-            pass
+            gaussian_alpha = get_point_probability_density_from_2d_gaussian(
+                xy=ti.math.vec2([pixel_u, pixel_v]),
+                gaussian_mean=uv,
+                gaussian_covariance=uv_cov,
+            )
+            alpha = gaussian_alpha * gaussian_point_3d.alpha
+            # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
+            # 255 ) and also clamp 𝛼 with 0.99 from above.
+            if alpha < 1. / 255.:
+                continue
+            alpha = ti.min(alpha, 0.99)
+            # from paper: before a Gaussian is included in the forward rasterization
+            # pass, we compute the accumulated opacity if we were to include it
+            # and stop front-to-back blending before it can exceed 0.9999.
+            if accumulated_alpha + alpha > 0.9999:
+                break
+            depth_of_last_effective_point = xyz_in_camera.z
+            color = gaussian_point_3d.get_color_by_ray(
+                ray_origin=ray_origin_ti,
+                ray_direction=ray_direction_ti,
+            )
+            accumulated_color = accumulated_color + \
+                alpha * (1. - accumulated_alpha) * color
+            accumulated_alpha += alpha
+        rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
+        rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
+        rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
+        pixel_accumulated_alpha[pixel_v, pixel_u] = accumulated_alpha
+        pixel_depth_of_last_effective_point[pixel_v,
+                                            pixel_u] = depth_of_last_effective_point
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
