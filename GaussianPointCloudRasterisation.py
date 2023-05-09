@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import taichi as ti
 from dataclasses import dataclass
@@ -175,6 +176,8 @@ def gaussian_point_rasterisation(
     camera_width: ti.i32,
     ray_origin: ti.types.ndarray(ti.f32, ndim=1),  # (3,)
     ray_direction: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
     # (tiles_per_row * tiles_per_col)
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
     # (tiles_per_row * tiles_per_col)
@@ -184,6 +187,7 @@ def gaussian_point_rasterisation(
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
 ):
+    ray_origin_ti = ti.math.vec3([ray_origin[0], ray_origin[1], ray_origin[2]])
     for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
         tile_u = ti.cast(pixel_u / 16, ti.i32)
         tile_v = ti.cast(pixel_v / 16, ti.i32)
@@ -191,6 +195,20 @@ def gaussian_point_rasterisation(
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
         for point_offset in range(start_offset, end_offset):
+            point_id = point_in_camera_id[point_offset]
+            uv = ti.math.vec2([point_uv[point_offset, 0],
+                              point_uv[point_offset, 1]])
+            xyz_in_camera = ti.math.vec3(
+                [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
+            uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
+                                  point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
+            gaussian_point_3d: GaussianPoint3D = load_point_cloud_row_into_gaussian_point_3d(
+                pointcloud=pointcloud,
+                pointcloud_features=pointcloud_features,
+                point_id=point_id)
+            ray_direction_ti = ti.math.vec3([ray_direction[pixel_v, pixel_u, 0],
+                                             ray_direction[pixel_v, pixel_u, 1], ray_direction[pixel_v, pixel_u, 2]])
+            # gaussian_alpha =
             pass
 
 

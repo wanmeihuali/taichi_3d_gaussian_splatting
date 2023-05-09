@@ -1,3 +1,4 @@
+import numpy as np
 import taichi as ti
 import taichi.math as tm
 import torch
@@ -156,6 +157,23 @@ def get_ray_origin_and_direction_from_camera(
         camera_info.camera_height, camera_info.camera_width, 3)  # (H, W, 3)
     direction = pixel_xyz - ray_origin.reshape(1, 1, 3)
     return ray_origin, direction
+
+
+@ti.func
+def get_point_probability_density_from_2d_gaussian(
+    xy: ti.math.vec2,
+    gaussian_mean: ti.math.vec2,
+    gaussian_covariance: ti.math.mat2,
+) -> ti.f32:
+    xy_mean = xy - gaussian_mean
+    det_cov = gaussian_covariance.determinant()
+    inv_cov = (1. / det_cov) * \
+        ti.math.mat2([[gaussian_covariance[1, 1], -gaussian_covariance[0, 1]],
+                      [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
+    xy_mean_T_cov_inv = xy_mean @ inv_cov
+    xy_mean_T_cov_inv_xy_mean = xy_mean_T_cov_inv @ xy_mean
+    exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
+    return ti.exp(exponent) / (2 * np.pi * ti.sqrt(det_cov))
 
 
 @ti.kernel

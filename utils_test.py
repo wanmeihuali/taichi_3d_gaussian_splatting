@@ -1,10 +1,11 @@
 import taichi as ti
 import taichi.math as tm
 import unittest
-from utils import intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera
+from utils import intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera, get_point_probability_density_from_2d_gaussian
 from Camera import CameraInfo
 import torch
 import numpy as np
+from scipy.stats import multivariate_normal
 
 
 def intersect_ray_ellipsoid_np(o, d, S, R, t, eps=1e-9):
@@ -156,3 +157,37 @@ class TestGetRayOriginAndDirectionFromCamera(unittest.TestCase):
             self.T_pointcloud_camera, self.camera_info)
         expected_ray_origin = torch.tensor([1.0, 2.0, 3.0])
         self.assertTrue(torch.allclose(ray_origin, expected_ray_origin))
+
+
+class Test2DGaussianPDF(unittest.TestCase):
+    def setUp(self) -> None:
+        ti.init(ti.cpu, debug=True)
+
+    def test_get_point_probability_density_from_2d_gaussian(self):
+        xy = np.array([3.0, 4.0], dtype=np.float32)
+        gaussian_mean = np.array([2.0, 3.0], dtype=np.float32)
+        gaussian_covariance = np.array(
+            [[1.0, 0.3],
+             [0.3, 1.5]],
+            dtype=np.float32
+        )
+        xy_ti = tm.vec2.field(shape=())
+        xy_ti.from_numpy(xy)
+        gaussian_mean_ti = tm.vec2.field(shape=())
+        gaussian_mean_ti.from_numpy(gaussian_mean)
+        gaussian_covariance_ti = tm.mat2.field(shape=())
+        gaussian_covariance_ti.from_numpy(gaussian_covariance)
+
+        @ti.kernel
+        def test_kernel() -> ti.f32:
+            ti_result = get_point_probability_density_from_2d_gaussian(
+                xy_ti[None], gaussian_mean_ti[None], gaussian_covariance_ti[None])
+            return ti_result
+        ti_result = test_kernel()
+
+        numpy_result = multivariate_normal.pdf(
+            xy, mean=gaussian_mean, cov=gaussian_covariance)
+
+        self.assertAlmostEqual(ti_result, numpy_result, places=5,
+                               msg=f"Expected: {numpy_result}, Actual: {ti_result}"
+                               )
