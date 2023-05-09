@@ -3,8 +3,9 @@ import taichi as ti
 from dataclasses import dataclass
 from Camera import CameraInfo, CameraView
 from torch.cuda.amp import custom_bwd, custom_fwd
-from utils import torch_type, data_type, ti2torch, torch2ti, ti2torch_grad, torch2ti_grad
+from utils import torch_type, data_type, ti2torch, torch2ti, ti2torch_grad, torch2ti_grad, get_ray_origin_and_direction_from_camera
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
+from SphericalHarmonics import SphericalHarmonics, vec16f
 
 
 @ti.kernel
@@ -104,6 +105,95 @@ def find_tile_start_and_end(
     tile_points_end[last_tile_id] = point_in_camera_sort_key.shape[0]
 
 
+@ti.func
+def load_point_cloud_row_into_gaussian_point_3d(
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
+    point_id: ti.i32,
+) -> GaussianPoint3D:
+    translation = ti.Vector(
+        [pointcloud[point_id, 0], pointcloud[point_id, 1], pointcloud[point_id, 2]])
+    cov_rotation = ti.math.vec4(
+        [pointcloud_features[point_id, offset] for offset in ti.static(range(4))])
+    cov_scale = ti.math.vec3([pointcloud_features[point_id, offset]
+                             for offset in ti.static(range(4, 4 + 3))])
+    alpha = pointcloud_features[point_id, 7]
+    r_feature = vec16f([pointcloud_features[point_id, offset]
+                       for offset in ti.static(range(8, 8 + 16))])
+    g_feature = vec16f([pointcloud_features[point_id, offset]
+                       for offset in ti.static(range(24, 24 + 16))])
+    b_feature = vec16f([pointcloud_features[point_id, offset]
+                       for offset in ti.static(range(40, 40 + 16))])
+    gaussian_point_3d = GaussianPoint3D(
+        translation=translation,
+        cov_rotation=cov_rotation,
+        cov_scale=cov_scale,
+        alpha=alpha,
+        color_r=SphericalHarmonics(factor=r_feature),
+        color_g=SphericalHarmonics(factor=g_feature),
+        color_b=SphericalHarmonics(factor=b_feature),
+    )
+    return gaussian_point_3d
+
+
+@ti.kernel
+def generate_point_attributes_in_camera_plane(
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
+    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
+    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
+    point_in_camera_id: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+):
+    for idx in range(point_in_camera_id.shape[0]):
+        point_id = point_in_camera_id[idx]
+        gaussian_point_3d: GaussianPoint3D = load_point_cloud_row_into_gaussian_point_3d(
+            pointcloud=pointcloud,
+            pointcloud_features=pointcloud_features,
+            point_id=point_id)
+        uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
+            T_camera_world=T_camera_pointcloud,
+            projective_transform=camera_intrinsics,
+        )
+        uv_cov = gaussian_point_3d.project_to_camera_covariance(
+            T_camera_world=T_camera_pointcloud,
+            projective_transform=camera_intrinsics,
+            translation_camera=xyz_in_camera,
+        )
+        point_uv[idx, 0], point_uv[idx, 1] = uv[0], uv[1]
+        point_in_camera[idx, 0], point_in_camera[idx, 1], point_in_camera[idx,
+                                                                          2] = xyz_in_camera[0], xyz_in_camera[1], xyz_in_camera[2]
+        point_uv_covariance[idx, 0, 0], point_uv_covariance[idx, 0, 1], point_uv_covariance[idx, 1,
+                                                                                            0], point_uv_covariance[idx, 1, 1] = uv_cov[0, 0], uv_cov[0, 1], uv_cov[1, 0], uv_cov[1, 1]
+
+
+@ti.kernel
+def gaussian_point_rasterisation(
+    camera_height: ti.i32,
+    camera_width: ti.i32,
+    ray_origin: ti.types.ndarray(ti.f32, ndim=1),  # (3,)
+    ray_direction: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
+    # (tiles_per_row * tiles_per_col)
+    tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
+    # (tiles_per_row * tiles_per_col)
+    tile_points_end: ti.types.ndarray(ti.i32, ndim=1),
+    point_in_camera_id: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+):
+    for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
+        tile_u = ti.cast(pixel_u / 16, ti.i32)
+        tile_v = ti.cast(pixel_v / 16, ti.i32)
+        tile_id = tile_u + tile_v * (camera_width // 16)
+        start_offset = tile_points_start[tile_id]
+        end_offset = tile_points_end[tile_id]
+        for point_offset in range(start_offset, end_offset):
+            pass
+
+
 class GaussianPointCloudRasterisation(torch.nn.Module):
     @dataclass
     class GaussianPointCloudRasterisationConfig:
@@ -169,6 +259,31 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
                 tile_points_end = torch.zeros(size=(
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
+                num_points_in_camera = point_in_camera_id.shape[0]
+
+                # in paper, these data are computed on the fly and saved in shared block memory.
+                # however, taichi does not support shared block memory for ndarray, so we save them in global memory
+                point_uv = torch.zeros(
+                    size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
+                point_in_camera = torch.zeros(
+                    size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
+                point_uv_covariance = torch.zeros(
+                    size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
+
+                generate_point_attributes_in_camera_plane(
+                    pointcloud=pointcloud,
+                    pointcloud_features=pointcloud_features,
+                    camera_intrinsics=camera_info.camera_intrinsics,
+                    T_camera_pointcloud=T_camera_pointcloud,
+                    point_in_camera_id=point_in_camera_id,
+                    point_uv=point_uv,
+                    point_in_camera=point_in_camera,
+                    point_uv_covariance=point_uv_covariance,
+                )
+
+                ray_origin, direction = get_ray_origin_and_direction_from_camera(
+                    T_pointcloud_camera=T_pointcloud_camera,
+                    camera_info=camera_info)
 
             @staticmethod
             @custom_bwd

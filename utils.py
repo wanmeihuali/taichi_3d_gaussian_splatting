@@ -180,19 +180,3 @@ def ti2torch_grad(field: ti.template(), grad: ti.types.ndarray()):
 def torch2ti_grad(field: ti.template(), grad: ti.types.ndarray()):
     for I in ti.grouped(grad):
         field.grad[I] = grad[I]
-
-
-@ti.func
-def project_point_to_camera(
-    translation: tm.vec3,
-    T_camera_world: ti.math.mat4,
-    projective_transform: ti.math.mat3,
-):
-    homogeneous_translation_camera = T_camera_world @ ti.math.vec4(
-        translation.x, translation.y, translation.z, 1)
-    translation_camera = ti.math.vec3(
-        homogeneous_translation_camera.x, homogeneous_translation_camera.y, homogeneous_translation_camera.z)
-    uv1 = (projective_transform @ translation_camera) / \
-        translation_camera.z
-    uv = ti.math.vec2(uv1.x, uv1.y)
-    return uv, translation_camera
