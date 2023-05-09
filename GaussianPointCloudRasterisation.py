@@ -97,11 +97,11 @@ def find_tile_start_and_end(
         next_sort_key = point_in_camera_sort_key[idx + 1]
         next_tile_id = ti.cast(next_sort_key >> 32, ti.i32)
         if tile_id != next_tile_id:
-            tile_points_start[next_tile_id] = idx
+            tile_points_start[next_tile_id] = idx + 1
             tile_points_end[tile_id] = idx + 1
-    tile_points_start[point_in_camera_sort_key[0]] = 0
-    tile_points_end[point_in_camera_sort_key[-1]
-                    ] = point_in_camera_sort_key.shape[0]
+    last_sort_key = point_in_camera_sort_key[point_in_camera_sort_key.shape[0] - 1]
+    last_tile_id = ti.cast(last_sort_key >> 32, ti.i32)
+    tile_points_end[last_tile_id] = point_in_camera_sort_key.shape[0]
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
