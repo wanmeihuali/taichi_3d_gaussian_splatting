@@ -7,6 +7,7 @@ from GaussianPointCloudRasterisation import (
 from GaussianPoint3D import GaussianPoint3D
 from SphericalHarmonics import SphericalHarmonics
 from Camera import CameraInfo
+from tqdm import tqdm
 
 
 class TestFindTileStartAndEnd(unittest.TestCase):
@@ -110,9 +111,9 @@ class TestRasterisation(unittest.TestCase):
         # GaussianPointCloudRasterisation
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig())
-        num_points = 10000
+        num_points = 100000
 
-        for idx in range(10000):
+        for idx in tqdm(range(1000)):
             point_cloud = torch.rand(
                 size=(num_points, 3), dtype=torch.float32, device=torch.device("cuda:0"))
             point_cloud_features = torch.rand(
@@ -124,11 +125,12 @@ class TestRasterisation(unittest.TestCase):
                 camera_intrinsics=torch.tensor([[500, 0, 960], [0, 500, 540], [
                     0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
             )
-            T_pose_to_camera = torch.eye(
+            T_pointcloud_to_camera = torch.eye(
                 4, dtype=torch.float32, device=torch.device("cuda:0"))
+            T_pointcloud_to_camera[2, 3] = -2
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
                 camera_info=camera_info,
-                T_pointcloud_camera=T_pose_to_camera)
+                T_pointcloud_camera=T_pointcloud_to_camera)
             gaussian_point_cloud_rasterisation(input_data)
