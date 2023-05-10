@@ -36,6 +36,7 @@ def get_spherical_harmonic_from_xyz(
 class SphericalHarmonics:
     factor: vec16f
 
+    @ti.func
     def evaluate(
         self,
         xyz: tm.vec3

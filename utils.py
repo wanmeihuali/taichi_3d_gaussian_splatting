@@ -120,7 +120,7 @@ def get_ray_origin_and_direction_from_camera(
     Returns:
         (torch.Tensor, torch.Tensor): the ray origin and direction, ray_origin: (3,), direction: (H, W, 3)
     """
-    T_camera_pointcloud = torch.inverse(T_pointcloud_camera)
+    T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
     ray_origin = T_pointcloud_camera[:3, 3]
     """ consider how we get a point(x, y, z)'s position in the camera frame:
     p_in_camera_frame = T_camera_pointcloud * [x, y, z, 1]^T
@@ -145,9 +145,17 @@ def get_ray_origin_and_direction_from_camera(
     pixel_v += 0.5  # add 0.5 to make the pixel coordinates be the center of the pixel
     pixel_uv_1 = torch.stack(
         [pixel_u, pixel_v, torch.ones_like(pixel_u)], dim=-1)  # (H, W, 3)
-    pixel_uv_1 = pixel_uv_1.reshape(-1, 3)  # (H*W, 3)
-    pixel_xy_1 = torch.inverse(
-        camera_info.camera_intrinsics) @ pixel_uv_1.T  # (3, H*W)
+    pixel_uv_1 = pixel_uv_1.reshape(-1,
+                                    3).to(camera_info.camera_intrinsics.device)
+    fx = camera_info.camera_intrinsics[0, 0]
+    fy = camera_info.camera_intrinsics[1, 1]
+    cx = camera_info.camera_intrinsics[0, 2]
+    cy = camera_info.camera_intrinsics[1, 2]
+    inv_camera_intrinsics = torch.tensor([
+        [1 / fx, 0, -cx / fx],
+        [0, 1 / fy, -cy / fy],
+        [0, 0, 1]], dtype=camera_info.camera_intrinsics.dtype, device=camera_info.camera_intrinsics.device)
+    pixel_xy_1 = inv_camera_intrinsics @ pixel_uv_1.T  # (3, H*W)
     pixel_xy_1 = pixel_xy_1.T  # (H*W, 3)
     pixel_xy_1 = torch.cat([pixel_xy_1, torch.ones_like(
         pixel_xy_1[:, :1])], dim=-1)  # (H*W, 4)
@@ -220,3 +228,13 @@ def ti2torch_grad(field: ti.template(), grad: ti.types.ndarray()):
 def torch2ti_grad(field: ti.template(), grad: ti.types.ndarray()):
     for I in ti.grouped(grad):
         field.grad[I] = grad[I]
+
+
+def inverse_se3(transform: torch.Tensor):
+    R = transform[:3, :3]
+    t = transform[:3, 3]
+    inverse_transform = torch.zeros_like(transform)
+    inverse_transform[:3, :3] = R.T
+    inverse_transform[:3, 3] = -R.T @ t
+    inverse_transform[3, 3] = 1
+    return inverse_transform

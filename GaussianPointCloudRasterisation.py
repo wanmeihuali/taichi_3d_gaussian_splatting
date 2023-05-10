@@ -8,7 +8,8 @@ from utils import (torch_type, data_type, ti2torch, torch2ti,
                    ti2torch_grad, torch2ti_grad,
                    get_ray_origin_and_direction_from_camera,
                    get_point_probability_density_from_2d_gaussian,
-                   grad_point_probability_density_2d)
+                   grad_point_probability_density_2d,
+                   inverse_se3)
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
 from SphericalHarmonics import SphericalHarmonics, vec16f
 
@@ -134,9 +135,9 @@ def load_point_cloud_row_into_gaussian_point_3d(
         cov_rotation=cov_rotation,
         cov_scale=cov_scale,
         alpha=alpha,
-        color_r=SphericalHarmonics(factor=r_feature),
-        color_g=SphericalHarmonics(factor=g_feature),
-        color_b=SphericalHarmonics(factor=b_feature),
+        color_r=r_feature,
+        color_g=g_feature,
+        color_b=b_feature,
     )
     return gaussian_point_3d
 
@@ -152,19 +153,23 @@ def generate_point_attributes_in_camera_plane(
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
 ):
+    T_camera_pointcloud_mat = ti.Matrix(
+        [[T_camera_pointcloud[row, col] for col in range(4)] for row in range(4)])
+    camera_intrinsics_mat = ti.Matrix(
+        [[camera_intrinsics[row, col] for col in range(3)] for row in range(3)])
     for idx in range(point_in_camera_id.shape[0]):
         point_id = point_in_camera_id[idx]
-        gaussian_point_3d: GaussianPoint3D = load_point_cloud_row_into_gaussian_point_3d(
+        gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
             pointcloud=pointcloud,
             pointcloud_features=pointcloud_features,
             point_id=point_id)
         uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
-            T_camera_world=T_camera_pointcloud,
-            projective_transform=camera_intrinsics,
+            T_camera_world=T_camera_pointcloud_mat,
+            projective_transform=camera_intrinsics_mat,
         )
         uv_cov = gaussian_point_3d.project_to_camera_covariance(
-            T_camera_world=T_camera_pointcloud,
-            projective_transform=camera_intrinsics,
+            T_camera_world=T_camera_pointcloud_mat,
+            projective_transform=camera_intrinsics_mat,
             translation_camera=xyz_in_camera,
         )
         point_uv[idx, 0], point_uv[idx, 1] = uv[0], uv[1]
@@ -215,7 +220,7 @@ def gaussian_point_rasterisation(
                 [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
             uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
                                   point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
-            gaussian_point_3d: GaussianPoint3D = load_point_cloud_row_into_gaussian_point_3d(
+            gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
                 pointcloud=pointcloud,
                 pointcloud_features=pointcloud_features,
                 point_id=point_id)
@@ -432,10 +437,11 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             @custom_fwd(cast_inputs=torch_type)
             def forward(ctx, pointcloud, pointcloud_features, T_pointcloud_camera, camera_info):
                 point_in_camera_mask = torch.zeros(
-                    size=(pointcloud.shape[0],), dtype=torch.bool, device=pointcloud.device)
+                    size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
                     pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
-                T_camera_pointcloud = torch.inverse(T_pointcloud_camera)
+                T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
+                print(T_camera_pointcloud)
                 filter_point_in_camera(
                     pointcloud=pointcloud,
                     camera_intrinsics=camera_info.camera_intrinsics,
@@ -446,6 +452,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_height=camera_info.camera_height,
                     camera_width=camera_info.camera_width,
                 )
+                point_in_camera_mask = point_in_camera_mask.bool()
                 point_in_camera_id = point_id[point_in_camera_mask].contiguous(
                 )
                 point_in_camera_sort_key = torch.zeros(
@@ -495,6 +502,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 ray_origin, direction = get_ray_origin_and_direction_from_camera(
                     T_pointcloud_camera=T_pointcloud_camera,
                     camera_info=camera_info)
+                ray_origin, direction = ray_origin.contiguous(), direction.contiguous()
 
                 rasterized_image = torch.zeros(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
@@ -527,7 +535,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tile_points_end,
                     pixel_accumulated_alpha,
                     pixel_offset_of_last_effective_point,
-                    T_pointcloud_camera
+                    T_pointcloud_camera,
+                    T_camera_pointcloud
                 )
                 ctx.camera_info = camera_info
                 return rasterized_image
@@ -537,7 +546,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             def backward(ctx, grad_rasterized_image):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
-                    pointcloud, pointcloud_features, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera = ctx.saved_tensors
+                    pointcloud, pointcloud_features, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     ray_origin, direction = get_ray_origin_and_direction_from_camera(
                         T_pointcloud_camera=T_pointcloud_camera,
@@ -551,7 +560,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
                         camera_intrinsics=camera_info.camera_intrinsics,
-                        T_camera_pointcloud=T_pointcloud_camera,
+                        T_camera_pointcloud=T_camera_pointcloud,
                         ray_origin=ray_origin,
                         ray_direction=direction,
                         pointcloud=pointcloud,

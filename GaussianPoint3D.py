@@ -1,7 +1,7 @@
 # %%
 import taichi as ti
 import taichi.math
-from SphericalHarmonics import SphericalHarmonics
+from SphericalHarmonics import SphericalHarmonics, vec16f
 
 mat2x3f = ti.types.matrix(n=2, m=3, dtype=ti.f32)
 mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
@@ -89,9 +89,9 @@ class GaussianPoint3D:
     cov_scale: ti.math.vec3  # cov_scale of x, y, z
     translation: ti.math.vec3  # translation of x, y, z
     alpha: ti.f32  # opacity of the point
-    color_r: SphericalHarmonics  # color of the point, r
-    color_g: SphericalHarmonics  # color of the point, g
-    color_b: SphericalHarmonics  # color of the point, b
+    color_r: vec16f  # color of the point, r
+    color_g: vec16f  # color of the point, g
+    color_b: vec16f  # color of the point, b
 
     @ti.func
     def project_to_camera_position(
@@ -258,9 +258,9 @@ class GaussianPoint3D:
         o = ray_origin
         d = ray_direction
         # TODO: try other methods to get the query point for SH, e.g. the intersection point of the ray and the ellipsoid
-        r = self.color_r.evaluate(d)
-        g = self.color_g.evaluate(d)
-        b = self.color_b.evaluate(d)
+        r = SphericalHarmonics(self.color_r).evaluate(d)
+        g = SphericalHarmonics(self.color_g).evaluate(d)
+        b = SphericalHarmonics(self.color_b).evaluate(d)
         return ti.math.vec3(r, g, b)
 
     @ti.func
@@ -271,9 +271,12 @@ class GaussianPoint3D:
     ):
         o = ray_origin
         d = ray_direction
-        r, r_jacobian = self.color_r.evaluate_with_jacobian(d)
-        g, g_jacobian = self.color_g.evaluate_with_jacobian(d)
-        b, b_jacobian = self.color_b.evaluate_with_jacobian(d)
+        r, r_jacobian = SphericalHarmonics(
+            self.color_r).evaluate_with_jacobian(d)
+        g, g_jacobian = SphericalHarmonics(
+            self.color_g).evaluate_with_jacobian(d)
+        b, b_jacobian = SphericalHarmonics(
+            self.color_b).evaluate_with_jacobian(d)
         return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
 
 

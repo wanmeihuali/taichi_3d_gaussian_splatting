@@ -2,9 +2,11 @@ import numpy as np
 import unittest
 import taichi as ti
 import torch
-from GaussianPointCloudRasterisation import find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d
+from GaussianPointCloudRasterisation import (
+    find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d, GaussianPointCloudRasterisation)
 from GaussianPoint3D import GaussianPoint3D
 from SphericalHarmonics import SphericalHarmonics
+from Camera import CameraInfo
 
 
 class TestFindTileStartAndEnd(unittest.TestCase):
@@ -81,12 +83,9 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
             cov_rotation=pointcloud_features[point_id, :4],
             cov_scale=pointcloud_features[point_id, 4:7],
             alpha=pointcloud_features[point_id, 7],
-            color_r=SphericalHarmonics(
-                factor=pointcloud_features[point_id, 8:24]),
-            color_g=SphericalHarmonics(
-                factor=pointcloud_features[point_id, 24:40]),
-            color_b=SphericalHarmonics(
-                factor=pointcloud_features[point_id, 40:56]),
+            color_r=pointcloud_features[point_id, 8:24],
+            color_g=pointcloud_features[point_id, 24:40],
+            color_b=pointcloud_features[point_id, 40:56],
         )
 
         self.assertTrue(
@@ -101,3 +100,35 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
             np.allclose(result.cov_scale, expected.cov_scale),
             f"Expected: {expected.cov_scale}, Actual: {result.cov_scale}",
         )
+
+
+class TestRasterisation(unittest.TestCase):
+    def setUp(self) -> None:
+        ti.init(ti.gpu, debug=True, device_memory_GB=10)
+
+    def test_rasterisation_basic(self):
+        # GaussianPointCloudRasterisation
+        gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
+            config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig())
+        num_points = 10000
+
+        for idx in range(10000):
+            point_cloud = torch.rand(
+                size=(num_points, 3), dtype=torch.float32, device=torch.device("cuda:0"))
+            point_cloud_features = torch.rand(
+                size=(num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+            camera_info = CameraInfo(
+                camera_height=1088,
+                camera_width=1920,
+                camera_id=0,
+                camera_intrinsics=torch.tensor([[500, 0, 960], [0, 500, 540], [
+                    0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
+            )
+            T_pose_to_camera = torch.eye(
+                4, dtype=torch.float32, device=torch.device("cuda:0"))
+            input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
+                point_cloud=point_cloud,
+                point_cloud_features=point_cloud_features,
+                camera_info=camera_info,
+                T_pointcloud_camera=T_pose_to_camera)
+            gaussian_point_cloud_rasterisation(input_data)
