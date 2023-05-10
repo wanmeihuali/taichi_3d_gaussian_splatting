@@ -343,26 +343,50 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     T_pointcloud_camera=T_pointcloud_camera,
                     camera_info=camera_info)
 
+                rasterized_image = torch.zeros(
+                    camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
+                pixel_accumulated_alpha = torch.zeros(
+                    camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
+                pixel_depth_of_last_effective_point = torch.zeros(
+                    camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
+
+                gaussian_point_rasterisation(
+                    camera_height=camera_info.camera_height,
+                    camera_width=camera_info.camera_width,
+                    ray_origin=ray_origin,
+                    ray_direction=direction,
+                    pointcloud=pointcloud,
+                    pointcloud_features=pointcloud_features,
+                    tile_points_start=tile_points_start,
+                    tile_points_end=tile_points_end,
+                    point_in_camera_id=point_in_camera_id,
+                    point_uv=point_uv,
+                    point_in_camera=point_in_camera,
+                    point_uv_covariance=point_uv_covariance,
+                    rasterized_image=rasterized_image,
+                    pixel_accumulated_alpha=pixel_accumulated_alpha,
+                    pixel_depth_of_last_effective_point=pixel_depth_of_last_effective_point)
+                ctx.save_for_backward(
+                    pointcloud,
+                    pointcloud_features,
+                    point_in_camera_id,
+                    tile_points_start,
+                    tile_points_end,
+                    pixel_accumulated_alpha,
+                    pixel_depth_of_last_effective_point,
+                    T_pointcloud_camera
+                )
+                ctx.camera_info = camera_info
+                return rasterized_image
+
             @staticmethod
             @custom_bwd
-            def backward(ctx, doutput):
-
+            def backward(ctx, grad_rasterized_image):
                 self.zero_grad()
-
-                self.torch2ti_grad(self.output_fields, doutput.contiguous())
-                self._hash_encode_kernel.grad(
-                    self.input_fields,
-                    self.parameter_fields,
-                    self.output_fields,
-                    self.hash_map_indicator,
-                    self.hash_map_sizes_field,
-                    self.offsets,
-                    doutput.shape[0],
-                    self.per_level_scale,
-                )
-                self.ti2torch_grad(self.parameter_fields,
-                                   self.hash_grad.contiguous())
-                return None, self.hash_grad
+                grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
+                if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
+                    pass
+                return grad_pointcloud, grad_pointcloud_features, grad_T_pointcloud_camera, None
 
         self._module_function = _module_function
 
