@@ -263,6 +263,19 @@ class GaussianPoint3D:
         b = self.color_b.evaluate(d)
         return ti.math.vec3(r, g, b)
 
+    @ti.func
+    def get_color_with_jacobian_by_ray(
+        self,
+        ray_origin: ti.math.vec3,
+        ray_direction: ti.math.vec3,
+    ):
+        o = ray_origin
+        d = ray_direction
+        r, r_jacobian = self.color_r.evaluate_with_jacobian(d)
+        g, g_jacobian = self.color_g.evaluate_with_jacobian(d)
+        b, b_jacobian = self.color_b.evaluate_with_jacobian(d)
+        return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
+
 
 # %%
 """

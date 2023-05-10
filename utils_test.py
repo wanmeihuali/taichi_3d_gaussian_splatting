@@ -213,7 +213,7 @@ class Test2DGaussianPDF(unittest.TestCase):
 
         @ti.kernel
         def test_gradient_kernel():
-            ti_d_pdf_d_mean[None], ti_d_pdf_d_cov[None] = grad_point_probability_density_2d(
+            _, ti_d_pdf_d_mean[None], ti_d_pdf_d_cov[None] = grad_point_probability_density_2d(
                 xy_ti[None], gaussian_mean_ti[None], gaussian_covariance_ti[None])
         test_gradient_kernel()
         np_d_pdf_d_mean = gradient_mean(xy, gaussian_mean, gaussian_covariance)

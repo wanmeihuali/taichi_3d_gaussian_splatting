@@ -195,7 +195,7 @@ def grad_point_probability_density_2d(
     xy_mean_outer_xy_mean = xy_mean.outer_product(xy_mean)
     d_p_d_cov = -0.5 * p * (inv_cov - inv_cov @
                             xy_mean_outer_xy_mean @ inv_cov)
-    return d_p_d_mean, d_p_d_cov
+    return p, d_p_d_mean, d_p_d_cov
 
 
 @ti.kernel

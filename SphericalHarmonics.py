@@ -44,9 +44,9 @@ class SphericalHarmonics:
         return tm.dot(self.factor, spherical_harmonic)
 
     @ti.func
-    def jacobian(
+    def evaluate_with_jacobian(
         self,
         xyz: tm.vec3
     ):
         spherical_harmonic = get_spherical_harmonic_from_xyz(xyz)
-        return spherical_harmonic
+        return tm.dot(self.factor, spherical_harmonic), spherical_harmonic
