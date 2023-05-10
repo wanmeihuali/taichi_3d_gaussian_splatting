@@ -105,7 +105,7 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
 
 class TestRasterisation(unittest.TestCase):
     def setUp(self) -> None:
-        ti.init(ti.gpu, debug=True, device_memory_GB=10)
+        ti.init(ti.gpu, device_memory_GB=20)
 
     def test_rasterisation_basic(self):
         # GaussianPointCloudRasterisation
@@ -113,11 +113,11 @@ class TestRasterisation(unittest.TestCase):
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig())
         num_points = 100000
 
-        for idx in tqdm(range(1000)):
+        for idx in tqdm(range(100)):
             point_cloud = torch.rand(
-                size=(num_points, 3), dtype=torch.float32, device=torch.device("cuda:0"))
+                size=(num_points, 3), dtype=torch.float32, device=torch.device("cuda:0"), requires_grad=True)
             point_cloud_features = torch.rand(
-                size=(num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+                size=(num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"), requires_grad=True)
             camera_info = CameraInfo(
                 camera_height=1088,
                 camera_width=1920,
@@ -133,4 +133,6 @@ class TestRasterisation(unittest.TestCase):
                 point_cloud_features=point_cloud_features,
                 camera_info=camera_info,
                 T_pointcloud_camera=T_pointcloud_to_camera)
-            gaussian_point_cloud_rasterisation(input_data)
+            image = gaussian_point_cloud_rasterisation(input_data)
+            loss = image.sum()
+            loss.backward()

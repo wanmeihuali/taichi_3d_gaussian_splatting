@@ -1,4 +1,5 @@
 # %%
+import taichi as ti
 import torch
 import numpy as np
 import sympy
@@ -325,5 +326,37 @@ p = normalization * torch.exp(exponent)
 p.backward()
 print(mu.grad)
 print(cov.grad)
+
+# %%
+ti.init(ti.gpu, debug=True)
+
+image = torch.rand(size=(1080, 1920, 3), dtype=torch.float32,
+                   device=torch.device("cuda:0"))
+count = torch.randint(low=0, high=10, size=(1080, 1920),
+                      dtype=torch.int32, device=torch.device("cuda:0"))
+out = torch.zeros(size=(1080, 1920), dtype=torch.float32,
+                  device=torch.device("cuda:0"))
+
+
+@ti.kernel
+def test_taichi(
+    width: ti.i32,
+    height: ti.i32,
+    image: ti.types.ndarray(ti.f32, ndim=3),
+    count: ti.types.ndarray(ti.i32, ndim=2),
+    out: ti.types.ndarray(ti.f32, ndim=2),
+):
+    for row, col in ti.ndrange(height, width):
+        acc = 0.
+        c = count[row, col]
+        for i in range(c):
+            if col + i < width:
+                acc += image[row, col + i, 0]
+                acc += image[row, col + i, 0]
+                acc += image[row, col + i, 0]
+        out[row, col] = acc
+
+
+test_taichi(1920, 1080, image, count, out)
 
 # %%

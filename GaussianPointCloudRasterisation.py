@@ -325,13 +325,13 @@ def gaussian_point_rasterisation_backward(
         start_offset = tile_points_start[tile_id]
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
         effective_point_count = last_effective_point - start_offset
-        accumulated_alpha = pixel_accumulated_alpha[pixel_v, pixel_u]
+        accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
         for inverse_point_offset in range(effective_point_count):
             point_offset = last_effective_point - inverse_point_offset - 1
             point_id = point_in_camera_id[point_offset]
-            gaussian_point_3d: GaussianPoint3D = load_point_cloud_row_into_gaussian_point_3d(
+            gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
                 pointcloud=pointcloud,
                 pointcloud_features=pointcloud_features,
                 point_id=point_id)
@@ -365,49 +365,53 @@ def gaussian_point_rasterisation_backward(
             )
             d_p_d_cov_flat = ti.math.vec4(
                 [d_p_d_cov[0, 0], d_p_d_cov[0, 1], d_p_d_cov[1, 0], d_p_d_cov[1, 1]])
-            alpha = gaussian_alpha * gaussian_point_3d.alpha
+            prod_alpha = gaussian_alpha * gaussian_point_3d.alpha
             # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
             # 255 ) and also clamp 𝛼 with 0.99 from above.
-            if alpha < 1. / 255.:
-                continue
-            alpha = ti.min(alpha, 0.99)
-            color, r_jacobian, g_jacobian, b_jacobian = gaussian_point_3d.get_color_with_jacobian_by_ray(
-                ray_origin=ray_origin_ti,
-                ray_direction=ray_direction_ti,
-            )
-            accumulated_alpha -= alpha
-            d_pixel_rgb_d_color = alpha * (1. - accumulated_alpha)
-            # all vec16f
-            color_r_grad = d_pixel_rgb_d_color * \
-                pixel_rgb_grad[0] * r_jacobian
-            color_g_grad = d_pixel_rgb_d_color * \
-                pixel_rgb_grad[1] * g_jacobian
-            color_b_grad = d_pixel_rgb_d_color * \
-                pixel_rgb_grad[2] * b_jacobian
+            if prod_alpha >= 1. / 255.:
+                alpha: ti.f32 = ti.min(prod_alpha, 0.99)
+                color, r_jacobian, g_jacobian, b_jacobian = gaussian_point_3d.get_color_with_jacobian_by_ray(
+                    ray_origin=ray_origin_ti,
+                    ray_direction=ray_direction_ti,
+                )
 
-            alpha_grad: ti.f32 = (
-                (1. - accumulated_alpha) * color * d_pixel_rgb_d_color).sum()
-            gaussian_point_3d_alpha_grad = alpha_grad * gaussian_alpha
-            gaussian_alpha_grad = alpha_grad * gaussian_point_3d.alpha
-            # gaussian_alpha_grad is dp
-            translation_grad = gaussian_alpha_grad * \
-                d_p_d_mean @ d_uv_d_translation
-            # cov is Sigma
-            gaussian_q_grad = gaussian_alpha_grad * \
-                d_p_d_cov_flat @ d_Sigma_prime_d_q
-            gaussian_s_grad = gaussian_alpha_grad * \
-                d_p_d_cov_flat @ d_Sigma_prime_d_s
-            atomic_accumulate_grad_for_point(
-                point_offset=point_offset,
-                point_in_camera_grad=point_in_camera_grad,
-                pointfeatures_grad=pointfeatures_grad,
-                translation_grad=translation_grad,
-                gaussian_q_grad=gaussian_q_grad,
-                gaussian_s_grad=gaussian_s_grad,
-                gaussian_point_3d_alpha_grad=gaussian_point_3d_alpha_grad,
-                color_r_grad=color_r_grad,
-                color_g_grad=color_g_grad,
-                color_b_grad=color_b_grad)
+                # TODO: have no idea why taichi does not allow the following code under debug. However, it works under release mode.
+                accumulated_alpha = accumulated_alpha - alpha
+
+                d_pixel_rgb_d_color = alpha * (1. - accumulated_alpha)
+                # all vec16f
+                color_r_grad = d_pixel_rgb_d_color * \
+                    pixel_rgb_grad[0] * r_jacobian
+                color_g_grad = d_pixel_rgb_d_color * \
+                    pixel_rgb_grad[1] * g_jacobian
+                color_b_grad = d_pixel_rgb_d_color * \
+                    pixel_rgb_grad[2] * b_jacobian
+
+                alpha_grad_from_rgb = (1. - accumulated_alpha) * \
+                    color * d_pixel_rgb_d_color
+                alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
+                    alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
+                gaussian_point_3d_alpha_grad = alpha_grad * gaussian_alpha
+                gaussian_alpha_grad = alpha_grad * gaussian_point_3d.alpha
+                # gaussian_alpha_grad is dp
+                translation_grad = gaussian_alpha_grad * \
+                    d_p_d_mean @ d_uv_d_translation
+                # cov is Sigma
+                gaussian_q_grad = gaussian_alpha_grad * \
+                    d_p_d_cov_flat @ d_Sigma_prime_d_q
+                gaussian_s_grad = gaussian_alpha_grad * \
+                    d_p_d_cov_flat @ d_Sigma_prime_d_s
+                atomic_accumulate_grad_for_point(
+                    point_offset=point_offset,
+                    point_in_camera_grad=point_in_camera_grad,
+                    pointfeatures_grad=pointfeatures_grad,
+                    translation_grad=translation_grad,
+                    gaussian_q_grad=gaussian_q_grad,
+                    gaussian_s_grad=gaussian_s_grad,
+                    gaussian_point_3d_alpha_grad=gaussian_point_3d_alpha_grad,
+                    color_r_grad=color_r_grad,
+                    color_g_grad=color_g_grad,
+                    color_b_grad=color_b_grad)
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
@@ -539,6 +543,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     T_camera_pointcloud
                 )
                 ctx.camera_info = camera_info
+                # rasterized_image.requires_grad_(True)
                 return rasterized_image
 
             @staticmethod
@@ -551,7 +556,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     ray_origin, direction = get_ray_origin_and_direction_from_camera(
                         T_pointcloud_camera=T_pointcloud_camera,
                         camera_info=camera_info)
-
+                    ray_origin, direction = ray_origin.contiguous(), direction.contiguous()
+                    grad_rasterized_image = grad_rasterized_image.contiguous()
                     grad_point_in_camera = torch.zeros(
                         size=(point_in_camera_id.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
                     grad_pointfeatures = torch.zeros(
