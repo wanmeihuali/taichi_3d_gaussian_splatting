@@ -527,7 +527,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tile_points_start,
                     tile_points_end,
                     pixel_accumulated_alpha,
-                    pixel_depth_of_last_effective_point,
+                    pixel_offset_of_last_effective_point,
                     T_pointcloud_camera
                 )
                 ctx.camera_info = camera_info
