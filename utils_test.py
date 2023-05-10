@@ -1,7 +1,7 @@
 import taichi as ti
 import taichi.math as tm
 import unittest
-from utils import intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera, get_point_probability_density_from_2d_gaussian
+from utils import intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera, get_point_probability_density_from_2d_gaussian, grad_point_probability_density_2d
 from Camera import CameraInfo
 import torch
 import numpy as np
@@ -191,3 +191,34 @@ class Test2DGaussianPDF(unittest.TestCase):
         self.assertAlmostEqual(ti_result, numpy_result, places=5,
                                msg=f"Expected: {numpy_result}, Actual: {ti_result}"
                                )
+
+        def gradient_mean(x, mean, cov):
+            inv_cov = np.linalg.inv(cov)
+            diff = x - mean
+            pdf = multivariate_normal.pdf(x, mean=mean, cov=cov)
+            d_pdf_d_mean = pdf * (inv_cov @ diff)
+            return d_pdf_d_mean
+
+        def gradient_cov(x, mean, cov):
+            inv_cov = np.linalg.inv(cov)
+            diff = x - mean
+            diff_outer = np.outer(diff, diff)
+            pdf = multivariate_normal.pdf(x, mean=mean, cov=cov)
+
+            gradient = -0.5 * pdf * (inv_cov - inv_cov @ diff_outer @ inv_cov)
+            return gradient
+
+        ti_d_pdf_d_mean = tm.vec2.field(shape=())
+        ti_d_pdf_d_cov = tm.mat2.field(shape=())
+
+        @ti.kernel
+        def test_gradient_kernel():
+            ti_d_pdf_d_mean[None], ti_d_pdf_d_cov[None] = grad_point_probability_density_2d(
+                xy_ti[None], gaussian_mean_ti[None], gaussian_covariance_ti[None])
+        test_gradient_kernel()
+        np_d_pdf_d_mean = gradient_mean(xy, gaussian_mean, gaussian_covariance)
+        np_d_pdf_d_cov = gradient_cov(xy, gaussian_mean, gaussian_covariance)
+        self.assertTrue(np.allclose(ti_d_pdf_d_mean[None].to_numpy(), np_d_pdf_d_mean, atol=1e-5),
+                        msg=f"Expected: {np_d_pdf_d_mean}, Actual: {ti_d_pdf_d_mean[None].to_numpy()}")
+        self.assertTrue(np.allclose(ti_d_pdf_d_cov[None].to_numpy(), np_d_pdf_d_cov, atol=1e-5),
+                        msg=f"Expected: {np_d_pdf_d_cov}, Actual: {ti_d_pdf_d_cov[None].to_numpy()}")

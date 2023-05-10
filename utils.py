@@ -176,6 +176,28 @@ def get_point_probability_density_from_2d_gaussian(
     return ti.exp(exponent) / (2 * np.pi * ti.sqrt(det_cov))
 
 
+@ti.func
+def grad_point_probability_density_2d(
+    xy: ti.math.vec2,
+    gaussian_mean: ti.math.vec2,
+    gaussian_covariance: ti.math.mat2,
+):
+    xy_mean = xy - gaussian_mean
+    det_cov = gaussian_covariance.determinant()
+    inv_cov = (1. / det_cov) * \
+        ti.math.mat2([[gaussian_covariance[1, 1], -gaussian_covariance[0, 1]],
+                      [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
+    cov_inv_xy_mean = inv_cov @ xy_mean
+    xy_mean_T_cov_inv_xy_mean = xy_mean @ cov_inv_xy_mean
+    exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
+    p = ti.exp(exponent) / (2 * np.pi * ti.sqrt(det_cov))
+    d_p_d_mean = p * cov_inv_xy_mean
+    xy_mean_outer_xy_mean = xy_mean.outer_product(xy_mean)
+    d_p_d_cov = -0.5 * p * (inv_cov - inv_cov @
+                            xy_mean_outer_xy_mean @ inv_cov)
+    return d_p_d_mean, d_p_d_cov
+
+
 @ti.kernel
 def torch2ti(field: ti.template(), data: ti.types.ndarray()):
     for I in ti.grouped(data):
