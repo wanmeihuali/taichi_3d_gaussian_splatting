@@ -299,7 +299,6 @@ def gaussian_point_rasterisation_backward(
     # (tiles_per_row * tiles_per_col)
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
     point_in_camera_id: ti.types.ndarray(ti.i32, ndim=1),  # (M)
-    rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
     rasterized_image_grad: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
     pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     # (H, W)
@@ -539,16 +538,45 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 self.zero_grad()
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
-                    pass
+                    pointcloud, pointcloud_features, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera = ctx.saved_tensors
+                    camera_info = ctx.camera_info
+                    ray_origin, direction = get_ray_origin_and_direction_from_camera(
+                        T_pointcloud_camera=T_pointcloud_camera,
+                        camera_info=camera_info)
+
+                    grad_point_in_camera = torch.zeros(
+                        size=(point_in_camera_id.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
+                    grad_pointfeatures = torch.zeros(
+                        size=(point_in_camera_id.shape[0], pointcloud_features.shape[1]), dtype=torch.float32, device=pointcloud.device)
+                    gaussian_point_rasterisation_backward(
+                        camera_height=camera_info.camera_height,
+                        camera_width=camera_info.camera_width,
+                        camera_intrinsics=camera_info.camera_intrinsics,
+                        T_camera_pointcloud=T_pointcloud_camera,
+                        ray_origin=ray_origin,
+                        ray_direction=direction,
+                        pointcloud=pointcloud,
+                        pointcloud_features=pointcloud_features,
+                        tile_points_start=tile_points_start,
+                        point_in_camera_id=point_in_camera_id,
+                        rasterized_image_grad=grad_rasterized_image,
+                        pixel_accumulated_alpha=pixel_accumulated_alpha,
+                        pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
+                        point_in_camera_grad=grad_point_in_camera,
+                        pointfeatures_grad=grad_pointfeatures,
+                    )
+                    del ray_origin, direction, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
+                    grad_pointcloud = torch.zeros_like(pointcloud)
+                    grad_pointcloud_features = torch.zeros_like(
+                        pointcloud_features)
+                    grad_pointcloud[point_in_camera_id] = grad_point_in_camera
+                    grad_pointcloud_features[point_in_camera_id] = grad_pointfeatures
                 return grad_pointcloud, grad_pointcloud_features, grad_T_pointcloud_camera, None
 
         self._module_function = _module_function
 
     def zero_grad(self):
         self.parameter_fields.grad.fill(0.)
-
-    def forward(self, positions):
-        return
 
     def forward(self, input_data: GaussianPointCloudRasterisationInput):
         pointcloud = input_data.point_cloud
