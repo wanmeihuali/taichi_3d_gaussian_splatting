@@ -535,7 +535,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             @staticmethod
             @custom_bwd
             def backward(ctx, grad_rasterized_image):
-                self.zero_grad()
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, pointcloud_features, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera = ctx.saved_tensors
@@ -574,9 +573,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 return grad_pointcloud, grad_pointcloud_features, grad_T_pointcloud_camera, None
 
         self._module_function = _module_function
-
-    def zero_grad(self):
-        self.parameter_fields.grad.fill(0.)
 
     def forward(self, input_data: GaussianPointCloudRasterisationInput):
         pointcloud = input_data.point_cloud
