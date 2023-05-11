@@ -289,6 +289,7 @@ def atomic_accumulate_grad_for_point(
     color_b_grad: vec16f,
     color_l0_only: bool
 ):
+    """
     for offset in ti.static(range(3)):
         ti.atomic_add(point_in_camera_grad[point_offset, offset],
                       translation_grad[offset])
@@ -298,6 +299,7 @@ def atomic_accumulate_grad_for_point(
     for offset in ti.static(range(3)):
         ti.atomic_add(pointfeatures_grad[point_offset, 4 + offset],
                       gaussian_s_grad[offset])
+    """
     ti.atomic_add(pointfeatures_grad[point_offset, 7],
                   gaussian_point_3d_alpha_grad)
     if color_l0_only:
@@ -386,7 +388,7 @@ def gaussian_point_rasterisation_backward(
 
             # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
             gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d(
-                xy=ti.math.vec2([pixel_u, pixel_v]),
+                xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
             )
@@ -404,6 +406,8 @@ def gaussian_point_rasterisation_backward(
 
                 # TODO: have no idea why taichi does not allow the following code under debug. However, it works under release mode.
                 accumulated_alpha = accumulated_alpha - alpha
+                # print(
+                #     f"({pixel_v}, {pixel_u}, {point_offset}, {point_offset - start_offset}), accumulated_alpha: {accumulated_alpha}")
 
                 d_pixel_rgb_d_color = alpha * (1. - accumulated_alpha)
                 # all vec16f
@@ -415,7 +419,7 @@ def gaussian_point_rasterisation_backward(
                     pixel_rgb_grad[2] * b_jacobian
 
                 alpha_grad_from_rgb = (1. - accumulated_alpha) * \
-                    color * d_pixel_rgb_d_color
+                    color * pixel_rgb_grad
                 alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
                     alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
                 gaussian_point_3d_alpha_grad = alpha_grad * gaussian_alpha
@@ -623,7 +627,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_pointcloud_features = torch.zeros_like(
                         pointcloud_features)
                     grad_pointcloud[point_in_camera_id] = grad_point_in_camera
-                    grad_pointcloud_features[point_in_camera_id] = grad_pointfeatures
+                    grad_pointcloud_features[point_in_camera_id] = \
+                        grad_pointfeatures
                 return grad_pointcloud, grad_pointcloud_features, grad_T_pointcloud_camera, None, None
 
         self._module_function = _module_function
