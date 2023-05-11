@@ -2,7 +2,7 @@ import unittest
 import taichi as ti
 import numpy as np
 import scipy.spatial.transform as transform
-from GaussianPoint3D import GaussianPoint3D
+from GaussianPoint3D import GaussianPoint3D, rotation_matrix_from_quaternion
 
 
 class GaussianPoint3d_test(unittest.TestCase):
@@ -52,3 +52,16 @@ class GaussianPoint3d_test(unittest.TestCase):
         cov_ti = call_project_to_camera_covariance()
         self.assertTrue(np.allclose(cov_ti.to_numpy(), cov, rtol=1e-2),
                         msg=f"Expected: {cov}, Actual: {cov_ti.to_numpy()}")
+
+    def test_rotation_matrix_from_quaternion(self):
+        q = np.array([0.0229, 0.9774, 0.1204, 0.1725])
+        np_R = transform.Rotation.from_quat(q).as_matrix()
+        q_ti = ti.math.vec4.field(shape=())
+        q_ti.from_numpy(q)
+
+        @ti.kernel
+        def call_rotation_matrix_from_quaternion() -> ti.math.mat3:
+            return rotation_matrix_from_quaternion(q_ti[None])
+        R = call_rotation_matrix_from_quaternion()
+        self.assertTrue(np.allclose(R.to_numpy(), np_R, atol=1e-2),
+                        msg=f"Expected: {np_R}, Actual: {R.to_numpy()}")

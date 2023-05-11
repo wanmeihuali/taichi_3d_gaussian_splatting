@@ -146,8 +146,10 @@ class TestRasterisation(unittest.TestCase):
             size=(image_size[0], image_size[1], 3), dtype=torch.float32, device=torch.device("cuda:0"))
         point_cloud = torch.nn.Parameter((torch.rand(size=(num_points, 3), dtype=torch.float32, device=torch.device(
             "cuda:0")) - 0.5) * 3)
-        point_cloud_features = torch.nn.Parameter(torch.rand(size=(
-            num_points, 56), dtype=torch.float32, device=torch.device("cuda:0")))
+        tmp = torch.rand(size=(
+            num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+        tmp[:, 7] = 0.5
+        point_cloud_features = torch.nn.Parameter(tmp)
         camera_info = CameraInfo(
             camera_height=image_size[0],
             camera_width=image_size[1],
@@ -157,6 +159,7 @@ class TestRasterisation(unittest.TestCase):
         )
         T_camera_world = torch.eye(
             4, dtype=torch.float32, device=torch.device("cuda:0"))
+        T_camera_world[2, 3] = -2
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
                 near_plane=1.,
