@@ -289,7 +289,6 @@ def atomic_accumulate_grad_for_point(
     color_b_grad: vec16f,
     color_l0_only: bool
 ):
-    """
     for offset in ti.static(range(3)):
         ti.atomic_add(point_in_camera_grad[point_offset, offset],
                       translation_grad[offset])
@@ -299,7 +298,6 @@ def atomic_accumulate_grad_for_point(
     for offset in ti.static(range(3)):
         ti.atomic_add(pointfeatures_grad[point_offset, 4 + offset],
                       gaussian_s_grad[offset])
-    """
     ti.atomic_add(pointfeatures_grad[point_offset, 7],
                   gaussian_point_3d_alpha_grad)
     if color_l0_only:
