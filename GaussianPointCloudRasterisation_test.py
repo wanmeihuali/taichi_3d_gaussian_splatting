@@ -162,7 +162,7 @@ class TestRasterisation(unittest.TestCase):
                 near_plane=0.1,
                 far_plane=10.
             ))
-        optimizer = torch.optim.SGD(
+        optimizer = torch.optim.Adam(
             [point_cloud, point_cloud_features], lr=0.001)
         intital_loss = None
         latest_loss = None
@@ -172,7 +172,8 @@ class TestRasterisation(unittest.TestCase):
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
                 camera_info=camera_info,
-                T_pointcloud_camera=T_camera_world)
+                T_pointcloud_camera=T_camera_world,
+                color_l0_only=True)
             pred_image = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()
             loss.backward()

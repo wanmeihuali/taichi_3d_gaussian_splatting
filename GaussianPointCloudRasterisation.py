@@ -81,8 +81,8 @@ def generate_point_sort_key(
         # as the paper said:  the lower 32 bits encode its projected depth and the higher bits encode the index of the overlapped tile.
         encoded_projected_depth = ti.cast(
             point_depth * depth_to_sort_key_scale, ti.i32)
-        tile_u = ti.cast(pixel_uv[0] / 16, ti.i32)
-        tile_v = ti.cast(pixel_uv[1] / 16, ti.i32)
+        tile_u = ti.cast(pixel_uv[0] // 16, ti.i32)
+        tile_v = ti.cast(pixel_uv[1] // 16, ti.i32)
         encoded_tile_id = ti.cast(
             tile_u + tile_v * (camera_width // 16), ti.i32)
         sort_key = ti.cast(encoded_projected_depth, ti.i64) + \
@@ -219,8 +219,8 @@ def gaussian_point_rasterisation(
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
     for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
-        tile_u = ti.cast(pixel_u / 16, ti.i32)
-        tile_v = ti.cast(pixel_v / 16, ti.i32)
+        tile_u = ti.cast(pixel_u // 16, ti.i32)
+        tile_v = ti.cast(pixel_v // 16, ti.i32)
         tile_id = tile_u + tile_v * (camera_width // 16)
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
@@ -344,8 +344,8 @@ def gaussian_point_rasterisation_backward(
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
     for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
-        tile_u = ti.cast(pixel_u / 16, ti.i32)
-        tile_v = ti.cast(pixel_v / 16, ti.i32)
+        tile_u = ti.cast(pixel_u // 16, ti.i32)
+        tile_v = ti.cast(pixel_v // 16, ti.i32)
         tile_id = tile_u + tile_v * (camera_width // 16)
         start_offset = tile_points_start[tile_id]
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
@@ -485,6 +485,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_in_camera_mask = point_in_camera_mask.bool()
                 point_in_camera_id = point_id[point_in_camera_mask].contiguous(
                 )
+                del point_id
+                del point_in_camera_mask
                 point_in_camera_sort_key = torch.zeros(
                     size=(point_in_camera_id.shape[0],), dtype=torch.int64, device=pointcloud.device)
                 generate_point_sort_key(
@@ -497,7 +499,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_width=camera_info.camera_width,
                     depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
                 )
-                permutation = point_in_camera_sort_key.argsort()
+                point_in_camera_sort_key, permutation = point_in_camera_sort_key.sort()
                 point_in_camera_id = point_in_camera_id[permutation].contiguous(
                 )  # now the point_in_camera_id is sorted by the sort_key
                 del permutation
