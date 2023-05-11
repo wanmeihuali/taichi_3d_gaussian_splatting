@@ -142,12 +142,21 @@ class TestRasterisation(unittest.TestCase):
         """
         image_size = (32, 32)
         num_points = 10000
-        fake_image = torch.rand(
+        fake_image = torch.zeros(
             size=(image_size[0], image_size[1], 3), dtype=torch.float32, device=torch.device("cuda:0"))
+        fake_image[:5, :2, 0] = 1.0
+        fake_image[:5, :2, 1] = 0.7
+        fake_image[8:24, 8:24, 0] = 0.5
+        fake_image[8:24, 8:24, 1] = 0.2
+        fake_image[8:24, 8:24, 1] = 0.7
+        fake_image[20:28, 20:28, 0] = 0.8
+        fake_image[20:28, 20:28, 1] = 0.1
+        fake_image[20:28, 20:28, 1] = 0.1
         point_cloud = torch.nn.Parameter((torch.rand(size=(num_points, 3), dtype=torch.float32, device=torch.device(
             "cuda:0")) - 0.5) * 3)
         tmp = torch.rand(size=(
             num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+        tmp[:, 4:7] = 0.01
         tmp[:, 7] = 0.5
         point_cloud_features = torch.nn.Parameter(tmp)
         camera_info = CameraInfo(
