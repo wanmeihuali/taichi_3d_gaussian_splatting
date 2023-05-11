@@ -242,13 +242,15 @@ def gaussian_point_rasterisation(
             ray_direction_ti = ti.math.vec3([ray_direction[pixel_v, pixel_u, 0],
                                              ray_direction[pixel_v, pixel_u, 1], ray_direction[pixel_v, pixel_u, 2]])
             gaussian_alpha = get_point_probability_density_from_2d_gaussian(
-                xy=ti.math.vec2([pixel_u, pixel_v]),
+                xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
             )
             alpha = gaussian_alpha * gaussian_point_3d.alpha
             # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
             # 255 ) and also clamp 𝛼 with 0.99 from above.
+            # print(
+            #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
             if alpha < 1. / 255.:
                 continue
             alpha = ti.min(alpha, 0.99)
