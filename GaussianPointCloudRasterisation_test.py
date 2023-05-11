@@ -127,7 +127,7 @@ class TestRasterisation(unittest.TestCase):
             )
             T_pointcloud_to_camera = torch.eye(
                 4, dtype=torch.float32, device=torch.device("cuda:0"))
-            T_pointcloud_to_camera[2, 3] = -2
+            T_pointcloud_to_camera[2, 3] = -0.5
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
@@ -136,3 +136,49 @@ class TestRasterisation(unittest.TestCase):
             image = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
+
+    def test_backward_coverage(self):
+        """ use a fake image, and test if gradient descent can have a good coverage
+        """
+        image_size = (32, 32)
+        num_points = 10000
+        fake_image = torch.rand(
+            size=(image_size[0], image_size[1], 3), dtype=torch.float32, device=torch.device("cuda:0"))
+        point_cloud = torch.nn.Parameter((torch.rand(size=(num_points, 3), dtype=torch.float32, device=torch.device(
+            "cuda:0")) - 0.5) * 3)
+        point_cloud_features = torch.nn.Parameter(torch.rand(size=(
+            num_points, 56), dtype=torch.float32, device=torch.device("cuda:0")))
+        camera_info = CameraInfo(
+            camera_height=image_size[0],
+            camera_width=image_size[1],
+            camera_id=0,
+            camera_intrinsics=torch.tensor([[32, 0, 16], [0, 32, 16], [
+                                           0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
+        )
+        T_camera_world = torch.eye(
+            4, dtype=torch.float32, device=torch.device("cuda:0"))
+        gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
+            config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
+                near_plane=0.1,
+                far_plane=10.
+            ))
+        optimizer = torch.optim.SGD(
+            [point_cloud, point_cloud_features], lr=0.001)
+        intital_loss = None
+        latest_loss = None
+        for idx in tqdm(range(10000)):
+            optimizer.zero_grad()
+            input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
+                point_cloud=point_cloud,
+                point_cloud_features=point_cloud_features,
+                camera_info=camera_info,
+                T_pointcloud_camera=T_camera_world)
+            pred_image = gaussian_point_cloud_rasterisation(input_data)
+            loss = ((pred_image - fake_image)**2).sum()
+            loss.backward()
+            optimizer.step()
+            print(f"loss: {loss.item()}")
+            if idx == 0:
+                initial_loss = loss.item()
+            latest_loss = loss.item()
+        self.assertTrue(latest_loss < initial_loss)
