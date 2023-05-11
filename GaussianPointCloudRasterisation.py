@@ -445,7 +445,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_id = torch.arange(
                     pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
                 T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
-                print(T_camera_pointcloud)
                 filter_point_in_camera(
                     pointcloud=pointcloud,
                     camera_intrinsics=camera_info.camera_intrinsics,
@@ -481,6 +480,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
                 tile_points_end = torch.zeros(size=(
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
+                find_tile_start_and_end(
+                    point_in_camera_sort_key=point_in_camera_sort_key,
+                    tile_points_start=tile_points_start,
+                    tile_points_end=tile_points_end,
+                )
+
                 num_points_in_camera = point_in_camera_id.shape[0]
 
                 # in paper, these data are computed on the fly and saved in shared block memory.
