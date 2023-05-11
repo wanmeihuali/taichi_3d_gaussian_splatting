@@ -238,3 +238,149 @@ def inverse_se3(transform: torch.Tensor):
     inverse_transform[:3, 3] = -R.T @ t
     inverse_transform[3, 3] = 1
     return inverse_transform
+
+
+def torch_single_point_alpha_forward(
+    point_xyz: torch.Tensor,  # (3,)
+    point_q: torch.Tensor,  # (4,)
+    point_s: torch.Tensor,  # (3,)
+    T_camera_pointcloud: torch.Tensor,  # (4, 4)
+    camera_intrinsics: torch.Tensor,  # (3, 3)
+    point_alpha: torch.Tensor,  # (1,)
+    pixel_uv: torch.Tensor,  # (1,)
+):
+    xyz1 = torch.cat(
+        [point_xyz, torch.ones_like(point_xyz[:1])], dim=0)  # (4,)
+    xyz1_camera = T_camera_pointcloud @ xyz1  # (4,)
+    xyz_camera = xyz1_camera[:3]
+    xyz_camera.register_hook(lambda grad: print(
+        f"torch xyz_camera grad: {grad}"))
+    uv1 = camera_intrinsics @ xyz_camera
+    uv = uv1[:2] / uv1[2]
+    print(uv)
+    # add hook to get the gradient of uv
+    uv.register_hook(lambda grad: print(f"torch uv grad: {grad}"))
+    S = torch.diag(point_s)  # (3, 3)
+    R = quaternion_to_rotation_matrix_torch(point_q)  # (3, 3)
+    Sigma = R @ S @ S @ R.T  # (3, 3)
+    print(Sigma)
+    z_camrea = xyz1_camera[2]
+    fx = camera_intrinsics[0, 0]
+    fy = camera_intrinsics[1, 1]
+    J = torch.tensor([
+        fx / z_camrea, 0, -fx * xyz1_camera[0] / (z_camrea * z_camrea),
+        0, fy / z_camrea, -fy * xyz1_camera[1] / (z_camrea * z_camrea)
+    ]).reshape(2, 3)  # (2, 3)
+    W = T_camera_pointcloud[:3, :3]  # (3, 3)
+    cov = J @ W @ Sigma @ W.T @ J.T  # (2, 2)
+    print(cov)
+    # for 2d gaussian center at uv with covariance cov, the probability density of pixel_uv is:
+    det_cov = cov.det()
+    inv_cov = (1. / det_cov) * torch.tensor([
+        [cov[1, 1], -cov[0, 1]],
+        [-cov[1, 0], cov[0, 0]]
+    ])  # (2, 2)
+    pixel_uv_center = pixel_uv.float() + 0.5
+    p = torch.exp(-0.5 * (pixel_uv_center - uv).T @ inv_cov @
+                  (pixel_uv_center - uv)) / (2 * np.pi * torch.sqrt(det_cov))  # (1,)
+    alpha = point_alpha * p  # (1,)
+    return alpha
+
+
+def torch_single_point_forward(
+    point_xyz: torch.Tensor,  # (3,)
+    point_q: torch.Tensor,  # (4,)
+    point_s: torch.Tensor,  # (3,)
+    T_camera_pointcloud: torch.Tensor,  # (4, 4)
+    camera_intrinsics: torch.Tensor,  # (3, 3)
+    ray_origin: torch.Tensor,  # (3,)
+    ray_direction: torch.Tensor,  # (3,)
+    point_alpha: torch.Tensor,  # (1,)
+    color_r_sh: torch.Tensor,  # (16,)
+    color_g_sh: torch.Tensor,  # (16,)
+    color_b_sh: torch.Tensor,  # (16,)
+    pixel_uv: torch.Tensor,  # (1,)
+    accumuated_alpha: float,
+):
+    alpha = torch_single_point_alpha_forward(
+        point_xyz=point_xyz,
+        point_q=point_q,
+        point_s=point_s,
+        T_camera_pointcloud=T_camera_pointcloud,
+        camera_intrinsics=camera_intrinsics,
+        point_alpha=point_alpha,
+        pixel_uv=pixel_uv,
+    )
+    color_r = alpha * \
+        get_spherical_harmonic_from_xyz_torch(ray_direction) @ color_r_sh
+    color_g = alpha * \
+        get_spherical_harmonic_from_xyz_torch(ray_direction) @ color_g_sh
+    color_b = alpha * \
+        get_spherical_harmonic_from_xyz_torch(ray_direction) @ color_b_sh
+    rgb = torch.stack([color_r, color_g, color_b], dim=0)
+    pixel_rgb = alpha * (1 - accumuated_alpha) * rgb
+    return pixel_rgb
+
+
+def quaternion_to_rotation_matrix_torch(q):
+    """
+    Convert a quaternion into a full three-dimensional rotation matrix.
+
+    Input:
+    :param q: A tensor of size (B, 4), where B is batch size and quaternion is in format (x, y, z, w).
+
+    Output:
+    :return: A tensor of size (B, 3, 3), where B is batch size.
+    """
+    # Ensure quaternion has four components
+    assert q.shape[-1] == 4, "Input quaternion should have 4 components!"
+
+    x, y, z, w = q.unbind(-1)
+
+    # Compute quaternion norms
+    q_norm = torch.norm(q, dim=-1, keepdim=True)
+    # Normalize input quaternions
+    q = q / q_norm
+
+    # Compute the quaternion outer product
+    q_outer = torch.einsum('...i,...j->...ij', q, q)
+
+    # Compute rotation matrix
+    rot_matrix = torch.empty(
+        (*q.shape[:-1], 3, 3), dtype=q.dtype, device=q.device)
+    rot_matrix[..., 0, 0] = 1 - 2 * (y**2 + z**2)
+    rot_matrix[..., 0, 1] = 2 * (x*y - z*w)
+    rot_matrix[..., 0, 2] = 2 * (x*z + y*w)
+    rot_matrix[..., 1, 0] = 2 * (x*y + z*w)
+    rot_matrix[..., 1, 1] = 1 - 2 * (x**2 + z**2)
+    rot_matrix[..., 1, 2] = 2 * (y*z - x*w)
+    rot_matrix[..., 2, 0] = 2 * (x*z - y*w)
+    rot_matrix[..., 2, 1] = 2 * (y*z + x*w)
+    rot_matrix[..., 2, 2] = 1 - 2 * (x**2 + y**2)
+
+    return rot_matrix
+
+
+def get_spherical_harmonic_from_xyz_torch(
+    xyz: torch.Tensor  # (3,)
+):
+    xyz /= torch.norm(xyz)
+    x, y, z = xyz[0], xyz[1], xyz[2]
+    l0m0 = 0.28209479177387814
+    l1m1 = -0.48860251190291987 * y
+    l1m0 = 0.48860251190291987 * z
+    l1p1 = -0.48860251190291987 * x
+    l2m2 = 1.0925484305920792 * x * y
+    l2m1 = -1.0925484305920792 * y * z
+    l2m0 = 0.94617469575755997 * z * z - 0.31539156525251999
+    l2p1 = -1.0925484305920792 * x * z
+    l2p2 = 0.54627421529603959 * x * x - 0.54627421529603959 * y * y
+    l3m3 = 0.59004358992664352 * y * (-3.0 * x * x + y * y)
+    l3m2 = 2.8906114426405538 * x * y * z
+    l3m1 = 0.45704579946446572 * y * (1.0 - 5.0 * z * z)
+    l3m0 = 0.3731763325901154 * z * (5.0 * z * z - 3.0)
+    l3p1 = 0.45704579946446572 * x * (1.0 - 5.0 * z * z)
+    l3p2 = 1.4453057213202769 * z * (x * x - y * y)
+    l3p3 = 0.59004358992664352 * x * (-x * x + 3.0 * y * y)
+    return torch.tensor([
+        l0m0, l1m1, l1m0, l1p1, l2m2, l2m1, l2m0, l2p1, l2p2, l3m3, l3m2, l3m1, l3m0, l3p1, l3p2, l3p3])

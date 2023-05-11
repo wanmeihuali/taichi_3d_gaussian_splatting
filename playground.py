@@ -1,4 +1,5 @@
 # %%
+from utils import torch_single_point_alpha_forward
 import scipy.spatial.transform as transform
 import taichi as ti
 import torch
@@ -401,5 +402,90 @@ K = np.array([
 uv1 = K @ np.array([[x], [y], [z]]) / z
 # %%
 uv1
+
+# %%
+
+
+def quaternion_to_rotation_matrix_torch(q):
+    """
+    Convert a quaternion into a full three-dimensional rotation matrix.
+
+    Input:
+    :param q: A tensor of size (B, 4), where B is batch size and quaternion is in format (x, y, z, w).
+
+    Output:
+    :return: A tensor of size (B, 3, 3), where B is batch size.
+    """
+    # Ensure quaternion has four components
+    assert q.shape[-1] == 4, "Input quaternion should have 4 components!"
+
+    x, y, z, w = q.unbind(-1)
+
+    # Compute quaternion norms
+    q_norm = torch.norm(q, dim=-1, keepdim=True)
+    # Normalize input quaternions
+    q = q / q_norm
+
+    # Compute the quaternion outer product
+    q_outer = torch.einsum('...i,...j->...ij', q, q)
+
+    # Compute rotation matrix
+    rot_matrix = torch.empty(
+        (*q.shape[:-1], 3, 3), dtype=q.dtype, device=q.device)
+    rot_matrix[..., 0, 0] = 1 - 2 * (y**2 + z**2)
+    rot_matrix[..., 0, 1] = 2 * (x*y - z*w)
+    rot_matrix[..., 0, 2] = 2 * (x*z + y*w)
+    rot_matrix[..., 1, 0] = 2 * (x*y + z*w)
+    rot_matrix[..., 1, 1] = 1 - 2 * (x**2 + z**2)
+    rot_matrix[..., 1, 2] = 2 * (y*z - x*w)
+    rot_matrix[..., 2, 0] = 2 * (x*z - y*w)
+    rot_matrix[..., 2, 1] = 2 * (y*z + x*w)
+    rot_matrix[..., 2, 2] = 1 - 2 * (x**2 + y**2)
+
+    return rot_matrix
+
+
+q = torch.tensor([0.0229, 0.9774, 0.1204, 0.1725])
+q = q / torch.norm(q)
+print(quaternion_to_rotation_matrix_torch(q))
+# %%
+np_R = transform.Rotation.from_quat(q).as_matrix()
+print(np_R)
+# %%
+
+T_camera_pointcloud = torch.tensor([[1., 0., 0., 0.],
+                                    [0., 1., 0., 0.],
+                                    [0., 0., 1., 2.],
+                                    [0., 0., 0., 1.]])
+camera_intrinsics = torch.tensor([[32.,  0., 16.],
+                                  [0., 32., 16.],
+                                  [0.,  0.,  1.]])
+direction = torch.tensor([-0.3906, -0.3906,  5.0000])
+origin = torch.tensor([0., 0., -2.])
+xyz = torch.tensor([-0.4325, -0.7224, -0.4733])
+features = torch.tensor([0.0115,  0.5507,  0.6920,  0.4666,  0.6306,  0.0871, -0.0112,  1.7667,
+                         2.2963,  0.1560,  0.8710,  0.3418,  0.3658,  0.1913,  0.8727,  0.3608,
+                         0.6874,  0.7516,  0.9281,  0.5649,  0.9469,  0.9090,  0.7356,  0.5436,
+                         1.7886,  0.7542,  0.9568,  0.2868,  0.3552,  0.3872,  0.0827,  0.4101,
+                         0.7783,  0.6266,  0.9601,  0.8252,  0.7846,  0.0183,  0.6635,  0.4688,
+                         -1.4012,  0.1584,  0.3252,  0.5403,  0.4992,  0.2780,  0.7412,  0.5056,
+                         0.8236,  0.9722,  0.5467,  0.6644,  0.2583,  0.0953,  0.3986,  0.2265])
+q = features[:4]
+s = features[4:7]
+point_alpha = features[7]
+r_sh = features[8:24]
+g_sh = features[24:40]
+b_sh = features[40:56]
+pixel_uv = torch.tensor([3, 3])
+
+torch_single_point_alpha_forward(
+    point_xyz=xyz,
+    point_q=q,
+    point_s=s,
+    T_camera_pointcloud=T_camera_pointcloud,
+    camera_intrinsics=camera_intrinsics,
+    point_alpha=point_alpha,
+    pixel_uv=pixel_uv
+)
 
 # %%

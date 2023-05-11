@@ -123,7 +123,9 @@ class GaussianPoint3D:
         # the forward output is uv, cov_uv, the backward input is d_uv, d_cov_uv
         # jacobian: d_uv / d_translation, d_cov_uv / d_cov_rotation, d_cov_uv / d_cov_scale
         # in paper, d_cov_uv / d_cov_rotation is called d_Sigma' / dq, d_cov_uv / d_cov_scale is called d_Sigma' / ds
-        t = self.translation
+        # t = self.translation
+        t = T_camera_world @ ti.math.vec4(
+            [self.translation.x, self.translation.y, self.translation.z, 1])
         K = projective_transform
         # d_uv_d_translation_camera = \left[\begin{matrix}\frac{K_{0, 0}}{t_{2, 0}} & \frac{K_{0, 1}}{t_{2, 0}} & \frac{- K_{0, 0} t_{0, 0} - K_{0, 1} t_{1, 0}}{t_{2, 0}^{2}}\\\frac{K_{1, 0}}{t_{2, 0}} & \frac{K_{1, 1}}{t_{2, 0}} & \frac{- K_{1, 0} t_{0, 0} - K_{1, 1} t_{1, 0}}{t_{2, 0}^{2}}\end{matrix}\right]
         d_uv_d_translation_camera = mat2x3f([
