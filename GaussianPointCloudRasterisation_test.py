@@ -341,12 +341,6 @@ class TestRasterisation(unittest.TestCase):
             uv_grad = gaussian_alpha_grad * \
                 d_p_d_mean
             print(f"taichi uv_grad: {uv_grad}")
-            K = camera_intrinsics_mat
-            t = translation_camera
-            d_uv_d_translation_camera = mat2x3f([
-                [K[0, 0] / t.z, K[0, 1] / t.z,
-                    (-K[0, 0] * t.x - K[0, 1] * t.y) / (t.z * t.z)],
-                [K[1, 0] / t.z, K[1, 1] / t.z, (-K[1, 0] * t.x - K[1, 1] * t.y) / (t.z * t.z)]])
             translation_grad = gaussian_alpha_grad * \
                 d_p_d_mean @ d_uv_d_translation
             print(f"taichi translation_grad: {translation_grad}")
@@ -355,6 +349,9 @@ class TestRasterisation(unittest.TestCase):
                 d_p_d_cov_flat @ d_Sigma_prime_d_q
             gaussian_s_grad = gaussian_alpha_grad * \
                 d_p_d_cov_flat @ d_Sigma_prime_d_s
+            cov_flat_grad = gaussian_alpha_grad * \
+                d_p_d_cov_flat  # (4,)
+            print(f"taichi cov_flat_grad: {cov_flat_grad}")
             pointcloud_grad[0, 0] = translation_grad[0]
             pointcloud_grad[0, 1] = translation_grad[1]
             pointcloud_grad[0, 2] = translation_grad[2]
@@ -385,3 +382,6 @@ class TestRasterisation(unittest.TestCase):
         self.assertTrue(np.allclose(
             pointcloud_grad.detach().cpu().numpy(), xyz_grad.detach().cpu().numpy(), atol=1e-4),
             msg=f"Expected: {pointcloud_grad.detach().cpu().numpy()}, Actual: {xyz_grad.detach().cpu().numpy()}")
+        self.assertTrue(np.allclose(
+            pointcloud_features_grad[:8].detach().cpu().numpy(), xyz_feature_grad[:8].detach().cpu().numpy(), atol=1e-2),
+            msg=f"Expected: {pointcloud_features_grad[:8].detach().cpu().numpy()}, Actual: {xyz_feature_grad[:8].detach().cpu().numpy()}")

@@ -324,8 +324,23 @@ diff = xy - mu
 exponent = -0.5 * diff.T @ inv_cov @ diff
 normalization = 1 / (2 * np.pi * (det_cov ** 0.5))
 p = normalization * torch.exp(exponent)
-
 p.backward()
+print(mu.grad)
+print(cov.grad)
+# %%
+xy = torch.tensor([3.5, 3.5])
+mu = torch.tensor([6.9347, 0.8583], requires_grad=True)
+cov = torch.tensor([[87.5116, -52.6297],
+                    [-52.6296,  31.8323]], requires_grad=True)
+inv_cov = torch.inverse(cov)
+det_cov = torch.det(cov)
+diff = xy - mu
+exponent = -0.5 * diff.T @ inv_cov @ diff
+normalization = 1 / (2 * np.pi * (det_cov ** 0.5))
+p = normalization * torch.exp(exponent)
+p *= 1.7667
+p.backward()
+print(p)
 print(mu.grad)
 print(cov.grad)
 

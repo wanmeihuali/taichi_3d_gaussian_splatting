@@ -274,15 +274,15 @@ def torch_single_point_alpha_forward(
     W = T_camera_pointcloud[:3, :3]  # (3, 3)
     cov = J @ W @ Sigma @ W.T @ J.T  # (2, 2)
     print(cov)
+    cov.register_hook(lambda grad: print(f"torch cov grad: {grad}"))
     # for 2d gaussian center at uv with covariance cov, the probability density of pixel_uv is:
     det_cov = cov.det()
-    inv_cov = (1. / det_cov) * torch.tensor([
-        [cov[1, 1], -cov[0, 1]],
-        [-cov[1, 0], cov[0, 0]]
-    ])  # (2, 2)
+    inv_cov = torch.inverse(cov)
     pixel_uv_center = pixel_uv.float() + 0.5
     p = torch.exp(-0.5 * (pixel_uv_center - uv).T @ inv_cov @
                   (pixel_uv_center - uv)) / (2 * np.pi * torch.sqrt(det_cov))  # (1,)
+    print("torch p: ", p)
+    print("torch point_alpha: ", point_alpha)
     alpha = point_alpha * p  # (1,)
     return alpha
 
