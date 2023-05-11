@@ -74,9 +74,15 @@ def get_projective_transform_jacobian(
     x = xyz.x
     y = xyz.y
     z = xyz.z
+    """
     return mat2x3f([
-        [fx / z, 0, cx / z - (cx * z + fx * x) / (z * z)],
-        [0, fy / z, cy / z - (cy * z + fy * y) / (z * z)]
+        [fx/z, 0, cx/z],
+        [0, fy/z, cy/z]
+    ])
+    """
+    return mat2x3f([
+        [fx / z, 0, -(fx * x) / (z * z)],
+        [0, fy / z, -(fy * y) / (z * z)]
     ])
 
 

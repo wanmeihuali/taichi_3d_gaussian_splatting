@@ -1,4 +1,5 @@
 # %%
+import scipy.spatial.transform as transform
 import taichi as ti
 import torch
 import numpy as np
@@ -358,5 +359,47 @@ def test_taichi(
 
 
 test_taichi(1920, 1080, image, count, out)
+
+# %%
+# tensor([0.0229, 0.9774, 0.1204, 0.1725, 0.7236, 0.7606, 0.9650, 0.1946, 0.5849],
+q = np.array([0.0229, 0.9774, 0.1204, 0.1725])
+# %%
+np.linalg.norm(q)
+# %%
+# convert q to rotation matrix
+R = transform.Rotation.from_quat(q)
+# %%
+S = np.diag([0.7606, 0.9650, 0.1946])
+# %%
+S
+# %%
+fx = 32
+fy = 32
+cx = 16
+cy = 16
+x, y, z = -0.1316, -0.2471, 1.0090
+J = np.array([
+    [fx / z, 0, -fx * x / (z * z)],
+    [0, fy / z, -fy * y / (z * z)]])
+W = np.eye(3)
+# %%
+Sigma = R.as_matrix() @ S @ S @ R.as_matrix().T
+
+# %%
+Sigma
+# %%
+cov = J @ W @ Sigma @ W.T @ J.T
+# %%
+cov
+# %%
+K = np.array([
+    [fx, 0, cx],
+    [0, fy, cy],
+    [0, 0, 1]
+])
+# %%
+uv1 = K @ np.array([[x], [y], [z]]) / z
+# %%
+uv1
 
 # %%

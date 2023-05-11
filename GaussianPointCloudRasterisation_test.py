@@ -159,7 +159,7 @@ class TestRasterisation(unittest.TestCase):
             4, dtype=torch.float32, device=torch.device("cuda:0"))
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
-                near_plane=0.1,
+                near_plane=1.,
                 far_plane=10.
             ))
         optimizer = torch.optim.Adam(
