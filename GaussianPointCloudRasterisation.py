@@ -247,7 +247,9 @@ def gaussian_point_rasterisation(
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
             )
-            alpha = gaussian_alpha * gaussian_point_3d.alpha
+            point_alpha_after_activation = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
+            alpha = gaussian_alpha * point_alpha_after_activation
             # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
             # 255 ) and also clamp 𝛼 with 0.99 from above.
             # print(
@@ -393,7 +395,9 @@ def gaussian_point_rasterisation_backward(
             )
             d_p_d_cov_flat = ti.math.vec4(
                 [d_p_d_cov[0, 0], d_p_d_cov[0, 1], d_p_d_cov[1, 0], d_p_d_cov[1, 1]])
-            prod_alpha = gaussian_alpha * gaussian_point_3d.alpha
+            point_alpha_after_activation = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
+            prod_alpha = gaussian_alpha * point_alpha_after_activation
             # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
             # 255 ) and also clamp 𝛼 with 0.99 from above.
             if prod_alpha >= 1. / 255.:
@@ -421,8 +425,11 @@ def gaussian_point_rasterisation_backward(
                     color * pixel_rgb_grad
                 alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
                     alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
-                gaussian_point_3d_alpha_grad = alpha_grad * gaussian_alpha
-                gaussian_alpha_grad = alpha_grad * gaussian_point_3d.alpha
+                point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
+                gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
+                    (1. - point_alpha_after_activation) * \
+                    point_alpha_after_activation
+                gaussian_alpha_grad = alpha_grad * point_alpha_after_activation
                 # gaussian_alpha_grad is dp
                 translation_grad = gaussian_alpha_grad * \
                     d_p_d_mean @ d_uv_d_translation

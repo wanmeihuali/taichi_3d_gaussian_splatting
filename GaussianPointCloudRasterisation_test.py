@@ -272,7 +272,9 @@ class TestRasterisation(unittest.TestCase):
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
             )
-            alpha = gaussian_alpha * gaussian_point_3d.alpha
+            point_alpha_after_activation = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
+            alpha = gaussian_alpha * point_alpha_after_activation
             return alpha
         ti_alpha = single_point_alpha_forward(
             pixel_u=pixel_uv[0].item(),
@@ -335,9 +337,15 @@ class TestRasterisation(unittest.TestCase):
             )
             d_p_d_cov_flat = ti.math.vec4(
                 [d_p_d_cov[0, 0], d_p_d_cov[0, 1], d_p_d_cov[1, 0], d_p_d_cov[1, 1]])
-            prod_alpha = gaussian_alpha * gaussian_point_3d.alpha
-            ggaussian_point_3d_alpha_grad = alpha_grad * gaussian_alpha
-            gaussian_alpha_grad = alpha_grad * gaussian_point_3d.alpha
+            point_alpha_after_activation = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
+            prod_alpha = gaussian_alpha * point_alpha_after_activation
+
+            point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
+            gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
+                (1. - point_alpha_after_activation) * \
+                point_alpha_after_activation
+            gaussian_alpha_grad = alpha_grad * point_alpha_after_activation
             # gaussian_alpha_grad is dp
             uv_grad = gaussian_alpha_grad * \
                 d_p_d_mean
@@ -363,7 +371,7 @@ class TestRasterisation(unittest.TestCase):
             pointcloud_features_grad[0, 4] = gaussian_s_grad[0]
             pointcloud_features_grad[0, 5] = gaussian_s_grad[1]
             pointcloud_features_grad[0, 6] = gaussian_s_grad[2]
-            pointcloud_features_grad[0, 7] = ggaussian_point_3d_alpha_grad
+            pointcloud_features_grad[0, 7] = gaussian_point_3d_alpha_grad
 
         pointcloud_grad = torch.zeros(1, 3, dtype=torch.float32)
         pointcloud_features_grad = torch.zeros(1, 56, dtype=torch.float32)

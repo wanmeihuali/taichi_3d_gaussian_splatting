@@ -284,7 +284,7 @@ def torch_single_point_alpha_forward(
                   (pixel_uv_center - uv)) / (2 * np.pi * torch.sqrt(det_cov))  # (1,)
     print("torch p: ", p)
     print("torch point_alpha: ", point_alpha)
-    alpha = point_alpha * p  # (1,)
+    alpha = torch.sigmoid(point_alpha) * p  # (1,)
     return alpha
 
 
