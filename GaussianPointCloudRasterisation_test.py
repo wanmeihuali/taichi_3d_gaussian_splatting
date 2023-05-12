@@ -158,7 +158,7 @@ class TestRasterisation(unittest.TestCase):
             "cuda:0")) - 0.5) * 3)
         tmp = torch.rand(size=(
             num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
-        tmp[:, 4:7] = 0.01
+        tmp[:, 4:7] = -4.60517018599
         tmp[:, 7] = 0.5
         point_cloud_features = torch.nn.Parameter(tmp)
         camera_info = CameraInfo(
@@ -210,7 +210,7 @@ class TestRasterisation(unittest.TestCase):
         origin = torch.tensor([0., 0., -2.])
         xyz = torch.tensor([-0.4325, -0.7224, -0.4733],
                            dtype=torch.float32, requires_grad=True)
-        features = torch.tensor([0.0115,  0.5507,  0.6920,  0.4666,  0.6306,  0.0871, -0.0112,  1.7667,
+        features = torch.tensor([0.0115,  0.5507,  0.6920,  0.4666,  np.log(0.6306),  np.log(0.0871), np.log(0.0112),  1.7667,
                                 2.2963,  0.1560,  0.8710,  0.3418,  0.3658,  0.1913,  0.8727,  0.3608,
                                 0.6874,  0.7516,  0.9281,  0.5649,  0.9469,  0.9090,  0.7356,  0.5436,
                                 1.7886,  0.7542,  0.9568,  0.2868,  0.3552,  0.3872,  0.0827,  0.4101,

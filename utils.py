@@ -260,7 +260,8 @@ def torch_single_point_alpha_forward(
     print(uv)
     # add hook to get the gradient of uv
     uv.register_hook(lambda grad: print(f"torch uv grad: {grad}"))
-    S = torch.diag(point_s)  # (3, 3)
+    exp_s = torch.exp(point_s)  # (3,)
+    S = torch.diag(exp_s)  # (3, 3)
     R = quaternion_to_rotation_matrix_torch(point_q)  # (3, 3)
     Sigma = R @ S @ S @ R.T  # (3, 3)
     print(Sigma)

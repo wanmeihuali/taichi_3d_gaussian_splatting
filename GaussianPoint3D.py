@@ -150,10 +150,11 @@ class GaussianPoint3D:
             projective_transform, translation_camera)
         T = T_camera_world
         R = rotation_matrix_from_quaternion(self.cov_rotation)
+        exp_cov_scale = ti.math.exp(self.cov_scale)
         S = ti.math.mat3([
-            [self.cov_scale.x, 0, 0],
-            [0, self.cov_scale.y, 0],
-            [0, 0, self.cov_scale.z]
+            [exp_cov_scale.x, 0, 0],
+            [0, exp_cov_scale.y, 0],
+            [0, 0, exp_cov_scale.z]
         ])
         # covariance matrix, 3x3, equation (6) in the paper
         Sigma = R @ S @ S.transpose() @ R.transpose()
@@ -181,10 +182,11 @@ class GaussianPoint3D:
             projective_transform, translation_camera)
         T = T_camera_world
         R = rotation_matrix_from_quaternion(self.cov_rotation)
+        exp_cov_scale = ti.math.exp(self.cov_scale)
         S = ti.math.mat3([
-            [self.cov_scale.x, 0, 0],
-            [0, self.cov_scale.y, 0],
-            [0, 0, self.cov_scale.z]
+            [exp_cov_scale.x, 0, 0],
+            [0, exp_cov_scale.y, 0],
+            [0, 0, exp_cov_scale.z]
         ])
         M = R @ S
         W = ti.math.mat3([
@@ -226,7 +228,7 @@ class GaussianPoint3D:
         d_Sigma_prime_d_M = d_Sigma_prime_d_Sigma @ d_Sigma_d_M  # 4x9
         # M = R @ S, so d_M / d_S = R
         # \left[\begin{matrix}R_{0, 0} & 0 & 0\\0 & R_{0, 1} & 0\\0 & 0 & R_{0, 2}\\R_{1, 0} & 0 & 0\\0 & R_{1, 1} & 0\\0 & 0 & R_{1, 2}\\R_{2, 0} & 0 & 0\\0 & R_{2, 1} & 0\\0 & 0 & R_{2, 2}\end{matrix}\right]
-        d_M_d_s = mat9x3f([
+        d_M_d_S = mat9x3f([
             [R[0, 0], 0, 0],
             [0, R[0, 1], 0],
             [0, 0, R[0, 2]],
@@ -237,11 +239,16 @@ class GaussianPoint3D:
             [0, R[2, 1], 0],
             [0, 0, R[2, 2]],
         ])
-        d_Sigma_prime_d_s = d_Sigma_prime_d_M @ d_M_d_s  # 4x3
+        d_S_d_s = ti.math.mat3([
+            [exp_cov_scale.x, 0, 0],
+            [0, exp_cov_scale.y, 0],
+            [0, 0, exp_cov_scale.z]
+        ])
+        d_Sigma_prime_d_s = d_Sigma_prime_d_M @ d_M_d_S  @ d_S_d_s  # 4x3
 
         # d_M / dq is 4x3x3 tensor, we flatten it to a matrix 9 x 4
         # \left[\begin{matrix}0 & - 4 s_{00} y & - 4 s_{00} z & 0\\2 s_{11} y & 2 s_{11} x & - 2 s_{11} w & - 2 s_{11} z\\2 s_{22} z & 2 s_{22} w & 2 s_{22} x & 2 s_{22} y\\2 s_{00} y & 2 s_{00} x & 2 s_{00} w & 2 s_{00} z\\- 4 s_{11} x & 0 & - 4 s_{11} z & 0\\- 2 s_{22} w & 2 s_{22} z & 2 s_{22} y & - 2 s_{22} x\\2 s_{00} z & - 2 s_{00} w & 2 s_{00} x & - 2 s_{00} y\\2 s_{11} w & 2 s_{11} z & 2 s_{11} y & 2 s_{11} x\\- 4 s_{22} x & - 4 s_{22} y & 0 & 0\end{matrix}\right]
-        s = self.cov_scale
+        s = exp_cov_scale
         q = self.cov_rotation
         d_M_d_q = mat9x4f([
             [0, -4 * s.x * q.y, -4 * s.x * q.z, 0],
