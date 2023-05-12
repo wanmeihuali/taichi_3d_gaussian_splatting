@@ -139,6 +139,75 @@ class TestRasterisation(unittest.TestCase):
             loss = image.sum()
             loss.backward()
 
+    def test_backward_hook(self):
+        """ use a fake image, and test if gradient descent can have a good coverage
+        """
+        image_size = (32, 32)
+        num_points = 10000
+        fake_image = torch.zeros(
+            size=(image_size[0], image_size[1], 3), dtype=torch.float32, device=torch.device("cuda:0"))
+        fake_image[:5, :2, 0] = 1.0
+        fake_image[:5, :2, 1] = 0.7
+        fake_image[8:24, 8:24, 0] = 0.5
+        fake_image[8:24, 8:24, 1] = 0.2
+        fake_image[8:24, 8:24, 1] = 0.7
+        fake_image[20:28, 20:28, 0] = 0.8
+        fake_image[20:28, 20:28, 1] = 0.1
+        fake_image[20:28, 20:28, 1] = 0.1
+        point_cloud = torch.nn.Parameter((torch.rand(size=(num_points, 3), dtype=torch.float32, device=torch.device(
+            "cuda:0")) - 0.5) * 3)
+        tmp = torch.rand(size=(
+            num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+        tmp[:, 4:7] = -4.60517018599
+        tmp[:, 7] = 0.5
+        point_cloud_features = torch.nn.Parameter(tmp)
+        camera_info = CameraInfo(
+            camera_height=image_size[0],
+            camera_width=image_size[1],
+            camera_id=0,
+            camera_intrinsics=torch.tensor([[32, 0, 16], [0, 32, 16], [
+                                           0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
+        )
+        T_camera_world = torch.eye(
+            4, dtype=torch.float32, device=torch.device("cuda:0"))
+        T_camera_world[2, 3] = -2
+
+        def backward_valid_point_hook(input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
+            num_points_in_camera = input_data.point_in_camera_id.shape[0]
+            self.assertEqual(num_points_in_camera,
+                             input_data.grad_point_in_camera.shape[0])
+            self.assertEqual(num_points_in_camera,
+                             input_data.grad_pointfeatures_in_camera.shape[0])
+            self.assertEqual(num_points_in_camera,
+                             input_data.grad_viewspace.shape[0])
+            self.assertEqual(input_data.grad_point_in_camera.shape[1], 3)
+            self.assertEqual(
+                input_data.grad_pointfeatures_in_camera.shape[1], 56)
+            self.assertEqual(input_data.grad_viewspace.shape[1], 2)
+            print(
+                f"grad_viewspace mean: {input_data.grad_viewspace.abs().mean()}, grad_viewspace std: {input_data.grad_viewspace.std()}")
+
+        gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
+            backward_valid_point_hook=backward_valid_point_hook,
+            config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
+                near_plane=1.,
+                far_plane=10.
+            ))
+        optimizer = torch.optim.Adam(
+            [point_cloud, point_cloud_features], lr=0.001)
+        optimizer.zero_grad()
+        input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
+            point_cloud=point_cloud,
+            point_cloud_features=point_cloud_features,
+            camera_info=camera_info,
+            T_pointcloud_camera=T_camera_world,
+            color_l0_only=True)
+        pred_image = gaussian_point_cloud_rasterisation(input_data)
+        loss = ((pred_image - fake_image)**2).sum()
+        loss.backward()
+        optimizer.step()
+        print(f"loss: {loss.item()}")
+
     def test_backward_coverage(self):
         """ use a fake image, and test if gradient descent can have a good coverage
         """
