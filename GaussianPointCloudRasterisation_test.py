@@ -133,8 +133,7 @@ class TestRasterisation(unittest.TestCase):
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
                 camera_info=camera_info,
-                T_pointcloud_camera=T_pointcloud_to_camera,
-                color_l0_only=False)
+                T_pointcloud_camera=T_pointcloud_to_camera)
             image = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
@@ -200,8 +199,7 @@ class TestRasterisation(unittest.TestCase):
             point_cloud=point_cloud,
             point_cloud_features=point_cloud_features,
             camera_info=camera_info,
-            T_pointcloud_camera=T_camera_world,
-            color_l0_only=True)
+            T_pointcloud_camera=T_camera_world)
         pred_image = gaussian_point_cloud_rasterisation(input_data)
         loss = ((pred_image - fake_image)**2).sum()
         loss.backward()
@@ -256,7 +254,7 @@ class TestRasterisation(unittest.TestCase):
                 point_cloud_features=point_cloud_features,
                 camera_info=camera_info,
                 T_pointcloud_camera=T_camera_world,
-                color_l0_only=True)
+                color_max_sh_band=0)
             pred_image = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()
             loss.backward()

@@ -292,7 +292,6 @@ def atomic_accumulate_grad_for_point(
     color_r_grad: vec16f,
     color_g_grad: vec16f,
     color_b_grad: vec16f,
-    color_l0_only: bool
 ):
     ti.atomic_add(viewspace_grad[point_offset, 0], point_viewspace_grad[0])
     ti.atomic_add(viewspace_grad[point_offset, 1], point_viewspace_grad[1])
@@ -307,21 +306,14 @@ def atomic_accumulate_grad_for_point(
                       gaussian_s_grad[offset])
     ti.atomic_add(pointfeatures_grad[point_offset, 7],
                   gaussian_point_3d_alpha_grad)
-    if color_l0_only:
-        ti.atomic_add(pointfeatures_grad[point_offset, 8],
-                      color_r_grad[0])
-        ti.atomic_add(pointfeatures_grad[point_offset, 24],
-                      color_g_grad[0])
-        ti.atomic_add(pointfeatures_grad[point_offset, 40],
-                      color_b_grad[0])
-    else:
-        for offset in ti.static(range(16)):
-            ti.atomic_add(pointfeatures_grad[point_offset, 8 + offset],
-                          color_r_grad[offset])
-            ti.atomic_add(pointfeatures_grad[point_offset, 24 + offset],
-                          color_g_grad[offset])
-            ti.atomic_add(pointfeatures_grad[point_offset, 40 + offset],
-                          color_b_grad[offset])
+
+    for offset in ti.static(range(16)):
+        ti.atomic_add(pointfeatures_grad[point_offset, 8 + offset],
+                      color_r_grad[offset])
+        ti.atomic_add(pointfeatures_grad[point_offset, 24 + offset],
+                      color_g_grad[offset])
+        ti.atomic_add(pointfeatures_grad[point_offset, 40 + offset],
+                      color_b_grad[offset])
 
 
 @ti.kernel
@@ -344,7 +336,6 @@ def gaussian_point_rasterisation_backward(
     point_in_camera_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     pointfeatures_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, K)
     viewspace_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
-    color_l0_only: bool
 ):
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in range(3)] for row in range(3)])
@@ -457,7 +448,7 @@ def gaussian_point_rasterisation_backward(
                     color_r_grad=color_r_grad,
                     color_g_grad=color_g_grad,
                     color_b_grad=color_b_grad,
-                    color_l0_only=color_l0_only)
+                )
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
@@ -473,7 +464,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_cloud_features: torch.Tensor  # NxM
         camera_info: CameraInfo
         T_pointcloud_camera: torch.Tensor  # 4x4
-        color_l0_only: bool = False
+        color_max_sh_band: int = 2
 
     @dataclass
     class BackwardValidPointHookInput:
@@ -495,7 +486,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
             @staticmethod
             @custom_fwd(cast_inputs=torch_type)
-            def forward(ctx, pointcloud, pointcloud_features, T_pointcloud_camera, camera_info, color_l0_only):
+            def forward(ctx, pointcloud, pointcloud_features, T_pointcloud_camera, camera_info, color_max_sh_band):
                 point_in_camera_mask = torch.zeros(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
@@ -606,7 +597,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     T_camera_pointcloud
                 )
                 ctx.camera_info = camera_info
-                ctx.color_l0_only = color_l0_only
+                ctx.color_max_sh_band = color_max_sh_band
                 # rasterized_image.requires_grad_(True)
                 return rasterized_image
 
@@ -617,7 +608,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, pointcloud_features, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
                     camera_info = ctx.camera_info
-                    color_l0_only = ctx.color_l0_only
+                    color_max_sh_band = ctx.color_max_sh_band
                     ray_origin, direction = get_ray_origin_and_direction_from_camera(
                         T_pointcloud_camera=T_pointcloud_camera,
                         camera_info=camera_info)
@@ -646,7 +637,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_in_camera_grad=grad_point_in_camera,
                         pointfeatures_grad=grad_pointfeatures,
                         viewspace_grad=grad_viewspace,
-                        color_l0_only=color_l0_only,
                     )
                     del ray_origin, direction, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     if backward_valid_point_hook is not None:
@@ -658,6 +648,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
+                    grad_pointfeatures = self._clear_grad_by_color_max_sh_band(
+                        grad_pointcloud_features=grad_pointfeatures,
+                        color_max_sh_band=color_max_sh_band)
                     grad_pointcloud = torch.zeros_like(pointcloud)
                     grad_pointcloud_features = torch.zeros_like(
                         pointcloud_features)
@@ -668,12 +661,29 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
         self._module_function = _module_function
 
+    def _clear_grad_by_color_max_sh_band(self, grad_pointcloud_features: torch.Tensor, color_max_sh_band: int):
+        if color_max_sh_band == 0:
+            grad_pointcloud_features[:, 8 + 1: 8 + 16] = 0.
+            grad_pointcloud_features[:, 24 + 1: 24 + 16] = 0.
+            grad_pointcloud_features[:, 40 + 1: 40 + 16] = 0.
+        elif color_max_sh_band == 1:
+            grad_pointcloud_features[:, 8 + 4: 8 + 16] = 0.
+            grad_pointcloud_features[:, 24 + 4: 24 + 16] = 0.
+            grad_pointcloud_features[:, 40 + 4: 40 + 16] = 0.
+        elif color_max_sh_band == 2:
+            grad_pointcloud_features[:, 8 + 9: 8 + 16] = 0.
+            grad_pointcloud_features[:, 24 + 9: 24 + 16] = 0.
+            grad_pointcloud_features[:, 40 + 9: 40 + 16] = 0.
+        elif color_max_sh_band >= 3:
+            pass
+        return grad_pointcloud_features
+
     def forward(self, input_data: GaussianPointCloudRasterisationInput):
         pointcloud = input_data.point_cloud
         pointcloud_features = input_data.point_cloud_features
         T_pointcloud_camera = input_data.T_pointcloud_camera
-        color_l0_only = input_data.color_l0_only
+        color_max_sh_band = input_data.color_max_sh_band
         camera_info = input_data.camera_info
         assert camera_info.camera_width % 16 == 0
         assert camera_info.camera_height % 16 == 0
-        return self._module_function.apply(pointcloud, pointcloud_features, T_pointcloud_camera, camera_info, color_l0_only)
+        return self._module_function.apply(pointcloud, pointcloud_features, T_pointcloud_camera, camera_info, color_max_sh_band)
