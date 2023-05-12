@@ -8,7 +8,7 @@ class GaussianPointCloudScene(torch.nn.modules):
 
     @dataclass
     class PointCloudSceneConfig:
-        num_of_features: int
+        num_of_features: int = 56
 
     def __init__(
         self,

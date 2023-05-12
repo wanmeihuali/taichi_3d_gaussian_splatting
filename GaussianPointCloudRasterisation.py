@@ -12,6 +12,7 @@ from utils import (torch_type, data_type, ti2torch, torch2ti,
                    inverse_se3)
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
 from SphericalHarmonics import SphericalHarmonics, vec16f
+from typing import List, Tuple, Optional, Callable, Union
 
 
 @ti.kernel
@@ -459,9 +460,17 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         T_pointcloud_camera: torch.Tensor  # 4x4
         color_l0_only: bool = False
 
+    @dataclass
+    class BackwardValidPointHookInput:
+        point_in_camera_id: torch.Tensor  # M
+        grad_point_in_camera: torch.Tensor  # Mx3
+        grad_pointfeatures_in_camera: torch.Tensor  # Mx56
+
     def __init__(
         self,
         config: GaussianPointCloudRasterisationConfig,
+        backward_valid_point_hook: Optional[Callable[[
+            BackwardValidPointHookInput], None]] = None,
     ):
         super().__init__()
         self.config = config
@@ -621,6 +630,14 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         color_l0_only=color_l0_only,
                     )
                     del ray_origin, direction, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
+                    if backward_valid_point_hook is not None:
+                        backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
+                            point_in_camera_id=point_in_camera_id,
+                            grad_point_in_camera=grad_point_in_camera,
+                            grad_pointfeatures_in_camera=grad_pointfeatures,
+                        )
+                        backward_valid_point_hook(
+                            backward_valid_point_hook_input)
                     grad_pointcloud = torch.zeros_like(pointcloud)
                     grad_pointcloud_features = torch.zeros_like(
                         pointcloud_features)
