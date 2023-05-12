@@ -14,10 +14,10 @@ class GaussianPoint3d_test(unittest.TestCase):
         projective_transform = np.array(
             [[32, 0, 16], [0, 32, 16], [0, 0, 1]], dtype=np.float32)
         xyz = np.array([-0.1316, -0.2471, 1.0090], dtype=np.float32)
-        s = np.array([0.7606, 0.9650, 0.1946])
+        s = np.array([np.log(0.7606), np.log(0.9650), np.log(0.1946)])
         q = np.array([0.0229, 0.9774, 0.1204, 0.1725])
         R = transform.Rotation.from_quat(q)
-        S = np.diag(s)
+        S = np.diag(np.exp(s))
         fx, fy, cx, cy = projective_transform[0, 0], projective_transform[1,
                                                                           1], projective_transform[0, 2], projective_transform[1, 2]
         x, y, z = xyz

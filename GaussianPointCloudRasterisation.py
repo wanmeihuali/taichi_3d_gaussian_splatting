@@ -283,6 +283,8 @@ def atomic_accumulate_grad_for_point(
     point_offset: ti.i32,
     point_in_camera_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     pointfeatures_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, K)
+    viewspace_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_viewspace_grad: ti.math.vec2,
     translation_grad: ti.math.vec3,
     gaussian_q_grad: ti.math.vec4,
     gaussian_s_grad: ti.math.vec3,
@@ -292,6 +294,8 @@ def atomic_accumulate_grad_for_point(
     color_b_grad: vec16f,
     color_l0_only: bool
 ):
+    ti.atomic_add(viewspace_grad[point_offset, 0], point_viewspace_grad[0])
+    ti.atomic_add(viewspace_grad[point_offset, 1], point_viewspace_grad[1])
     for offset in ti.static(range(3)):
         ti.atomic_add(point_in_camera_grad[point_offset, offset],
                       translation_grad[offset])
@@ -339,6 +343,7 @@ def gaussian_point_rasterisation_backward(
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
     point_in_camera_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     pointfeatures_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, K)
+    viewspace_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     color_l0_only: bool
 ):
     camera_intrinsics_mat = ti.Matrix(
@@ -431,8 +436,9 @@ def gaussian_point_rasterisation_backward(
                     point_alpha_after_activation
                 gaussian_alpha_grad = alpha_grad * point_alpha_after_activation
                 # gaussian_alpha_grad is dp
-                translation_grad = gaussian_alpha_grad * \
-                    d_p_d_mean @ d_uv_d_translation
+                point_viewspace_grad = gaussian_alpha_grad * \
+                    d_p_d_mean  # (2,) as the paper said, view space gradient is used for detect candidates for densification
+                translation_grad = point_viewspace_grad @ d_uv_d_translation
                 # cov is Sigma
                 gaussian_q_grad = gaussian_alpha_grad * \
                     d_p_d_cov_flat @ d_Sigma_prime_d_q
@@ -442,6 +448,8 @@ def gaussian_point_rasterisation_backward(
                     point_offset=point_offset,
                     point_in_camera_grad=point_in_camera_grad,
                     pointfeatures_grad=pointfeatures_grad,
+                    viewspace_grad=viewspace_grad,
+                    point_viewspace_grad=point_viewspace_grad,
                     translation_grad=translation_grad,
                     gaussian_q_grad=gaussian_q_grad,
                     gaussian_s_grad=gaussian_s_grad,
@@ -472,6 +480,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_in_camera_id: torch.Tensor  # M
         grad_point_in_camera: torch.Tensor  # Mx3
         grad_pointfeatures_in_camera: torch.Tensor  # Mx56
+        grad_viewspace: torch.Tensor  # Mx2
 
     def __init__(
         self,
@@ -618,6 +627,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(point_in_camera_id.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
                     grad_pointfeatures = torch.zeros(
                         size=(point_in_camera_id.shape[0], pointcloud_features.shape[1]), dtype=torch.float32, device=pointcloud.device)
+                    grad_viewspace = torch.zeros(
+                        size=(point_in_camera_id.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     gaussian_point_rasterisation_backward(
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
@@ -634,6 +645,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
                         point_in_camera_grad=grad_point_in_camera,
                         pointfeatures_grad=grad_pointfeatures,
+                        viewspace_grad=grad_viewspace,
                         color_l0_only=color_l0_only,
                     )
                     del ray_origin, direction, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
@@ -642,6 +654,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             point_in_camera_id=point_in_camera_id,
                             grad_point_in_camera=grad_point_in_camera,
                             grad_pointfeatures_in_camera=grad_pointfeatures,
+                            grad_viewspace=grad_viewspace,
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
