@@ -143,7 +143,7 @@ class TestGetRayOriginAndDirectionFromCamera(unittest.TestCase):
             [0, 0, 1, 3],
             [0, 0, 0, 1]
         ], dtype=torch.float32)
-        ti.init(ti.gpu, debug=True)
+        ti.init(ti.gpu)
 
     def test_ray_origin_shape(self):
         ray_origin, _ = get_ray_origin_and_direction_from_camera(

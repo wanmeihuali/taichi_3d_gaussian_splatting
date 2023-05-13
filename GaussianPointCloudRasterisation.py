@@ -6,7 +6,7 @@ from Camera import CameraInfo, CameraView
 from torch.cuda.amp import custom_bwd, custom_fwd
 from utils import (torch_type, data_type, ti2torch, torch2ti,
                    ti2torch_grad, torch2ti_grad,
-                   get_ray_origin_and_direction_from_camera,
+                   get_ray_origin_and_direction_by_uv,
                    get_point_probability_density_from_2d_gaussian,
                    grad_point_probability_density_2d,
                    inverse_se3)
@@ -66,9 +66,9 @@ def generate_point_sort_key(
     # we do not save the point_uv and point_in_camera here to save GPU memory. Re-compute should be fast enough.
     # if we save them, we will need to permute them according to the sort_key.
     T_camera_pointcloud_mat = ti.Matrix(
-        [[T_camera_pointcloud[row, col] for col in range(4)] for row in range(4)])
+        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
     camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in range(3)] for row in range(3)])
+        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     for idx in range(point_in_camera_id.shape[0]):
         point_id = point_in_camera_id[idx]
         point_xyz = ti.Vector(
@@ -167,9 +167,9 @@ def generate_point_attributes_in_camera_plane(
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
-        [[T_camera_pointcloud[row, col] for col in range(4)] for row in range(4)])
+        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
     camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in range(3)] for row in range(3)])
+        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     for idx in range(point_in_camera_id.shape[0]):
         point_id = point_in_camera_id[idx]
         normalize_cov_rotation_in_pointcloud_features(
@@ -199,8 +199,8 @@ def generate_point_attributes_in_camera_plane(
 def gaussian_point_rasterisation(
     camera_height: ti.i32,
     camera_width: ti.i32,
-    ray_origin: ti.types.ndarray(ti.f32, ndim=1),  # (3,)
-    ray_direction: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
+    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
+    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
     # (tiles_per_row * tiles_per_col)
@@ -216,7 +216,10 @@ def gaussian_point_rasterisation(
     # (H, W)
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
 ):
-    ray_origin_ti = ti.math.vec3([ray_origin[0], ray_origin[1], ray_origin[2]])
+    T_camera_pointcloud_mat = ti.Matrix(
+        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
+    camera_intrinsics_mat = ti.Matrix(
+        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
     for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
@@ -228,6 +231,12 @@ def gaussian_point_rasterisation(
         accumulated_alpha = 0.
         accumulated_color = ti.math.vec3([0., 0., 0.])
         offset_of_last_effective_point = start_offset
+        ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
+            pixel_u=pixel_u,
+            pixel_v=pixel_v,
+            camera_intrinsics=camera_intrinsics_mat,
+            T_camera_pointcloud=T_camera_pointcloud_mat,
+        )
         for point_offset in range(start_offset, end_offset):
             point_id = point_in_camera_id[point_offset]
             uv = ti.math.vec2([point_uv[point_offset, 0],
@@ -240,8 +249,7 @@ def gaussian_point_rasterisation(
                 pointcloud=pointcloud,
                 pointcloud_features=pointcloud_features,
                 point_id=point_id)
-            ray_direction_ti = ti.math.vec3([ray_direction[pixel_v, pixel_u, 0],
-                                             ray_direction[pixel_v, pixel_u, 1], ray_direction[pixel_v, pixel_u, 2]])
+
             gaussian_alpha = get_point_probability_density_from_2d_gaussian(
                 xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
@@ -264,8 +272,8 @@ def gaussian_point_rasterisation(
                 break
             offset_of_last_effective_point = point_offset + 1
             color = gaussian_point_3d.get_color_by_ray(
-                ray_origin=ray_origin_ti,
-                ray_direction=ray_direction_ti,
+                ray_origin=ray_origin,
+                ray_direction=ray_direction,
             )
             accumulated_color = accumulated_color + \
                 alpha * (1. - accumulated_alpha) * color
@@ -322,8 +330,6 @@ def gaussian_point_rasterisation_backward(
     camera_width: ti.i32,
     camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
     T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
-    ray_origin: ti.types.ndarray(ti.f32, ndim=1),  # (3,)
-    ray_direction: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
     # (tiles_per_row * tiles_per_col)
@@ -337,11 +343,10 @@ def gaussian_point_rasterisation_backward(
     pointfeatures_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, K)
     viewspace_grad: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
 ):
-    camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in range(3)] for row in range(3)])
     T_camera_pointcloud_mat = ti.Matrix(
-        [[T_camera_pointcloud[row, col] for col in range(4)] for row in range(4)])
-    ray_origin_ti = ti.math.vec3([ray_origin[0], ray_origin[1], ray_origin[2]])
+        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
+    camera_intrinsics_mat = ti.Matrix(
+        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
     for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
@@ -354,6 +359,12 @@ def gaussian_point_rasterisation_backward(
         accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
+        ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
+            pixel_u=pixel_u,
+            pixel_v=pixel_v,
+            camera_intrinsics=camera_intrinsics_mat,
+            T_camera_pointcloud=T_camera_pointcloud_mat,
+        )
         for inverse_point_offset in range(effective_point_count):
             point_offset = last_effective_point - inverse_point_offset - 1
             point_id = point_in_camera_id[point_offset]
@@ -380,8 +391,6 @@ def gaussian_point_rasterisation_backward(
                 projective_transform=camera_intrinsics_mat,
                 translation_camera=translation_camera,
             )
-            ray_direction_ti = ti.math.vec3([ray_direction[pixel_v, pixel_u, 0],
-                                             ray_direction[pixel_v, pixel_u, 1], ray_direction[pixel_v, pixel_u, 2]])
 
             # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
             gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d(
@@ -399,8 +408,8 @@ def gaussian_point_rasterisation_backward(
             if prod_alpha >= 1. / 255.:
                 alpha: ti.f32 = ti.min(prod_alpha, 0.99)
                 color, r_jacobian, g_jacobian, b_jacobian = gaussian_point_3d.get_color_with_jacobian_by_ray(
-                    ray_origin=ray_origin_ti,
-                    ray_direction=ray_direction_ti,
+                    ray_origin=ray_origin,
+                    ray_direction=ray_direction,
                 )
 
                 # TODO: have no idea why taichi does not allow the following code under debug. However, it works under release mode.
@@ -557,11 +566,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_uv_covariance=point_uv_covariance,
                 )
 
-                ray_origin, direction = get_ray_origin_and_direction_from_camera(
-                    T_pointcloud_camera=T_pointcloud_camera,
-                    camera_info=camera_info)
-                ray_origin, direction = ray_origin.contiguous(), direction.contiguous()
-
                 rasterized_image = torch.zeros(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
                 pixel_accumulated_alpha = torch.zeros(
@@ -572,8 +576,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 gaussian_point_rasterisation(
                     camera_height=camera_info.camera_height,
                     camera_width=camera_info.camera_width,
-                    ray_origin=ray_origin,
-                    ray_direction=direction,
+                    camera_intrinsics=camera_info.camera_intrinsics,
+                    T_camera_pointcloud=T_camera_pointcloud,
                     pointcloud=pointcloud,
                     pointcloud_features=pointcloud_features,
                     tile_points_start=tile_points_start,
@@ -609,10 +613,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     pointcloud, pointcloud_features, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     color_max_sh_band = ctx.color_max_sh_band
-                    ray_origin, direction = get_ray_origin_and_direction_from_camera(
-                        T_pointcloud_camera=T_pointcloud_camera,
-                        camera_info=camera_info)
-                    ray_origin, direction = ray_origin.contiguous(), direction.contiguous()
                     grad_rasterized_image = grad_rasterized_image.contiguous()
                     grad_point_in_camera = torch.zeros(
                         size=(point_in_camera_id.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
@@ -625,8 +625,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         camera_width=camera_info.camera_width,
                         camera_intrinsics=camera_info.camera_intrinsics,
                         T_camera_pointcloud=T_camera_pointcloud,
-                        ray_origin=ray_origin,
-                        ray_direction=direction,
                         pointcloud=pointcloud,
                         pointcloud_features=pointcloud_features,
                         tile_points_start=tile_points_start,
@@ -638,7 +636,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         pointfeatures_grad=grad_pointfeatures,
                         viewspace_grad=grad_viewspace,
                     )
-                    del ray_origin, direction, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
+                    del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     if backward_valid_point_hook is not None:
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
                             point_in_camera_id=point_in_camera_id,

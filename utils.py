@@ -176,17 +176,12 @@ def get_ray_origin_and_direction_by_uv(
 ):
     pixel_uv = ti.math.vec2(pixel_u, pixel_v)
     pixel_uv_center = pixel_uv + 0.5
-    pixel_uv_center_homogeneous = ti.math.vec3(
-        pixel_uv_center.x, pixel_uv_center.y, 1)
     fx = camera_intrinsics[0, 0]
     fy = camera_intrinsics[1, 1]
     cx = camera_intrinsics[0, 2]
     cy = camera_intrinsics[1, 2]
-    inv_camera_intrinsics = ti.math.mat3([
-        [1 / fx, 0, -cx / fx],
-        [0, 1 / fy, -cy / fy],
-        [0, 0, 1]])
-    pixel_direction_in_cameraspace = inv_camera_intrinsics @ pixel_uv_center_homogeneous
+    pixel_direction_in_cameraspace = ti.math.vec3(
+        [(pixel_uv_center.x - cx) / fx, (pixel_uv_center.y - cy) / fy, 1])
     T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud)
     ray_origin = ti.math.vec3(
         [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])

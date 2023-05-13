@@ -106,7 +106,7 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
 
 class TestRasterisation(unittest.TestCase):
     def setUp(self) -> None:
-        ti.init(ti.gpu, device_memory_GB=8)
+        ti.init(ti.cuda, device_memory_GB=10)
 
     def test_rasterisation_basic(self):
         # GaussianPointCloudRasterisation
@@ -254,7 +254,7 @@ class TestRasterisation(unittest.TestCase):
                 point_cloud_features=point_cloud_features,
                 camera_info=camera_info,
                 T_pointcloud_camera=T_camera_world,
-                color_max_sh_band=0)
+                color_max_sh_band=idx // 1000)
             pred_image = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()
             loss.backward()
