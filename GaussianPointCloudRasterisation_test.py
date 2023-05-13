@@ -119,6 +119,9 @@ class TestRasterisation(unittest.TestCase):
                 size=(num_points, 3), dtype=torch.float32, device=torch.device("cuda:0"), requires_grad=True)
             point_cloud_features = torch.rand(
                 size=(num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"), requires_grad=True)
+            point_invalid_mask = torch.zeros(
+                size=(num_points,), dtype=torch.int8, device=torch.device("cuda:0"))
+            point_invalid_mask[8000:] = 1
             camera_info = CameraInfo(
                 camera_height=1088,
                 camera_width=1920,
@@ -132,6 +135,7 @@ class TestRasterisation(unittest.TestCase):
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
+                point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
                 T_pointcloud_camera=T_pointcloud_to_camera)
             image = gaussian_point_cloud_rasterisation(input_data)
@@ -155,6 +159,8 @@ class TestRasterisation(unittest.TestCase):
         fake_image[20:28, 20:28, 1] = 0.1
         point_cloud = torch.nn.Parameter((torch.rand(size=(num_points, 3), dtype=torch.float32, device=torch.device(
             "cuda:0")) - 0.5) * 3)
+        point_invalid_mask = torch.zeros((num_points,), dtype=torch.int8, device=torch.device(
+            "cuda:0"))
         tmp = torch.rand(size=(
             num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
         tmp[:, 4:7] = -4.60517018599
@@ -198,6 +204,7 @@ class TestRasterisation(unittest.TestCase):
         input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
             point_cloud=point_cloud,
             point_cloud_features=point_cloud_features,
+            point_invalid_mask=point_invalid_mask,
             camera_info=camera_info,
             T_pointcloud_camera=T_camera_world)
         pred_image = gaussian_point_cloud_rasterisation(input_data)
@@ -223,6 +230,8 @@ class TestRasterisation(unittest.TestCase):
         fake_image[20:28, 20:28, 1] = 0.1
         point_cloud = torch.nn.Parameter((torch.rand(size=(num_points, 3), dtype=torch.float32, device=torch.device(
             "cuda:0")) - 0.5) * 3)
+        point_invalid_mask = torch.zeros((num_points,), dtype=torch.int8, device=torch.device(
+            "cuda:0"))
         tmp = torch.rand(size=(
             num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
         tmp[:, 4:7] = -4.60517018599
@@ -252,6 +261,7 @@ class TestRasterisation(unittest.TestCase):
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
+                point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
                 T_pointcloud_camera=T_camera_world,
                 color_max_sh_band=idx // 1000)

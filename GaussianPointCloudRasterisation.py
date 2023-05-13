@@ -18,6 +18,7 @@ from typing import List, Tuple, Optional, Callable, Union
 @ti.kernel
 def filter_point_in_camera(
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    point_invalid_mask: ti.types.ndarray(ti.i8, ndim=1),  # (N)
     camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
     T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
     point_in_camera_mask: ti.types.ndarray(ti.i8, ndim=1),  # (N)
@@ -33,6 +34,9 @@ def filter_point_in_camera(
 
     # filter points in camera
     for point_id in range(pointcloud.shape[0]):
+        if point_invalid_mask[point_id] == 1:
+            point_in_camera_mask[point_id] = ti.cast(0, ti.i8)
+            continue
         point_xyz = ti.Vector(
             [pointcloud[point_id, 0], pointcloud[point_id, 1], pointcloud[point_id, 2]])
         pixel_uv, point_in_camera = project_point_to_camera(
@@ -471,6 +475,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
     class GaussianPointCloudRasterisationInput:
         point_cloud: torch.Tensor  # Nx3
         point_cloud_features: torch.Tensor  # NxM
+        point_invalid_mask: torch.Tensor  # N
         camera_info: CameraInfo
         T_pointcloud_camera: torch.Tensor  # 4x4 x to the right, y down, z forward
         color_max_sh_band: int = 2
@@ -495,7 +500,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
             @staticmethod
             @custom_fwd(cast_inputs=torch_type)
-            def forward(ctx, pointcloud, pointcloud_features, T_pointcloud_camera, camera_info, color_max_sh_band):
+            def forward(ctx, pointcloud, pointcloud_features, point_invalid_mask, T_pointcloud_camera, camera_info, color_max_sh_band):
                 point_in_camera_mask = torch.zeros(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
@@ -503,6 +508,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
                 filter_point_in_camera(
                     pointcloud=pointcloud,
+                    point_invalid_mask=point_invalid_mask,
                     camera_intrinsics=camera_info.camera_intrinsics,
                     T_camera_pointcloud=T_camera_pointcloud,
                     point_in_camera_mask=point_in_camera_mask,
@@ -655,7 +661,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_pointcloud[point_in_camera_id] = grad_point_in_camera
                     grad_pointcloud_features[point_in_camera_id] = \
                         grad_pointfeatures
-                return grad_pointcloud, grad_pointcloud_features, grad_T_pointcloud_camera, None, None
+                return grad_pointcloud, grad_pointcloud_features, None, grad_T_pointcloud_camera, None, None
 
         self._module_function = _module_function
 
@@ -679,9 +685,16 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
     def forward(self, input_data: GaussianPointCloudRasterisationInput):
         pointcloud = input_data.point_cloud
         pointcloud_features = input_data.point_cloud_features
+        point_invalid_mask = input_data.point_invalid_mask
         T_pointcloud_camera = input_data.T_pointcloud_camera
         color_max_sh_band = input_data.color_max_sh_band
         camera_info = input_data.camera_info
         assert camera_info.camera_width % 16 == 0
         assert camera_info.camera_height % 16 == 0
-        return self._module_function.apply(pointcloud, pointcloud_features, T_pointcloud_camera, camera_info, color_max_sh_band)
+        return self._module_function.apply(
+            pointcloud,
+            pointcloud_features,
+            point_invalid_mask,
+            T_pointcloud_camera,
+            camera_info,
+            color_max_sh_band)
