@@ -3,6 +3,7 @@ import taichi as ti
 import taichi.math as tm
 import torch
 from Camera import CameraInfo
+from typing import Tuple
 
 data_type = ti.f32
 torch_type = torch.float32
@@ -110,15 +111,16 @@ def get_point_to_line_vector(
 def get_ray_origin_and_direction_from_camera(
     T_pointcloud_camera: torch.Tensor,
     camera_info: CameraInfo
-):
-    """ get the ray origin and direction from the camera
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """ get the ray origin and direction for each pixel from the camera. ray starts from the camera center and goes through 
+    the center of each pixel
 
     Args:
         T_pointcloud_camera (torch.Tensor): 4x4 SE(3) matrix, transforms points from the camera frame to the pointcloud frame
-        camera_info (CameraInfo): the camera info
+        camera_info (CameraInfo): the camera info, contain camera_width, camera_height, camera_intrinsics(3x3)
 
     Returns:
-        (torch.Tensor, torch.Tensor): the ray origin and direction, ray_origin: (3,), direction: (H, W, 3)
+        (torch.Tensor, torch.Tensor): the ray origin and direction for each ray, ray_origin: (3,), direction: (H, W, 3)
     """
     T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
     ray_origin = T_pointcloud_camera[:3, 3]
@@ -133,13 +135,12 @@ def get_ray_origin_and_direction_from_camera(
     |x'|   |fx  0  cx|^-1   |u|
     |y'| = |0   fy cy|    * |v|
     |1 |   |0   0  1 |      |1|
-    , where x', y' are the coordinates of the point in the camera frame, 
+    , where x', y' 1 are the direction in the camera frame
     then we can get the direction of the ray by:
-    [x, y, z, 1]^T = T_pointcloud_camera * [x', y', 1, 1]^T
-    direction = [x, y, z, 1]^T - ray_origin
+    direction = T_pointcloud_camera[:3, :3] * [x', y', 1]^T
     """
-    pixel_u, pixel_v = torch.meshgrid(torch.arange(
-        camera_info.camera_width), torch.arange(camera_info.camera_height))
+    pixel_v, pixel_u = torch.meshgrid(torch.arange(
+        camera_info.camera_height), torch.arange(camera_info.camera_width))
     pixel_u, pixel_v = pixel_u.float(), pixel_v.float()
     pixel_u += 0.5  # add 0.5 to make the pixel coordinates be the center of the pixel
     pixel_v += 0.5  # add 0.5 to make the pixel coordinates be the center of the pixel
@@ -155,16 +156,50 @@ def get_ray_origin_and_direction_from_camera(
         [1 / fx, 0, -cx / fx],
         [0, 1 / fy, -cy / fy],
         [0, 0, 1]], dtype=camera_info.camera_intrinsics.dtype, device=camera_info.camera_intrinsics.device)
-    pixel_xy_1 = inv_camera_intrinsics @ pixel_uv_1.T  # (3, H*W)
-    pixel_xy_1 = pixel_xy_1.T  # (H*W, 3)
-    pixel_xy_1 = torch.cat([pixel_xy_1, torch.ones_like(
-        pixel_xy_1[:, :1])], dim=-1)  # (H*W, 4)
-    pixel_xyz_1 = T_camera_pointcloud @ pixel_xy_1.T  # (4, H*W)
-    pixel_xyz_1 = pixel_xyz_1.T  # (H*W, 4)
-    pixel_xyz = pixel_xyz_1[:, :3].reshape(
+    # (3, H*W)
+    pixel_direction_in_camera = inv_camera_intrinsics @ pixel_uv_1.T
+    direction = T_pointcloud_camera[:3, :3] @ \
+        pixel_direction_in_camera  # (3, H*W)
+    direction = direction.T.reshape(
         camera_info.camera_height, camera_info.camera_width, 3)  # (H, W, 3)
-    direction = pixel_xyz - ray_origin.reshape(1, 1, 3)
+    direction = direction / \
+        torch.norm(direction, dim=-1, keepdim=True)  # (H, W, 3)
     return ray_origin, direction
+
+
+@ti.func
+def get_ray_origin_and_direction_by_uv(
+    pixel_u: ti.i32,
+    pixel_v: ti.i32,
+    camera_intrinsics: ti.math.mat3,
+    T_camera_pointcloud: ti.math.mat4,
+):
+    pixel_uv = ti.math.vec2(pixel_u, pixel_v)
+    pixel_uv_center = pixel_uv + 0.5
+    pixel_uv_center_homogeneous = ti.math.vec3(
+        pixel_uv_center.x, pixel_uv_center.y, 1)
+    fx = camera_intrinsics[0, 0]
+    fy = camera_intrinsics[1, 1]
+    cx = camera_intrinsics[0, 2]
+    cy = camera_intrinsics[1, 2]
+    inv_camera_intrinsics = ti.math.mat3([
+        [1 / fx, 0, -cx / fx],
+        [0, 1 / fy, -cy / fy],
+        [0, 0, 1]])
+    pixel_direction_in_cameraspace = inv_camera_intrinsics @ pixel_uv_center_homogeneous
+    T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud)
+    ray_origin = ti.math.vec3(
+        [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
+    R_pointcloud_camera = ti.math.mat3([
+        [T_pointcloud_camera[0, 0], T_pointcloud_camera[0, 1],
+            T_pointcloud_camera[0, 2]],
+        [T_pointcloud_camera[1, 0], T_pointcloud_camera[1, 1],
+            T_pointcloud_camera[1, 2]],
+        [T_pointcloud_camera[2, 0], T_pointcloud_camera[2, 1], T_pointcloud_camera[2, 2]]
+    ])
+    ray_direction = R_pointcloud_camera @ pixel_direction_in_cameraspace
+    ray_direction = ti.math.normalize(ray_direction)
+    return ray_origin, ray_direction
 
 
 @ti.func
@@ -237,6 +272,24 @@ def inverse_se3(transform: torch.Tensor):
     inverse_transform[:3, :3] = R.T
     inverse_transform[:3, 3] = -R.T @ t
     inverse_transform[3, 3] = 1
+    return inverse_transform
+
+
+@ti.func
+def taichi_inverse_se3(transform: ti.math.mat4):
+    R_T = ti.math.mat3([
+        [transform[0, 0], transform[1, 0], transform[2, 0]],
+        [transform[0, 1], transform[1, 1], transform[2, 1]],
+        [transform[0, 2], transform[1, 2], transform[2, 2]]
+    ])
+    t = ti.math.vec3([transform[0, 3], transform[1, 3], transform[2, 3]])
+    inverse_transform_t = -R_T @ t
+    inverse_transform = ti.math.mat4([
+        [R_T[0, 0], R_T[0, 1], R_T[0, 2], inverse_transform_t[0]],
+        [R_T[1, 0], R_T[1, 1], R_T[1, 2], inverse_transform_t[1]],
+        [R_T[2, 0], R_T[2, 1], R_T[2, 2], inverse_transform_t[2]],
+        [0, 0, 0, 1]
+    ])
     return inverse_transform
 
 

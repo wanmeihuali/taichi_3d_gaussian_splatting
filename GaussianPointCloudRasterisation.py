@@ -463,7 +463,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_cloud: torch.Tensor  # Nx3
         point_cloud_features: torch.Tensor  # NxM
         camera_info: CameraInfo
-        T_pointcloud_camera: torch.Tensor  # 4x4
+        T_pointcloud_camera: torch.Tensor  # 4x4 x to the right, y down, z forward
         color_max_sh_band: int = 2
 
     @dataclass

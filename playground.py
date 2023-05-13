@@ -1,4 +1,6 @@
 # %%
+from Camera import CameraInfo
+from utils import get_ray_origin_and_direction_from_camera, get_ray_origin_and_direction_from_camera_by_gpt
 from utils import torch_single_point_alpha_forward
 import scipy.spatial.transform as transform
 import taichi as ti
@@ -504,3 +506,20 @@ torch_single_point_alpha_forward(
 )
 
 # %%
+q = torch.tensor([0.0229, 0.9774, 0.1204, 0.1725])
+q = q / torch.norm(q)
+R = quaternion_to_rotation_matrix_torch(q)
+t = torch.rand(size=(3,))
+T_pointcloud_camera = torch.eye(4)
+T_pointcloud_camera[:3, :3] = R
+T_pointcloud_camera[:3, 3] = t
+camera_info = CameraInfo(
+    camera_width=1920,
+    camera_height=1080,
+    camera_intrinsics=torch.tensor([[500., 0., 960.],
+                                    [0., 500., 540.],
+                                    [0., 0., 1.]]),
+    camera_id=0)
+ray_origin, ray_direction = get_ray_origin_and_direction_from_camera(
+    camera_info=camera_info,
+    T_pointcloud_camera=T_pointcloud_camera)
