@@ -78,6 +78,7 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
             loss = ((pred_image - fake_image)**2).sum()
             loss.backward()
             optimizer.step()
+            gaussian_point_adaptive_controller.refinement()
             if idx % 100 == 0 or idx % 100 == 99:
                 print(f"loss: {loss.item()}")
             if idx == 0:
