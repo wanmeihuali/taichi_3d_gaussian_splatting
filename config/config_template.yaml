@@ -1,0 +1,29 @@
+adaptive-controller-config:
+  densification-view-space-position-gradients-threshold: 0.005
+  gaussian-split-factor-phi: 1.6
+  num-iterations-densify: 100
+  num-iterations-reset-alpha: 3000
+  num-iterations-warm-up: 500
+  reset-alpha-value: 0.1
+  transparent-alpha-threshold: -0.5
+  under-reconstructed-s-threshold: 0.001
+gaussian-point-cloud-scene-config:
+  max-num-points-ratio: !!python/tuple
+  - null
+  num-of-features: 56
+increase-color-max-sh-band-interval: 1000.0
+log-image-interval: 1000
+log-loss-interval: 10
+log-metrics-interval: 100
+loss-function-config:
+  lambda-value: 0.2
+num-iterations: 300000
+pointcloud-parquet-path: ''
+rasterisation-config:
+  depth-to-sort-key-scale: 100.0
+  far-plane: 1000.0
+  near-plane: 0.8
+summary-writer-log-dir: logs
+train-dataset-json-path: ''
+val-dataset-json-path: ''
+val-interval: 1000

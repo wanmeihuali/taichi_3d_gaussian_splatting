@@ -2,11 +2,12 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass
 from pytorch_msssim import ssim
+from dataclass_wizard import YAMLWizard
 
 
 class LossFunction(nn.Module):
     @dataclass
-    class LossFunctionConfig:
+    class LossFunctionConfig(YAMLWizard):
         lambda_value: float = 0.2
 
     def __init__(self, config: LossFunctionConfig):

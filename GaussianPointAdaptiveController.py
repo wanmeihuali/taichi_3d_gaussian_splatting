@@ -1,6 +1,7 @@
 import torch
 from dataclasses import dataclass
 from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
+from dataclass_wizard import YAMLWizard
 
 
 class GaussianPointAdaptiveController:
@@ -11,7 +12,7 @@ class GaussianPointAdaptiveController:
     When removing points, we just set the mask to True.
     """
     @dataclass
-    class GaussianPointAdaptiveControllerConfig:
+    class GaussianPointAdaptiveControllerConfig(YAMLWizard):
         num_iterations_warm_up: int = 500
         num_iterations_densify: int = 100
         # from paper: densify every 100 iterations and remove any Gaussians that are essentially transparent, i.e., with 𝛼 less than a threshold 𝜖𝛼.
@@ -79,7 +80,8 @@ class GaussianPointAdaptiveController:
         pointcloud = self.maintained_parameters.pointcloud
         pointcloud_features = self.maintained_parameters.pointcloud_features
         point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
-        point_to_remove_mask = point_alpha < self.config.transparent_alpha_threshold
+        point_to_remove_mask = (point_alpha < self.config.transparent_alpha_threshold) & \
+            (self.maintained_parameters.point_invalid_mask == 0)
         total_valid_points_before_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
             self.maintained_parameters.point_invalid_mask.sum()
         # remove any Gaussians that are essentially transparent

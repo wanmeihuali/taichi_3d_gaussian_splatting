@@ -13,6 +13,7 @@ from utils import (torch_type, data_type, ti2torch, torch2ti,
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
 from SphericalHarmonics import SphericalHarmonics, vec16f
 from typing import List, Tuple, Optional, Callable, Union
+from dataclass_wizard import YAMLWizard
 
 
 @ti.kernel
@@ -466,7 +467,7 @@ def gaussian_point_rasterisation_backward(
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
     @dataclass
-    class GaussianPointCloudRasterisationConfig:
+    class GaussianPointCloudRasterisationConfig(YAMLWizard):
         near_plane: float = 0.8
         far_plane: float = 1000.
         depth_to_sort_key_scale: float = 100.

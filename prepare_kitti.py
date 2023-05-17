@@ -71,7 +71,15 @@ class KittiPreprocessor:
             "camera_id": [camera_view.sensor_id for camera_view in self.camera_view_list],
         }
         df = pd.DataFrame(data)
-        df.to_json(os.path.join(output_dir, "kitti.json"), orient="records")
+        # select training data and validation data, have a train every 3 frames
+        df["is_train"] = df.index % 3 == 0
+        train_df = df[df["is_train"]].copy()
+        val_df = df[~df["is_train"]].copy()
+        train_df.drop(columns=["is_train"], inplace=True)
+        val_df.drop(columns=["is_train"], inplace=True)
+        # df.to_json(os.path.join(output_dir, "kitti.json"), orient="records")
+        train_df.to_json(os.path.join(output_dir, "kitti_train.json"), orient="records")
+        val_df.to_json(os.path.join(output_dir, "kitti_val.json"), orient="records")
 
     @staticmethod
     def extrinsics_from_xml(xml_file, image_dir, verbose=False):

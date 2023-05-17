@@ -5,12 +5,13 @@ import torch.nn as nn
 from dataclasses import dataclass
 from scipy.spatial.ckdtree import cKDTree
 from typing import Optional
+from dataclass_wizard import YAMLWizard
 
 
-class GaussianPointCloudScene(torch.nn.modules):
+class GaussianPointCloudScene(torch.nn.Module):
 
     @dataclass
-    class PointCloudSceneConfig:
+    class PointCloudSceneConfig(YAMLWizard):
         num_of_features: int = 56
         max_num_points_ratio: Optional[float] = None,
 
@@ -29,7 +30,7 @@ class GaussianPointCloudScene(torch.nn.modules):
             point_cloud = np.concatenate(
                 [point_cloud, np.zeros((max_num_points - num_points, 3))], axis=0)
         self.point_cloud = nn.Parameter(
-            torch.from_numpy(point_cloud, dtype=torch.float32))
+            torch.tensor(point_cloud, dtype=torch.float32))
         self.config = config
         self.point_cloud_features = nn.Parameter(
             torch.zeros(self.point_cloud.shape[0], self.config.num_of_features)
@@ -45,27 +46,34 @@ class GaussianPointCloudScene(torch.nn.modules):
         return self.point_cloud, self.point_cloud_features
 
     def initialize(self):
-        """
-        estimate the initial covariance matrix as an isotropic Gaussian
-        with axes equal to the mean of the distance to the closest three points.
-        """
-        valid_point_cloud_np = self.point_cloud[~(self.point_invalid_mask)].detach(
-        ).cpu().numpy()  # shape: [num_points, 3]
-        nearest_neighbor_tree = cKDTree(valid_point_cloud_np)
-        nearest_three_neighbor_distance, _ = nearest_neighbor_tree.query(
-            valid_point_cloud_np, k=3)
-        initial_covariance = np.mean(nearest_three_neighbor_distance, axis=1)
-        # s is log of the covariance, so we take log of the initial covariance
-        self.point_cloud_features[~(self.point_invalid_mask), 4:7] = torch.from_numpy(
-            np.log(initial_covariance), dtype=torch.float32)
+        with torch.no_grad():
+            """
+            estimate the initial covariance matrix as an isotropic Gaussian
+            with axes equal to the mean of the distance to the closest three points.
+            """
+            valid_point_cloud_np = self.point_cloud[self.point_invalid_mask == 0].detach(
+            ).cpu().numpy()  # shape: [num_points, 3]
+            nearest_neighbor_tree = cKDTree(valid_point_cloud_np)
+            nearest_three_neighbor_distance, _ = nearest_neighbor_tree.query(
+                valid_point_cloud_np, k=3)
+            initial_covariance = np.mean(nearest_three_neighbor_distance, axis=1)
+            # s is log of the covariance, so we take log of the initial covariance
+            self.point_cloud_features[(self.point_invalid_mask == 0), 4:7] = torch.tensor(
+                np.log(initial_covariance), dtype=torch.float32).unsqueeze(1)
 
-        # for rotation quaternion(x,y,z,w), we set it to identity
-        self.point_cloud_features[:, 3] = 1.0
-        self.point_cloud_features[:, 0:3] = 0.0
-        # for alpha before sigmoid, we set it to 0.0, so sigmoid(alpha) is 0.5
-        self.point_cloud_features[:, 7] = 0.0
-        # for color spherical harmonics factors, we set them to 0.5
-        self.point_cloud_features[:, 8:56] = 0.5
+            # for rotation quaternion(x,y,z,w), we set it to identity
+            self.point_cloud_features[:, 3] = 1.0
+            self.point_cloud_features[:, 0:3] = 0.0
+            # for alpha before sigmoid, we set it to 0.0, so sigmoid(alpha) is 0.5
+            self.point_cloud_features[:, 7] = 0.0
+            # for color spherical harmonics factors, we set them to 0.5
+            self.point_cloud_features[:, 8] = 1.0
+            self.point_cloud_features[:, 9:24] = 0.0
+            self.point_cloud_features[:, 24] = 1.0
+            self.point_cloud_features[:, 25:40] = 0.0
+            self.point_cloud_features[:, 40] = 1.0
+            self.point_cloud_features[:, 41:56] = 0.0
+
 
     def to_parquet(self, path: str):
         point_cloud_df = pd.DataFrame(
