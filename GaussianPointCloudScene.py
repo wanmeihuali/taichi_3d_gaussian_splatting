@@ -55,8 +55,8 @@ class GaussianPointCloudScene(torch.nn.Module):
             ).cpu().numpy()  # shape: [num_points, 3]
             nearest_neighbor_tree = cKDTree(valid_point_cloud_np)
             nearest_three_neighbor_distance, _ = nearest_neighbor_tree.query(
-                valid_point_cloud_np, k=3)
-            initial_covariance = np.mean(nearest_three_neighbor_distance, axis=1)
+                valid_point_cloud_np, k = 3 + 1)
+            initial_covariance = np.mean(nearest_three_neighbor_distance[:, 1:], axis=1)
             # s is log of the covariance, so we take log of the initial covariance
             self.point_cloud_features[(self.point_invalid_mask == 0), 4:7] = torch.tensor(
                 np.log(initial_covariance), dtype=torch.float32).unsqueeze(1)
@@ -65,7 +65,8 @@ class GaussianPointCloudScene(torch.nn.Module):
             self.point_cloud_features[:, 3] = 1.0
             self.point_cloud_features[:, 0:3] = 0.0
             # for alpha before sigmoid, we set it to 0.0, so sigmoid(alpha) is 0.5
-            self.point_cloud_features[:, 7] = 0.0
+            # self.point_cloud_features[:, 7] = 0.0
+            self.point_cloud_features[:, 7] = 3.0
             # for color spherical harmonics factors, we set them to 0.5
             self.point_cloud_features[:, 8] = 1.0
             self.point_cloud_features[:, 9:24] = 0.0
