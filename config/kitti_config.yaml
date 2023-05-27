@@ -1,12 +1,13 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.005
+  densification-view-space-position-gradients-threshold: 0.00001
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
   num-iterations-reset-alpha: 3000
-  num-iterations-warm-up: 500
+  num-iterations-warm-up: 1000
   reset-alpha-value: 0.2
-  transparent-alpha-threshold: -0.5
-  under-reconstructed-s-threshold: 0.005
+  transparent-alpha-threshold: 0.
+  under-reconstructed-s-threshold: 0.05
+  floater_threshold: 0.5
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 1.2
   num-of-features: 56
@@ -21,8 +22,8 @@ pointcloud-parquet-path: 'data/kitti/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
-  near-plane: 0.8
-summary-writer-log-dir: logs/sigmoid_on_image_alpha_init_3.0_fix_cov_init_small_s
+  near-plane: 0.1
+summary-writer-log-dir: logs/sigmoid_on_image_fix_bug_remove_floater_tune
 train-dataset-json-path: 'data/kitti/kitti_train.json'
 val-dataset-json-path: 'data/kitti/kitti_val.json'
 val-interval: 3000

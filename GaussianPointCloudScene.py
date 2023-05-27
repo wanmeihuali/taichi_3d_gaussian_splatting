@@ -23,6 +23,11 @@ class GaussianPointCloudScene(torch.nn.Module):
         super().__init__()
         assert len(point_cloud.shape) == 2, "point_cloud must be a 2D array"
         assert point_cloud.shape[1] == 3, "point_cloud must have 3 columns(x,y,z)"
+        # convert point_cloud to float32
+        point_cloud = point_cloud.astype(np.float32)
+        # remove duplicated points
+        point_cloud = np.unique(point_cloud, axis=0)
+
         if config.max_num_points_ratio is not None:
             num_points = point_cloud.shape[0]
             max_num_points = int(num_points * config.max_num_points_ratio)
@@ -57,6 +62,8 @@ class GaussianPointCloudScene(torch.nn.Module):
             nearest_three_neighbor_distance, _ = nearest_neighbor_tree.query(
                 valid_point_cloud_np, k = 3 + 1)
             initial_covariance = np.mean(nearest_three_neighbor_distance[:, 1:], axis=1)
+            # clip the initial covariance to [1e-6, inf]
+            initial_covariance = np.clip(initial_covariance, 1e-6, None)
             # s is log of the covariance, so we take log of the initial covariance
             self.point_cloud_features[(self.point_invalid_mask == 0), 4:7] = torch.tensor(
                 np.log(initial_covariance), dtype=torch.float32).unsqueeze(1)
@@ -77,8 +84,10 @@ class GaussianPointCloudScene(torch.nn.Module):
 
 
     def to_parquet(self, path: str):
+        valid_point_cloud = self.point_cloud[self.point_invalid_mask == 0]
+        valid_point_cloud_features = self.point_cloud_features[self.point_invalid_mask == 0]
         point_cloud_df = pd.DataFrame(
-            self.point_cloud.detach().cpu().numpy(), columns=["x", "y", "z"])
+            valid_point_cloud.detach().cpu().numpy(), columns=["x", "y", "z"])
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
@@ -86,7 +95,7 @@ class GaussianPointCloudScene(torch.nn.Module):
             [f"g_sh{i}" for i in range(16)] + \
             [f"b_sh{i}" for i in range(16)]
         point_cloud_features_df = pd.DataFrame(
-            self.point_cloud_features.detach().cpu().numpy(), columns=feature_columns)
+            valid_point_cloud_features.detach().cpu().numpy(), columns=feature_columns)
         scene_df = pd.concat([point_cloud_df, point_cloud_features_df], axis=1)
         scene_df.to_parquet(path)
 

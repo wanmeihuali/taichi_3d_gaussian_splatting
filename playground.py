@@ -523,3 +523,30 @@ camera_info = CameraInfo(
 ray_origin, ray_direction = get_ray_origin_and_direction_from_camera(
     camera_info=camera_info,
     T_pointcloud_camera=T_pointcloud_camera)
+
+# %%
+import pandas as pd
+import numpy as np
+path = "logs/sigmoid_on_image_fix_bug/scene_66000.parquet"
+df = pd.read_parquet(path)
+# %%
+df.head()
+# %%
+import matplotlib.pyplot as plt
+plt.hist(np.exp(df.cov_s0), bins=100)
+# %%
+np.exp(df.cov_s0).argmax()
+# 44837
+df.iloc[44837]
+# %%
+np.median(np.exp(df.cov_s0))
+# %%
+df.info()
+# %%
+# count number of NaNs in each column
+for col in df.columns:
+    print(col, df[col].isnull().sum())
+
+# %%
+df = df.dropna() 
+

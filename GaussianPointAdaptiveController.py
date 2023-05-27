@@ -31,6 +31,7 @@ class GaussianPointAdaptiveController:
         # for now, the method is to threshold norm of exp(s)
         # TODO: find out a proper threshold
         under_reconstructed_s_threshold: float = 0.001
+        floater_threshold: float = 0.5
 
     @dataclass
     class GaussianPointAdaptiveControllerMaintainedParameters:
@@ -59,6 +60,7 @@ class GaussianPointAdaptiveController:
             if self.iteration_counter % self.config.num_iterations_densify == 0:
                 # self.input_data = input_data
                 self._find_densify_points(input_data)
+                self.input_data = input_data
 
     def refinement(self):
         with torch.no_grad():
@@ -68,6 +70,7 @@ class GaussianPointAdaptiveController:
                 self._add_densify_points()
             if self.iteration_counter % self.config.num_iterations_reset_alpha == 0:
                 self.reset_alpha()
+            self.input_data = None
 
     def _find_densify_points(self, input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
         """ find points to densify, it should happened in backward pass before optimiser step.
@@ -80,6 +83,13 @@ class GaussianPointAdaptiveController:
         pointcloud = self.maintained_parameters.pointcloud
         pointcloud_features = self.maintained_parameters.pointcloud_features
         point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
+        point_in_camera_id: torch.Tensor = input_data.point_in_camera_id
+        point_features_in_camera = pointcloud_features[point_in_camera_id]
+        point_s_in_camera = point_features_in_camera[:, 4:7]
+        floater_mask = (point_s_in_camera.exp().norm(dim=1) > self.config.floater_threshold)
+        floater_point_id = point_in_camera_id[floater_mask]
+        num_floater_points = floater_point_id.shape[0]
+        self.maintained_parameters.point_invalid_mask[floater_point_id] = 1
         point_to_remove_mask = (point_alpha < self.config.transparent_alpha_threshold) & \
             (self.maintained_parameters.point_invalid_mask == 0)
         total_valid_points_before_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
@@ -87,20 +97,17 @@ class GaussianPointAdaptiveController:
         # remove any Gaussians that are essentially transparent
         self.maintained_parameters.point_invalid_mask[point_to_remove_mask] = 1
         num_removed_points = point_to_remove_mask.sum()
-        print(f"remove {num_removed_points} points")
+        print(f"remove {num_removed_points} points by s, {num_floater_points} points by floater points")
 
         num_of_invalid_points = self.maintained_parameters.point_invalid_mask.sum()
         # split Gaussians with an average magnitude of view-space position gradients above a threshold
         # shape: [num_points_in_camera, 2]
         grad_viewspace = input_data.grad_viewspace
-        point_in_camera_id: torch.Tensor = input_data.point_in_camera_id
         # shape: [num_points_in_camera, num_features]
-        point_features_in_camera = pointcloud_features[point_in_camera_id]
         # all these three masks are on num_points_in_camera, not num_points
         to_densify_mask = grad_viewspace.norm(
             dim=1) > self.config.densification_view_space_position_gradients_threshold
         # shape: [num_points_in_camera, 3]
-        point_s_in_camera = point_features_in_camera[:, 4:7]
         under_reconstructed_mask = to_densify_mask & (point_s_in_camera.exp().norm(
             dim=1) < self.config.under_reconstructed_s_threshold)
         over_reconstructed_mask = to_densify_mask & (~under_reconstructed_mask)
