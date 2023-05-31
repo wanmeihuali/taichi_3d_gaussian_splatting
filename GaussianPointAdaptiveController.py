@@ -97,7 +97,7 @@ class GaussianPointAdaptiveController:
         # remove any Gaussians that are essentially transparent
         self.maintained_parameters.point_invalid_mask[point_to_remove_mask] = 1
         num_removed_points = point_to_remove_mask.sum()
-        print(f"remove {num_removed_points} points by s, {num_floater_points} points by floater points")
+        print(f"remove {num_removed_points} points by alpha, {num_floater_points} points by floater points")
 
         num_of_invalid_points = self.maintained_parameters.point_invalid_mask.sum()
         # split Gaussians with an average magnitude of view-space position gradients above a threshold

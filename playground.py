@@ -249,6 +249,7 @@ print(J.shape)
 print(sympy.python(J))
 
 # %%
+import sympy
 xy = sympy.MatrixSymbol('xy', 2, 1)
 mu = sympy.Matrix(["mu_x", "mu_y"])
 cov = sympy.MatrixSymbol('cov', 2, 2)
@@ -258,13 +259,14 @@ inv_cov = (1 / det_cov) * sympy.Matrix([
     [-cov[1, 0], cov[0, 0]]
 ])
 tmp = -0.5 * ((xy - mu).transpose()) @ inv_cov @ (xy - mu)
-p = (1 / (2 * sympy.pi * sympy.sqrt(det_cov))) * \
-    sympy.exp(tmp[0, 0])
+p = sympy.exp(tmp[0, 0])
 p_vec = sympy.Matrix([p])
+# %%
 J = p_vec.jacobian(tmp)
 print(J.shape)
 print(sympy.python(J))
 # %%
+import numpy as np
 xy = np.array([1, 2])
 x = xy[0]
 y = xy[1]
@@ -292,8 +294,7 @@ def gaussian_pdf(x, mean, cov):
     det_cov = np.linalg.det(cov)
     diff = x - mean
     exponent = -0.5 * diff.T @ inv_cov @ diff
-    normalization = 1 / (2 * np.pi * (det_cov ** 0.5))
-    return normalization * np.exp(exponent)
+    return np.exp(exponent)
 
 
 def gradient_mean(x, mean, cov):
@@ -310,13 +311,14 @@ def gradient_cov(x, mean, cov):
     diff_outer = np.outer(diff, diff)
     pdf = gaussian_pdf(x, mean, cov)
 
-    gradient = -0.5 * pdf * (inv_cov - inv_cov @ diff_outer @ inv_cov)
+    gradient = 0.5 * pdf * (inv_cov @ diff_outer @ inv_cov)
     return gradient
 
 
 print(gradient_mean(xy, mu, cov))
 print(gradient_cov(xy, mu, cov))
 # %%
+import torch
 xy = torch.tensor([1., 2.])
 mu = torch.tensor([3., 1.], requires_grad=True)
 cov = torch.tensor([[0.8, 0.1], [0.1, 0.8]], requires_grad=True)
@@ -324,8 +326,7 @@ inv_cov = torch.inverse(cov)
 det_cov = torch.det(cov)
 diff = xy - mu
 exponent = -0.5 * diff.T @ inv_cov @ diff
-normalization = 1 / (2 * np.pi * (det_cov ** 0.5))
-p = normalization * torch.exp(exponent)
+p = torch.exp(exponent)
 p.backward()
 print(mu.grad)
 print(cov.grad)

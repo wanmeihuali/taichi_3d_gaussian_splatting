@@ -213,6 +213,21 @@ def get_point_probability_density_from_2d_gaussian(
     exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
     return ti.exp(exponent) / (2 * np.pi * ti.sqrt(det_cov))
 
+@ti.func
+def get_point_probability_density_from_2d_gaussian_normalized(
+    xy: ti.math.vec2,
+    gaussian_mean: ti.math.vec2,
+    gaussian_covariance: ti.math.mat2,
+) -> ti.f32:
+    xy_mean = xy - gaussian_mean
+    det_cov = gaussian_covariance.determinant()
+    inv_cov = (1. / det_cov) * \
+        ti.math.mat2([[gaussian_covariance[1, 1], -gaussian_covariance[0, 1]],
+                      [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
+    xy_mean_T_cov_inv = xy_mean @ inv_cov
+    xy_mean_T_cov_inv_xy_mean = xy_mean_T_cov_inv @ xy_mean
+    exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
+    return ti.exp(exponent)
 
 @ti.func
 def grad_point_probability_density_2d(
@@ -234,6 +249,38 @@ def grad_point_probability_density_2d(
     d_p_d_cov = -0.5 * p * (inv_cov - inv_cov @
                             xy_mean_outer_xy_mean @ inv_cov)
     return p, d_p_d_mean, d_p_d_cov
+
+@ti.func
+def grad_point_probability_density_2d_normalized(
+    xy: ti.math.vec2,
+    gaussian_mean: ti.math.vec2,
+    gaussian_covariance: ti.math.mat2,
+):
+    xy_mean = xy - gaussian_mean
+    det_cov = gaussian_covariance.determinant()
+    inv_cov = (1. / det_cov) * \
+        ti.math.mat2([[gaussian_covariance[1, 1], -gaussian_covariance[0, 1]],
+                      [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
+    cov_inv_xy_mean = inv_cov @ xy_mean
+    xy_mean_T_cov_inv_xy_mean = xy_mean @ cov_inv_xy_mean
+    exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
+    p = ti.exp(exponent)
+    d_p_d_mean = p * cov_inv_xy_mean
+    xy_mean_outer_xy_mean = xy_mean.outer_product(xy_mean)
+    d_p_d_cov = 0.5 * p * (inv_cov @
+                            xy_mean_outer_xy_mean @ inv_cov)
+    return p, d_p_d_mean, d_p_d_cov
+
+        
+@ti.func
+def ti_sigmoid(x):
+    return 1 / (1 + ti.exp(-x))
+
+@ti.func
+def ti_sigmoid_with_jacobian(x):
+    s = ti_sigmoid(x)
+    return s, s * (1 - s)
+    
 
 
 @ti.kernel
@@ -329,7 +376,7 @@ def torch_single_point_alpha_forward(
     inv_cov = torch.inverse(cov)
     pixel_uv_center = pixel_uv.float() + 0.5
     p = torch.exp(-0.5 * (pixel_uv_center - uv).T @ inv_cov @
-                  (pixel_uv_center - uv)) / (2 * np.pi * torch.sqrt(det_cov))  # (1,)
+                  (pixel_uv_center - uv))  # (1,)
     print("torch p: ", p)
     print("torch point_alpha: ", point_alpha)
     alpha = torch.sigmoid(point_alpha) * p  # (1,)

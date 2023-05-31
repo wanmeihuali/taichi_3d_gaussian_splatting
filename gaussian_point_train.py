@@ -59,6 +59,12 @@ class GaussianPointCloudTrainer:
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
         )
+        """
+        self.rasterisation = GaussianPointCloudRasterisation(
+            config=self.config.rasterisation_config,
+            backward_valid_point_hook=None,
+        )
+        """
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
 
@@ -91,7 +97,6 @@ class GaussianPointCloudTrainer:
             )
             image_pred = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
-            image_pred = torch.sigmoid(image_pred)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
             loss, l1_loss, ssim_loss = self.loss_function(image_pred, image_gt)
@@ -196,7 +201,6 @@ class GaussianPointCloudTrainer:
                 image_pred = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
                 # apply sigmoid
-                image_pred = torch.sigmoid(image_pred)
                 image_pred = image_pred.permute(2, 0, 1)
                 loss, _, _ = self.loss_function(image_pred, image_gt)
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(

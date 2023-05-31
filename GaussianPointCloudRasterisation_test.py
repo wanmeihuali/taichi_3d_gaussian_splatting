@@ -6,7 +6,7 @@ from GaussianPointCloudRasterisation import (
     find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d, GaussianPointCloudRasterisation)
 from GaussianPoint3D import GaussianPoint3D, mat2x3f
 from SphericalHarmonics import SphericalHarmonics
-from utils import grad_point_probability_density_2d, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian
+from utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized
 from Camera import CameraInfo
 from tqdm import tqdm
 
@@ -141,6 +141,56 @@ class TestRasterisation(unittest.TestCase):
             image = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
+        
+    def test_rasterisation_two_points(self):
+        """
+        test two points, both at the center of the image with different covariances and depth
+        """
+        gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
+            config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
+                near_plane=0.0,
+                far_plane=10.0,
+            ))
+        image_size = (16, 16)
+        point_cloud = torch.nn.Parameter(torch.tensor(
+            [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))       
+        point_cloud_features = torch.zeros(
+            size=(2, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+        point_cloud_features[:, 3] = 1.0
+        point_cloud_features[0, 4:7] = 1.0
+        point_cloud_features[1, 4:7] = 4.0
+        point_cloud_features[:, 7] = 0.0
+        point_cloud_features[:, 8] = 5.0
+        point_cloud_features[:, 9:24] = 0.0
+        point_cloud_features[:, 24] = 1.0
+        point_cloud_features[:, 25:40] = 0.0
+        point_cloud_features[:, 40] = 1.0
+        point_cloud_features[:, 41:56] = 0.0
+
+        point_cloud_features = torch.nn.Parameter(point_cloud_features)
+        point_invalid_mask = torch.zeros(
+            size=(2,), dtype=torch.int8, device=torch.device("cuda:0"))
+        point_invalid_mask[0] = 1
+        camera_info = CameraInfo(
+            camera_height=image_size[0],
+            camera_width=image_size[1],
+            camera_id=0,
+            camera_intrinsics=torch.tensor([[1, 0, 8], [0, 1, 8], [
+                0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
+        )
+        T_camera_world = torch.eye(
+            4, dtype=torch.float32, device=torch.device("cuda:0"))
+        input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
+            point_cloud=point_cloud,
+            point_cloud_features=point_cloud_features,
+            point_invalid_mask=point_invalid_mask,
+            camera_info=camera_info,
+            T_pointcloud_camera=T_camera_world,
+            color_max_sh_band=0)
+        pred_image = gaussian_point_cloud_rasterisation(input_data)
+        print(pred_image)
+
+        
 
     def test_backward_hook(self):
         """ use a fake image, and test if gradient descent can have a good coverage
@@ -344,7 +394,7 @@ class TestRasterisation(unittest.TestCase):
                 projective_transform=camera_intrinsics_mat,
                 translation_camera=xyz_in_camera,
             )
-            gaussian_alpha = get_point_probability_density_from_2d_gaussian(
+            gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
                 xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
@@ -407,7 +457,7 @@ class TestRasterisation(unittest.TestCase):
                 translation_camera=translation_camera,
             )
             # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
-            gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d(
+            gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d_normalized(
                 xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,

@@ -7,8 +7,8 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 from utils import (torch_type, data_type, ti2torch, torch2ti,
                    ti2torch_grad, torch2ti_grad,
                    get_ray_origin_and_direction_by_uv,
-                   get_point_probability_density_from_2d_gaussian,
-                   grad_point_probability_density_2d,
+                   get_point_probability_density_from_2d_gaussian_normalized,
+                   grad_point_probability_density_2d_normalized,
                    inverse_se3)
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
 from SphericalHarmonics import SphericalHarmonics, vec16f
@@ -255,7 +255,7 @@ def gaussian_point_rasterisation(
                 pointcloud_features=pointcloud_features,
                 point_id=point_id)
 
-            gaussian_alpha = get_point_probability_density_from_2d_gaussian(
+            gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
                 xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
@@ -280,8 +280,8 @@ def gaussian_point_rasterisation(
                 ray_origin=ray_origin,
                 ray_direction=ray_direction,
             )
-            accumulated_color = accumulated_color + \
-                alpha * (1. - accumulated_alpha) * color
+            # print(color)
+            accumulated_color += alpha * (1. - accumulated_alpha) * color
             accumulated_alpha += alpha
         rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
         rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
@@ -398,7 +398,7 @@ def gaussian_point_rasterisation_backward(
             )
 
             # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
-            gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d(
+            gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d_normalized(
                 xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
