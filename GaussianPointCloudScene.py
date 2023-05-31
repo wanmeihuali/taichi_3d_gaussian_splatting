@@ -68,12 +68,19 @@ class GaussianPointCloudScene(torch.nn.Module):
             self.point_cloud_features[(self.point_invalid_mask == 0), 4:7] = torch.tensor(
                 np.log(initial_covariance), dtype=torch.float32).unsqueeze(1)
 
+            """
             # for rotation quaternion(x,y,z,w), we set it to identity
             self.point_cloud_features[:, 3] = 1.0
             self.point_cloud_features[:, 0:3] = 0.0
+            """
+            # for rotation quaternion(x,y,z,w), we set it to random normalized value
+            self.point_cloud_features[:, 0:4] = torch.rand_like(self.point_cloud_features[:, 0:4])
+            self.point_cloud_features[:, 0:4] = self.point_cloud_features[:, 0:4] / \
+                torch.norm(self.point_cloud_features[:, 0:4], dim=1, keepdim=True)
+
             # for alpha before sigmoid, we set it to 0.0, so sigmoid(alpha) is 0.5
             # self.point_cloud_features[:, 7] = 0.0
-            self.point_cloud_features[:, 7] = 3.0
+            self.point_cloud_features[:, 7] = 0.0
             # for color spherical harmonics factors, we set them to 0.5
             self.point_cloud_features[:, 8] = 1.0
             self.point_cloud_features[:, 9:24] = 0.0
