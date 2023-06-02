@@ -23,6 +23,7 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             assert column in self.df.columns, f"column {column} is not in the dataset"
 
     def __len__(self):
+        # return 1 # for debugging
         return len(self.df)
 
     def _pandas_field_to_tensor(self, field: Any) -> torch.Tensor:
@@ -44,6 +45,11 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         camera_id = self.df.iloc[idx]["camera_id"]
         image = PIL.Image.open(image_path)
         image = torchvision.transforms.functional.to_tensor(image)
+        # we want image width and height to be always divisible by 16
+        # so we crop the image
+        camera_width = camera_width - camera_width % 16
+        camera_height = camera_height - camera_height % 16
+        image = image[:3, :camera_height, :camera_width].contiguous()
         camera_info = CameraInfo(
             camera_intrinsics=camera_intrinsics,
             camera_height=camera_height,

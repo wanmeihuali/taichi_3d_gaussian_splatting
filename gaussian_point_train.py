@@ -71,15 +71,16 @@ class GaussianPointCloudTrainer:
         # move scene to GPU
 
     def train(self):
-        ti.init(arch=ti.cuda)
+        ti.init(arch=ti.cuda, device_memory_GB=10)
         train_data_loader = torch.utils.data.DataLoader(
             self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
         val_data_loader = torch.utils.data.DataLoader(
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=2)
         train_data_loader_iter = itertools.cycle(train_data_loader)
-        optimizer = torch.optim.Adam(
-            self.scene.parameters(), lr=1e-4, betas=(0.9, 0.999))
+        optimizer = torch.optim.AdamW(
+            self.scene.parameters(), lr=1e-3, betas=(0.9, 0.999))
         for iteration in tqdm(range(self.config.num_iterations)):
+            optimizer.zero_grad()
             image_gt, T_pointcloud_camera, camera_info = next(
                 train_data_loader_iter)
             image_gt = image_gt.cuda()
@@ -103,9 +104,11 @@ class GaussianPointCloudTrainer:
             loss.backward()
             optimizer.step()
 
-            if self.adaptive_controller.input_data is not None and iteration % self.config.log_image_interval == 0:
-                self._plot_grad_histogram(self.adaptive_controller.input_data, writer=self.writer, iteration=iteration)
-                self._plot_value_histogram(self.scene, writer=self.writer, iteration=iteration)
+            if self.adaptive_controller.input_data is not None:
+                self._plot_grad_histogram(
+                    self.adaptive_controller.input_data, writer=self.writer, iteration=iteration)
+                self._plot_value_histogram(
+                    self.scene, writer=self.writer, iteration=iteration)
             self.adaptive_controller.refinement()
             if iteration % self.config.log_loss_interval == 0:
                 self.writer.add_scalar(
@@ -129,14 +132,16 @@ class GaussianPointCloudTrainer:
             del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if iteration % self.config.val_interval == 0 and iteration != 0:
                 self.validation(val_data_loader, iteration)
-    
+
     @staticmethod
     def _compute_pnsr_and_ssim(image_pred, image_gt):
         with torch.no_grad():
-            psnr_score = 10 * torch.log10(1.0 / torch.mean((image_pred - image_gt) ** 2))
-            ssim_score = ssim(image_pred.unsqueeze(0), image_gt.unsqueeze(0), data_range=1.0, size_average=True)
+            psnr_score = 10 * \
+                torch.log10(1.0 / torch.mean((image_pred - image_gt) ** 2))
+            ssim_score = ssim(image_pred.unsqueeze(0), image_gt.unsqueeze(
+                0), data_range=1.0, size_average=True)
             return psnr_score, ssim_score
-    
+
     @staticmethod
     def _plot_grad_histogram(grad_input: GaussianPointCloudRasterisation.BackwardValidPointHookInput, writer, iteration):
         with torch.no_grad():
@@ -157,7 +162,7 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("grad/r_grad", r_grad, iteration)
             writer.add_histogram("grad/g_grad", g_grad, iteration)
             writer.add_histogram("grad/b_grad", b_grad, iteration)
-    
+
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
         with torch.no_grad():
@@ -175,8 +180,7 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("value/r", r, iteration)
             writer.add_histogram("value/g", g, iteration)
             writer.add_histogram("value/b", b, iteration)
-        
-    
+
     def validation(self, val_data_loader, iteration):
         with torch.no_grad():
             total_loss = 0.0
@@ -212,7 +216,7 @@ class GaussianPointCloudTrainer:
                     f"val/image pred {idx}", image_pred, iteration)
                 self.writer.add_image(
                     f"val/image gt {idx}", image_gt, iteration)
-                
+
             mean_loss = total_loss / len(val_data_loader)
             mean_psnr_score = total_psnr_score / len(val_data_loader)
             mean_ssim_score = total_ssim_score / len(val_data_loader)
@@ -225,19 +229,20 @@ class GaussianPointCloudTrainer:
             self.scene.to_parquet(
                 os.path.join(self.config.summary_writer_log_dir, f"scene_{iteration}.parquet"))
 
+
 # %%
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Train a Gaussian Point Cloud Scene")
     parser.add_argument("--train_config", type=str, required=True)
-    parser.add_argument("--gen_template_only", action="store_true", default=False)
+    parser.add_argument("--gen_template_only",
+                        action="store_true", default=False)
     args = parser.parse_args()
     if args.gen_template_only:
         config = GaussianPointCloudTrainer.TrainConfig()
         # convert config to yaml
         config.to_yaml_file(args.train_config)
         exit(0)
-    config = GaussianPointCloudTrainer.TrainConfig.from_yaml_file(args.train_config)
+    config = GaussianPointCloudTrainer.TrainConfig.from_yaml_file(
+        args.train_config)
     trainer = GaussianPointCloudTrainer(config)
     trainer.train()
-    
-
