@@ -77,10 +77,19 @@ class GaussianPointCloudTrainer:
         val_data_loader = torch.utils.data.DataLoader(
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=2)
         train_data_loader_iter = itertools.cycle(train_data_loader)
+        """
         optimizer = torch.optim.AdamW(
             self.scene.parameters(), lr=1e-3, betas=(0.9, 0.999))
+        """
+        optimizer = torch.optim.AdamW(
+            [self.scene.point_cloud_features], lr=1e-3, betas=(0.9, 0.999))
+        position_optimizer = torch.optim.AdamW(
+            [self.scene.point_cloud], lr=1e-6, betas=(0.9, 0.999))
+            
         for iteration in tqdm(range(self.config.num_iterations)):
             optimizer.zero_grad()
+            position_optimizer.zero_grad()
+            
             image_gt, T_pointcloud_camera, camera_info = next(
                 train_data_loader_iter)
             image_gt = image_gt.cuda()
@@ -103,6 +112,7 @@ class GaussianPointCloudTrainer:
             loss, l1_loss, ssim_loss = self.loss_function(image_pred, image_gt)
             loss.backward()
             optimizer.step()
+            position_optimizer.step()
 
             if self.adaptive_controller.input_data is not None:
                 self._plot_grad_histogram(

@@ -4,8 +4,8 @@ adaptive-controller-config:
   num-iterations-densify: 100
   num-iterations-reset-alpha: 3000
   num-iterations-warm-up: 1000
-  reset-alpha-value: -0.2
-  transparent-alpha-threshold: -0.2
+  reset-alpha-value: -0.45
+  transparent-alpha-threshold: -0.4
   under-reconstructed-s-threshold: 0.05
   floater_threshold: 3.0
 gaussian-point-cloud-scene-config:
