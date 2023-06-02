@@ -283,9 +283,10 @@ def gaussian_point_rasterisation(
             # print(color)
             accumulated_color += alpha * (1. - accumulated_alpha) * color
             accumulated_alpha += alpha
-        rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
-        rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
-        rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
+        final_color = accumulated_color / ti.max(accumulated_alpha, 1e-5)
+        rasterized_image[pixel_v, pixel_u, 0] = final_color[0]
+        rasterized_image[pixel_v, pixel_u, 1] = final_color[1]
+        rasterized_image[pixel_v, pixel_u, 2] = final_color[2]
         pixel_accumulated_alpha[pixel_v, pixel_u] = accumulated_alpha
         pixel_offset_of_last_effective_point[pixel_v,
                                              pixel_u] = offset_of_last_effective_point
@@ -362,6 +363,7 @@ def gaussian_point_rasterisation_backward(
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
         effective_point_count = last_effective_point - start_offset
         accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
+        final_alpha = accumulated_alpha
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
         ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
@@ -422,7 +424,7 @@ def gaussian_point_rasterisation_backward(
                 # print(
                 #     f"({pixel_v}, {pixel_u}, {point_offset}, {point_offset - start_offset}), accumulated_alpha: {accumulated_alpha}")
 
-                d_pixel_rgb_d_color = alpha * (1. - accumulated_alpha)
+                d_pixel_rgb_d_color = alpha * (1. - accumulated_alpha) / final_alpha
                 # all vec16f
                 color_r_grad = d_pixel_rgb_d_color * \
                     pixel_rgb_grad[0] * r_jacobian
@@ -432,9 +434,9 @@ def gaussian_point_rasterisation_backward(
                     pixel_rgb_grad[2] * b_jacobian
 
                 alpha_grad_from_rgb = (1. - accumulated_alpha) * \
-                    color * pixel_rgb_grad
-                alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
-                    alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
+                    color * pixel_rgb_grad 
+                alpha_grad: ti.f32 = (alpha_grad_from_rgb[0] + \
+                    alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]) / final_alpha
                 point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                 gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
                     (1. - point_alpha_after_activation) * \
