@@ -233,7 +233,8 @@ def gaussian_point_rasterisation(
         tile_id = tile_u + tile_v * (camera_width // 16)
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
-        accumulated_alpha = 0.
+        T_i = 1.0
+        accumulated_alpha = 0. # accumulated alpha is 1.0 - T_i
         accumulated_color = ti.math.vec3([0., 0., 0.])
         offset_of_last_effective_point = start_offset
         ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
@@ -273,7 +274,7 @@ def gaussian_point_rasterisation(
             # from paper: before a Gaussian is included in the forward rasterization
             # pass, we compute the accumulated opacity if we were to include it
             # and stop front-to-back blending before it can exceed 0.9999.
-            if accumulated_alpha + alpha > 0.9999:
+            if 1 - (1 - accumulated_alpha) * (1 - alpha) > 0.9999:
                 break
             offset_of_last_effective_point = point_offset + 1
             color = gaussian_point_3d.get_color_by_ray(
@@ -281,8 +282,9 @@ def gaussian_point_rasterisation(
                 ray_direction=ray_direction,
             )
             # print(color)
-            accumulated_color += alpha * (1. - accumulated_alpha) * color
-            accumulated_alpha += alpha
+            accumulated_color += color * alpha * T_i
+            T_i = T_i * (1 - alpha)
+            accumulated_alpha = 1. - T_i
         rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
         rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
         rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
@@ -362,6 +364,13 @@ def gaussian_point_rasterisation_backward(
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
         effective_point_count = last_effective_point - start_offset
         accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
+        T_i = 1.0 - accumulated_alpha
+        # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} \sum_{j=i+1}^{n} c_j a_j T(j)
+        # let w_i = \sum_{j=i+1}^{n} c_j a_j T(j)
+        # we have w_n = 0, w_{i-1} = w_i + c_i a_i T(i)
+        # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
+        w_i = 0.0
+        
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
         ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
@@ -418,11 +427,14 @@ def gaussian_point_rasterisation_backward(
                 )
 
                 # TODO: have no idea why taichi does not allow the following code under debug. However, it works under release mode.
-                accumulated_alpha = accumulated_alpha - alpha
+                # accumulated_alpha = accumulated_alpha - alpha
+                T_i = T_i / (1. - alpha)
+                accumulated_alpha = 1. - T_i
+
                 # print(
                 #     f"({pixel_v}, {pixel_u}, {point_offset}, {point_offset - start_offset}), accumulated_alpha: {accumulated_alpha}")
 
-                d_pixel_rgb_d_color = alpha * (1. - accumulated_alpha)
+                d_pixel_rgb_d_color = alpha * T_i
                 # all vec16f
                 color_r_grad = d_pixel_rgb_d_color * \
                     pixel_rgb_grad[0] * r_jacobian
@@ -431,8 +443,11 @@ def gaussian_point_rasterisation_backward(
                 color_b_grad = d_pixel_rgb_d_color * \
                     pixel_rgb_grad[2] * b_jacobian
 
-                alpha_grad_from_rgb = (1. - accumulated_alpha) * \
-                    color * pixel_rgb_grad
+                # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
+                alpha_grad_from_rgb = (color * T_i - w_i / (1. - alpha)) \
+                    * pixel_rgb_grad
+                # w_{i-1} = w_i + c_i a_i T(i)
+                w_i += (color[0] + color[1] + color[2]) * alpha * T_i
                 alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
                     alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
                 point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
