@@ -404,9 +404,16 @@ def gaussian_point_rasterisation(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
-    for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
-        tile_u = ti.cast(pixel_u // 16, ti.i32)
-        tile_v = ti.cast(pixel_v // 16, ti.i32)
+    ti.loop_config(block_dim=256)
+    for pixel_offset in ti.ndrange(camera_height * camera_width):
+        tile_offset = pixel_offset // 256
+        tile_u = ti.cast(tile_offset % (camera_width // 16), ti.i32)
+        tile_v = ti.cast(tile_offset // (camera_width // 16), ti.i32)
+        pixel_offset_in_tile = pixel_offset - tile_offset * 256
+        pixel_offset_u_in_tile = pixel_offset_in_tile % 16
+        pixel_offset_v_in_tile = pixel_offset_in_tile // 16
+        pixel_u = tile_u * 16 + pixel_offset_u_in_tile
+        pixel_v = tile_v * 16 + pixel_offset_v_in_tile
         tile_id = tile_u + tile_v * (camera_width // 16)
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
