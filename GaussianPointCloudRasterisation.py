@@ -98,37 +98,17 @@ def generate_point_sort_key(
 HALF_NEIGHBOR_TILE_SIZE = 5 # in paper it is 8
 @ti.kernel
 def generate_num_overlap_tiles(
-    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
-    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
-    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
-    point_in_camera_id: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     num_overlap_tiles: ti.types.ndarray(ti.i64, ndim=1),  # (M)
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     camera_width: ti.i32,  # required to be multiple of 16
     camera_height: ti.i32,
 ):
-    T_camera_pointcloud_mat = ti.Matrix(
-        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
-    camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-    for idx in range(point_in_camera_id.shape[0]):
-        point_id = point_in_camera_id[idx]
-        normalize_cov_rotation_in_pointcloud_features(
-                pointcloud_features=pointcloud_features,
-            point_id=point_id)
-        gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
-            pointcloud=pointcloud,
-            pointcloud_features=pointcloud_features,
-            point_id=point_id)
-        uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-        )
-        uv_cov = gaussian_point_3d.project_to_camera_covariance(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-            translation_camera=xyz_in_camera,
-        )
+    for point_offset in range(num_overlap_tiles.shape[0]):
+        uv = ti.math.vec2([point_uv[point_offset, 0],
+                            point_uv[point_offset, 1]])
+        uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
+                                point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
         
         center_tile_u = ti.cast(uv[0] // 16, ti.i32)
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
@@ -176,44 +156,27 @@ def generate_num_overlap_tiles(
                     ))
                     if gaussian_alpha > 1 / 255.:
                         overlap_tiles_count += 1
-        num_overlap_tiles[idx] = overlap_tiles_count
+        num_overlap_tiles[point_offset] = overlap_tiles_count
     
 @ti.kernel
 def generate_point_sort_key_by_num_overlap_tiles(
-    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
-    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
-    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
-    point_in_camera_id: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     accumulated_num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),  # (M)
-    point_id_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K), K = sum(num_overlap_tiles)
+    point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K), K = sum(num_overlap_tiles)
     point_in_camera_sort_key: ti.types.ndarray(ti.i64, ndim=1),  # (K), K = sum(num_overlap_tiles)
     camera_width: ti.i32,  # required to be multiple of 16
     camera_height: ti.i32,
     depth_to_sort_key_scale: ti.f32,
 ):
-    T_camera_pointcloud_mat = ti.Matrix(
-        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
-    camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-    for idx in range(point_in_camera_id.shape[0]):
-        point_id = point_in_camera_id[idx]
-        normalize_cov_rotation_in_pointcloud_features(
-                pointcloud_features=pointcloud_features,
-            point_id=point_id)
-        gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
-            pointcloud=pointcloud,
-            pointcloud_features=pointcloud_features,
-            point_id=point_id)
-        uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-        )
-        uv_cov = gaussian_point_3d.project_to_camera_covariance(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-            translation_camera=xyz_in_camera,
-        )
+    for point_offset in range(accumulated_num_overlap_tiles.shape[0]):
+        uv = ti.math.vec2([point_uv[point_offset, 0],
+                            point_uv[point_offset, 1]])
+        xyz_in_camera = ti.math.vec3(
+            [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
+        uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
+                                point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
         point_depth = xyz_in_camera[2]
         encoded_projected_depth = ti.cast(
             point_depth * depth_to_sort_key_scale, ti.i32)       
@@ -264,13 +227,13 @@ def generate_point_sort_key_by_num_overlap_tiles(
                     ))
                     
                     if gaussian_alpha > 1 / 255.:
-                        key_idx = accumulated_num_overlap_tiles[idx] + overlap_tiles_count
+                        key_idx = accumulated_num_overlap_tiles[point_offset] + overlap_tiles_count
                         encoded_tile_id = ti.cast(
                             tile_u + tile_v * (camera_width // 16), ti.i32)
                         sort_key = ti.cast(encoded_projected_depth, ti.i64) + \
                             (ti.cast(encoded_tile_id, ti.i64) << 32)
                         point_in_camera_sort_key[key_idx] = sort_key
-                        point_id_with_sort_key[key_idx] = point_id
+                        point_offset_with_sort_key[key_idx] = point_offset
                         overlap_tiles_count += 1
 
 @ti.kernel
@@ -343,7 +306,7 @@ def generate_point_attributes_in_camera_plane(
     pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
     camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
     T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
-    point_id_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
@@ -352,8 +315,8 @@ def generate_point_attributes_in_camera_plane(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-    for idx in range(point_id_with_sort_key.shape[0]):
-        point_id = point_id_with_sort_key[idx]
+    for idx in range(point_id_list.shape[0]):
+        point_id = point_id_list[idx]
         normalize_cov_rotation_in_pointcloud_features(
             pointcloud_features=pointcloud_features,
             point_id=point_id)
@@ -389,7 +352,8 @@ def gaussian_point_rasterisation(
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
     # (tiles_per_row * tiles_per_col)
     tile_points_end: ti.types.ndarray(ti.i32, ndim=1),
-    point_id_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_id_in_camera_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K) the offset of the point in point_id_in_camera_list
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
@@ -420,8 +384,9 @@ def gaussian_point_rasterisation(
             camera_intrinsics=camera_intrinsics_mat,
             T_camera_pointcloud=T_camera_pointcloud_mat,
         )
-        for point_offset in range(start_offset, end_offset):
-            point_id = point_id_with_sort_key[point_offset]
+        for idx_point_offset_with_sort_key in range(start_offset, end_offset):
+            point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
+            point_id = point_id_in_camera_list[point_offset]
             uv = ti.math.vec2([point_uv[point_offset, 0],
                               point_uv[point_offset, 1]])
             xyz_in_camera = ti.math.vec3(
@@ -518,7 +483,8 @@ def gaussian_point_rasterisation_backward(
     pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
     # (tiles_per_row * tiles_per_col)
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
-    point_id_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K)
+    point_id_in_camera_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     rasterized_image_grad: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
     pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     # (H, W)
@@ -557,8 +523,9 @@ def gaussian_point_rasterisation_backward(
             T_camera_pointcloud=T_camera_pointcloud_mat,
         )
         for inverse_point_offset in range(effective_point_count):
-            point_offset = last_effective_point - inverse_point_offset - 1
-            point_id = point_id_with_sort_key[point_offset]
+            idx_point_offset_with_sort_key = last_effective_point - inverse_point_offset - 1
+            point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
+            point_id = point_id_in_camera_list[point_offset]
             gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
                 pointcloud=pointcloud,
                 pointcloud_features=pointcloud_features,
@@ -711,32 +678,36 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_width=camera_info.camera_width,
                 )
                 point_in_camera_mask = point_in_camera_mask.bool()
-                point_in_camera_id = point_id[point_in_camera_mask].contiguous(
+                point_id_in_camera_list = point_id[point_in_camera_mask].contiguous(
                 )
                 del point_id
                 del point_in_camera_mask
-                """
-                point_in_camera_sort_key = torch.zeros(
-                    size=(point_in_camera_id.shape[0],), dtype=torch.int64, device=pointcloud.device)
-                generate_point_sort_key(
-                    pointcloud=pointcloud,
-                    camera_intrinsics=camera_info.camera_intrinsics,
-                    T_camera_pointcloud=T_camera_pointcloud,
-                    point_in_camera_id=point_in_camera_id,
-                    point_in_camera_sort_key=point_in_camera_sort_key,
-                    camera_height=camera_info.camera_height,
-                    camera_width=camera_info.camera_width,
-                    depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
-                )
-                """
-                num_overlap_tiles = torch.zeros_like(point_in_camera_id)
-                generate_num_overlap_tiles(
+
+                num_points_in_camera = point_id_in_camera_list.shape[0]
+
+                point_uv = torch.zeros(
+                    size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
+                point_in_camera = torch.zeros(
+                    size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
+                point_uv_covariance = torch.zeros(
+                    size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
+
+                generate_point_attributes_in_camera_plane(
                     pointcloud=pointcloud,
                     pointcloud_features=pointcloud_features,
                     camera_intrinsics=camera_info.camera_intrinsics,
                     T_camera_pointcloud=T_camera_pointcloud,
-                    point_in_camera_id=point_in_camera_id,
+                    point_id_list=point_id_in_camera_list,
+                    point_uv=point_uv,
+                    point_in_camera=point_in_camera,
+                    point_uv_covariance=point_uv_covariance,
+                )
+
+                num_overlap_tiles = torch.zeros_like(point_id_in_camera_list)
+                generate_num_overlap_tiles(
                     num_overlap_tiles=num_overlap_tiles,
+                    point_uv=point_uv,
+                    point_uv_covariance=point_uv_covariance,
                     camera_width=camera_info.camera_width,
                     camera_height=camera_info.camera_height,
                 )
@@ -749,26 +720,23 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 del num_overlap_tiles
                 point_in_camera_sort_key = torch.zeros(
                     size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
-                point_id_with_sort_key = torch.zeros(
+                point_offset_with_sort_key = torch.zeros(
                     size=(total_num_overlap_tiles,), dtype=torch.int32, device=pointcloud.device)
                 generate_point_sort_key_by_num_overlap_tiles(
-                    pointcloud=pointcloud,
-                    pointcloud_features=pointcloud_features,
-                    camera_intrinsics=camera_info.camera_intrinsics,
-                    T_camera_pointcloud=T_camera_pointcloud,
-                    point_in_camera_id=point_in_camera_id,
+                    point_uv=point_uv,
+                    point_in_camera=point_in_camera,
+                    point_uv_covariance=point_uv_covariance,
                     accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
-                    point_id_with_sort_key=point_id_with_sort_key,
+                    point_offset_with_sort_key=point_offset_with_sort_key,
                     point_in_camera_sort_key=point_in_camera_sort_key,
-                    camera_height=camera_info.camera_height,
                     camera_width=camera_info.camera_width,
+                    camera_height=camera_info.camera_height,
                     depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
                 )
-                #point_id_with_sort_key = point_id_with_sort_key
 
                 point_in_camera_sort_key, permutation = point_in_camera_sort_key.sort()
-                point_id_with_sort_key = point_id_with_sort_key[permutation].contiguous(
-                )  # now the point_id_with_sort_key is sorted by the sort_key
+                point_offset_with_sort_key = point_offset_with_sort_key[permutation].contiguous(
+                )  # now the point_offset_with_sort_key is sorted by the sort_key
                 del permutation
                 tiles_per_row = camera_info.camera_width // 16
                 tiles_per_col = camera_info.camera_height // 16
@@ -782,27 +750,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tile_points_end=tile_points_end,
                 )
 
-                num_points_in_camera = point_id_with_sort_key.shape[0]
-
-                # in paper, these data are computed on the fly and saved in shared block memory.
-                # however, taichi does not support shared block memory for ndarray, so we save them in global memory
-                point_uv = torch.zeros(
-                    size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
-                point_in_camera = torch.zeros(
-                    size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
-                point_uv_covariance = torch.zeros(
-                    size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
-
-                generate_point_attributes_in_camera_plane(
-                    pointcloud=pointcloud,
-                    pointcloud_features=pointcloud_features,
-                    camera_intrinsics=camera_info.camera_intrinsics,
-                    T_camera_pointcloud=T_camera_pointcloud,
-                    point_id_with_sort_key=point_id_with_sort_key,
-                    point_uv=point_uv,
-                    point_in_camera=point_in_camera,
-                    point_uv_covariance=point_uv_covariance,
-                )
+                
 
                 rasterized_image = torch.zeros(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
@@ -820,7 +768,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     pointcloud_features=pointcloud_features,
                     tile_points_start=tile_points_start,
                     tile_points_end=tile_points_end,
-                    point_id_with_sort_key=point_id_with_sort_key,
+                    point_id_in_camera_list=point_id_in_camera_list,
+                    point_offset_with_sort_key=point_offset_with_sort_key,
                     point_uv=point_uv,
                     point_in_camera=point_in_camera,
                     point_uv_covariance=point_uv_covariance,
@@ -830,8 +779,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 ctx.save_for_backward(
                     pointcloud,
                     pointcloud_features,
-                    point_id_with_sort_key, # point_id_with_sort_key is sorted by tile and depth and has duplicated points, e.g. one points is belong to multiple tiles
-                    point_in_camera_id, # point_in_camera_id does not have duplicated points
+                    point_offset_with_sort_key, # point_id_with_sort_key is sorted by tile and depth and has duplicated points, e.g. one points is belong to multiple tiles
+                    point_id_in_camera_list, # point_in_camera_id does not have duplicated points
                     tile_points_start,
                     tile_points_end,
                     pixel_accumulated_alpha,
@@ -849,7 +798,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             def backward(ctx, grad_rasterized_image):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
-                    pointcloud, pointcloud_features, point_id_with_sort_key, point_in_camera_id, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
+                    pointcloud, pointcloud_features, point_offset_with_sort_key, point_id_in_camera_list, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     color_max_sh_band = ctx.color_max_sh_band
                     grad_rasterized_image = grad_rasterized_image.contiguous()
@@ -876,7 +825,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         pointcloud=pointcloud,
                         pointcloud_features=pointcloud_features,
                         tile_points_start=tile_points_start,
-                        point_id_with_sort_key=point_id_with_sort_key,
+                        point_offset_with_sort_key=point_offset_with_sort_key,
+                        point_id_in_camera_list=point_id_in_camera_list,
                         # point_in_camera_id=point_in_camera_id,
                         rasterized_image_grad=grad_rasterized_image,
                         pixel_accumulated_alpha=pixel_accumulated_alpha,
@@ -889,10 +839,10 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     if backward_valid_point_hook is not None:
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
-                            point_in_camera_id=point_in_camera_id,
-                            grad_point_in_camera=grad_pointcloud[point_in_camera_id],
-                            grad_pointfeatures_in_camera=grad_pointcloud_features[point_in_camera_id],
-                            grad_viewspace=grad_viewspace[point_in_camera_id],
+                            point_in_camera_id=point_id_in_camera_list,
+                            grad_point_in_camera=grad_pointcloud[point_id_in_camera_list],
+                            grad_pointfeatures_in_camera=grad_pointcloud_features[point_id_in_camera_list],
+                            grad_viewspace=grad_viewspace[point_id_in_camera_list],
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
