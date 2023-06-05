@@ -29,6 +29,8 @@ class GaussianPointCloudTrainer:
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
         log_image_interval: int = 1000
+        enable_taichi_kernel_profiler: bool = False
+        log_taichi_kernel_profile_interval: int = 1000
         summary_writer_log_dir: str = "logs"
         rasterisation_config: GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig()
         adaptive_controller_config: GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig()
@@ -69,7 +71,7 @@ class GaussianPointCloudTrainer:
         # move scene to GPU
 
     def train(self):
-        ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=True) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
+        ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
             self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
         val_data_loader = torch.utils.data.DataLoader(
@@ -125,7 +127,7 @@ class GaussianPointCloudTrainer:
                     "train/l1 loss", l1_loss.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
-            if iteration % 100 == 0 and iteration > 0:
+            if self.config.enable_taichi_kernel_profiler and iteration % self.config.log_taichi_kernel_profile_interval == 0 and iteration > 0:
                 ti.profiler.print_kernel_profiler_info("count")
                 ti.profiler.clear_kernel_profiler_info()
             if iteration % self.config.log_metrics_interval == 0:

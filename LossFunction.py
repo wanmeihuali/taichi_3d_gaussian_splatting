@@ -9,7 +9,8 @@ class LossFunction(nn.Module):
     @dataclass
     class LossFunctionConfig(YAMLWizard):
         lambda_value: float = 0.2
-        regularization_weight: float = 2.
+        enable_regularization: bool = True
+        regularization_weight: float = 2
 
 
     def __init__(self, config: LossFunctionConfig):
@@ -31,7 +32,7 @@ class LossFunction(nn.Module):
                            data_range=1, size_average=True)
         L = (1 - self.config.lambda_value) * L1 + \
             self.config.lambda_value * LD_SSIM
-        if pointcloud_features is not None:
+        if pointcloud_features is not None and self.config.enable_regularization:
             regularization_loss = self._regularization_loss(pointcloud_features)
             L = L + self.config.regularization_weight * regularization_loss
         return L, L1, LD_SSIM
