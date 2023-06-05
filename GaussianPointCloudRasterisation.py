@@ -114,7 +114,7 @@ def generate_num_overlap_tiles(
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
         overlap_tiles_count = 0
         # we define overlap as: the pdf at the center of the tile is larger than 1e-3.
-        for tile_u_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
+        for tile_u_offset in range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1):
             for tile_v_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
                 tile_u = center_tile_u + tile_u_offset
                 tile_v = center_tile_v + tile_v_offset
@@ -185,7 +185,7 @@ def generate_point_sort_key_by_num_overlap_tiles(
 
         overlap_tiles_count = 0
         # we define overlap as: the pdf at the center or any corner of the tile is larger than 1e-3.
-        for tile_u_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
+        for tile_u_offset in range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1):
             for tile_v_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
                 tile_u = center_tile_u + tile_u_offset
                 tile_v = center_tile_v + tile_v_offset
@@ -370,15 +370,14 @@ def gaussian_point_rasterisation(
     # hope the missing for shared block memory will not hurt the performance too much
     ti.loop_config(block_dim=256)
     for pixel_offset in ti.ndrange(camera_height * camera_width):
-        tile_offset = pixel_offset // 256
-        tile_u = ti.cast(tile_offset % (camera_width // 16), ti.i32)
-        tile_v = ti.cast(tile_offset // (camera_width // 16), ti.i32)
-        pixel_offset_in_tile = pixel_offset - tile_offset * 256
+        tile_id = pixel_offset // 256
+        tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
+        tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
+        pixel_offset_in_tile = pixel_offset - tile_id * 256
         pixel_offset_u_in_tile = pixel_offset_in_tile % 16
         pixel_offset_v_in_tile = pixel_offset_in_tile // 16
         pixel_u = tile_u * 16 + pixel_offset_u_in_tile
         pixel_v = tile_v * 16 + pixel_offset_v_in_tile
-        tile_id = tile_u + tile_v * (camera_width // 16)
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
         T_i = 1.0
@@ -425,7 +424,7 @@ def gaussian_point_rasterisation(
             # and stop front-to-back blending before it can exceed 0.9999.
             if 1 - (1 - accumulated_alpha) * (1 - alpha) > 0.9999:
                 break
-            offset_of_last_effective_point = point_offset + 1
+            offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
             color = gaussian_point_3d.get_color_by_ray(
                 ray_origin=ray_origin,
                 ray_direction=ray_direction,

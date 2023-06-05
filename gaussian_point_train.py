@@ -69,7 +69,7 @@ class GaussianPointCloudTrainer:
         # move scene to GPU
 
     def train(self):
-        ti.init(arch=ti.cuda, device_memory_GB=10)
+        ti.init(arch=ti.cuda, device_memory_GB=0.1) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
             self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
         val_data_loader = torch.utils.data.DataLoader(
