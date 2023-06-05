@@ -118,9 +118,8 @@ class GaussianPointAdaptiveController:
         under_reconstructed_points = pointcloud[under_reconstructed_point_id]
         over_reconstructed_points = pointcloud[over_reconstructed_point_id]
         under_reconstructed_point_features = point_features_in_camera[under_reconstructed_mask]
+        point_features_in_camera[over_reconstructed_mask, 4:7] /= self.config.gaussian_split_factor_phi
         over_reconstructed_point_features = point_features_in_camera[over_reconstructed_mask]
-        over_reconstructed_point_features[:,
-                                          4:7] /= self.config.gaussian_split_factor_phi
     
 
         densify_points = torch.cat(

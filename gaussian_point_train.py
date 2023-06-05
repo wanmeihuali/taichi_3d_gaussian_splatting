@@ -59,12 +59,10 @@ class GaussianPointCloudTrainer:
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
         )
-        """
         self.rasterisation = GaussianPointCloudRasterisation(
             config=self.config.rasterisation_config,
             backward_valid_point_hook=None,
         )
-        """
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
 
@@ -109,7 +107,7 @@ class GaussianPointCloudTrainer:
                 gaussian_point_cloud_rasterisation_input)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
-            loss, l1_loss, ssim_loss = self.loss_function(image_pred, image_gt)
+            loss, l1_loss, ssim_loss = self.loss_function(image_pred, image_gt, pointcloud_features=self.scene.point_cloud_features)
             loss.backward()
             optimizer.step()
             position_optimizer.step()
@@ -119,7 +117,7 @@ class GaussianPointCloudTrainer:
                     self.adaptive_controller.input_data, writer=self.writer, iteration=iteration)
                 self._plot_value_histogram(
                     self.scene, writer=self.writer, iteration=iteration)
-            self.adaptive_controller.refinement()
+            # self.adaptive_controller.refinement()
             if iteration % self.config.log_loss_interval == 0:
                 self.writer.add_scalar(
                     "train/loss", loss.item(), iteration)
