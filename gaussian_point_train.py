@@ -69,7 +69,7 @@ class GaussianPointCloudTrainer:
         # move scene to GPU
 
     def train(self):
-        ti.init(arch=ti.cuda, device_memory_GB=0.1) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
+        ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=True) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
             self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
         val_data_loader = torch.utils.data.DataLoader(
@@ -125,6 +125,9 @@ class GaussianPointCloudTrainer:
                     "train/l1 loss", l1_loss.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
+            if iteration % 100 == 0 and iteration > 0:
+                ti.profiler.print_kernel_profiler_info("count")
+                ti.profiler.clear_kernel_profiler_info()
             if iteration % self.config.log_metrics_interval == 0:
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
                     image_pred=image_pred, image_gt=image_gt)

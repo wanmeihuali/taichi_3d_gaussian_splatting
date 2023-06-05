@@ -505,10 +505,16 @@ def gaussian_point_rasterisation_backward(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
-    for pixel_v, pixel_u in ti.ndrange(camera_height, camera_width):
-        tile_u = ti.cast(pixel_u // 16, ti.i32)
-        tile_v = ti.cast(pixel_v // 16, ti.i32)
-        tile_id = tile_u + tile_v * (camera_width // 16)
+    ti.loop_config(block_dim=256)
+    for pixel_offset in ti.ndrange(camera_height * camera_width):
+        tile_id = pixel_offset // 256
+        tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
+        tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
+        pixel_offset_in_tile = pixel_offset - tile_id * 256
+        pixel_offset_u_in_tile = pixel_offset_in_tile % 16
+        pixel_offset_v_in_tile = pixel_offset_in_tile // 16
+        pixel_u = tile_u * 16 + pixel_offset_u_in_tile
+        pixel_v = tile_v * 16 + pixel_offset_v_in_tile
         start_offset = tile_points_start[tile_id]
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
         effective_point_count = last_effective_point - start_offset
@@ -549,13 +555,6 @@ def gaussian_point_rasterisation_backward(
                 projective_transform=camera_intrinsics_mat,
                 translation_camera=translation_camera)
 
-            # d_Sigma_prime_d_q is 4x4, d_Sigma_prime_d_s is 4x3
-            d_Sigma_prime_d_q, d_Sigma_prime_d_s = gaussian_point_3d.project_to_camera_covariance_jacobian(
-                T_camera_world=T_camera_pointcloud_mat,
-                projective_transform=camera_intrinsics_mat,
-                translation_camera=translation_camera,
-            )
-
             # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
             gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d_normalized(
                 xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
@@ -570,6 +569,12 @@ def gaussian_point_rasterisation_backward(
             # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
             # 255 ) and also clamp 𝛼 with 0.99 from above.
             if prod_alpha >= 1. / 255.:
+                # d_Sigma_prime_d_q is 4x4, d_Sigma_prime_d_s is 4x3
+                d_Sigma_prime_d_q, d_Sigma_prime_d_s = gaussian_point_3d.project_to_camera_covariance_jacobian(
+                    T_camera_world=T_camera_pointcloud_mat,
+                    projective_transform=camera_intrinsics_mat,
+                    translation_camera=translation_camera,
+                )
                 alpha: ti.f32 = ti.min(prod_alpha, 0.99)
                 color, r_jacobian, g_jacobian, b_jacobian = gaussian_point_3d.get_color_with_jacobian_by_ray(
                     ray_origin=ray_origin,
