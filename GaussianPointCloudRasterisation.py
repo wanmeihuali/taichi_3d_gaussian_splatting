@@ -504,7 +504,10 @@ def gaussian_point_rasterisation_backward(
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
     # taichi does not support thread block, so we just have a single thread for each pixel
-    # hope the missing for shared block memory will not hurt the performance too much
+    # 90% of the taichi time is spent on backward(consider the sorting in forward also takes time, the real backward time is 70%)
+    # I believe it is slower than what the paper claims because of taichi does not support shared memory directly.
+    # In paper, they keep the point information in block shared memory and only compute it once.
+    # Also, it is possible to first write the gradient to a shared memory and then write it to global memory.
     ti.loop_config(block_dim=256)
     for pixel_offset in ti.ndrange(camera_height * camera_width):
         tile_id = pixel_offset // 256
@@ -546,10 +549,7 @@ def gaussian_point_rasterisation_backward(
                 T_camera_world=T_camera_pointcloud_mat,
                 projective_transform=camera_intrinsics_mat,
             )
-            d_uv_d_translation = gaussian_point_3d.project_to_camera_position_jacobian(
-                T_camera_world=T_camera_pointcloud_mat,
-                projective_transform=camera_intrinsics_mat,
-            )  # (2, 3)
+            
             uv_cov = gaussian_point_3d.project_to_camera_covariance(
                 T_camera_world=T_camera_pointcloud_mat,
                 projective_transform=camera_intrinsics_mat,
@@ -561,14 +561,18 @@ def gaussian_point_rasterisation_backward(
                 gaussian_mean=uv,
                 gaussian_covariance=uv_cov,
             )
-            d_p_d_cov_flat = ti.math.vec4(
-                [d_p_d_cov[0, 0], d_p_d_cov[0, 1], d_p_d_cov[1, 0], d_p_d_cov[1, 1]])
             point_alpha_after_activation = 1. / \
                 (1. + ti.math.exp(-gaussian_point_3d.alpha))
             prod_alpha = gaussian_alpha * point_alpha_after_activation
             # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
             # 255 ) and also clamp 𝛼 with 0.99 from above.
             if prod_alpha >= 1. / 255.:
+                d_uv_d_translation = gaussian_point_3d.project_to_camera_position_jacobian(
+                    T_camera_world=T_camera_pointcloud_mat,
+                    projective_transform=camera_intrinsics_mat,
+                )  # (2, 3)
+                d_p_d_cov_flat = ti.math.vec4(
+                    [d_p_d_cov[0, 0], d_p_d_cov[0, 1], d_p_d_cov[1, 0], d_p_d_cov[1, 1]])
                 # d_Sigma_prime_d_q is 4x4, d_Sigma_prime_d_s is 4x3
                 d_Sigma_prime_d_q, d_Sigma_prime_d_s = gaussian_point_3d.project_to_camera_covariance_jacobian(
                     T_camera_world=T_camera_pointcloud_mat,
