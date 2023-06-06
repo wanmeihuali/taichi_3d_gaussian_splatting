@@ -1,12 +1,12 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.0000002 # disable densification
+  densification-view-space-position-gradients-threshold: 0.0000008
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
-  num-iterations-reset-alpha: 3000 # disable reset alpha
+  num-iterations-reset-alpha: 4000
   num-iterations-warm-up: 500
   reset-alpha-value: -2.
   transparent-alpha-threshold: -2.
-  under-reconstructed-s-threshold: 0.03
+  under-reconstructed-s-threshold: 0.03 # the same unit as the point cloud
   floater_threshold: 3. # shall not rely on floater points removal too much, otherwise we will stuck in the remove large point->increase points loop, and finally remove all points
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 100.
@@ -15,8 +15,8 @@ increase-color-max-sh-band-interval: 1000.0
 log-image-interval: 1000
 log-loss-interval: 10
 log-metrics-interval: 100
-enable_taichi_kernel_profiler: False
-log_taichi_kernel_profile_interval: 100
+enable_taichi_kernel_profiler: True
+log_taichi_kernel_profile_interval: 3000
 loss-function-config:
   lambda-value: 0.2
   enable_regularization: True
@@ -27,7 +27,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: logs/boots_super_sparse_experiment_try_support_densification_100x_points_reset_alpha
+summary-writer-log-dir: logs/boots_super_sparse_baseline
 train-dataset-json-path: 'data/boots_super_sparse/boots_train.json'
 val-dataset-json-path: 'data/boots_super_sparse/boots_val.json'
 val-interval: 1000
