@@ -657,7 +657,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
     @dataclass
     class BackwardValidPointHookInput:
-        point_in_camera_id: torch.Tensor  # M
+        point_id_in_camera_list: torch.Tensor  # M
         grad_point_in_camera: torch.Tensor  # Mx3
         grad_pointfeatures_in_camera: torch.Tensor  # Mx56
         grad_viewspace: torch.Tensor  # Mx2
@@ -854,7 +854,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     if backward_valid_point_hook is not None:
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
-                            point_in_camera_id=point_id_in_camera_list,
+                            point_id_in_camera_list=point_id_in_camera_list,
                             grad_point_in_camera=grad_pointcloud[point_id_in_camera_list],
                             grad_pointfeatures_in_camera=grad_pointcloud_features[point_id_in_camera_list],
                             grad_viewspace=grad_viewspace[point_id_in_camera_list],

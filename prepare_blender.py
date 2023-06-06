@@ -10,14 +10,14 @@ import json
 stl_path = "/home/kuangyuan/hdd/datasets/blender/scene/Boots.stl"
 dataset_path = "/home/kuangyuan/hdd/datasets/nerf_gen/test_1/dataset_d3/dataset_d3_train"
 camera_info_path = "/home/kuangyuan/hdd/datasets/nerf_gen/test_1/dataset_d3/dataset_d3_train/transforms_train.json"
-output_dir = "/home/kuangyuan/hdd/datasets/nerf_gen/test_1/dataset_d3/3d_gaussian"
+output_dir = "/home/kuangyuan/hdd/datasets/nerf_gen/boots_super_sparse/dataset_d3/3d_gaussian"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 mesh = trimesh.load(stl_path)
 
 # %%
 # Sample points on the surface
-point_cloud, index = trimesh.sample.sample_surface(mesh, count=50000)
+point_cloud, index = trimesh.sample.sample_surface(mesh, count=500)
 point_cloud = point_cloud.T
 print(point_cloud.shape)
 # %%

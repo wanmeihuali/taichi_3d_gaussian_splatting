@@ -228,7 +228,7 @@ class TestRasterisation(unittest.TestCase):
         T_camera_world[2, 3] = -2
 
         def backward_valid_point_hook(input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
-            num_points_in_camera = input_data.point_in_camera_id.shape[0]
+            num_points_in_camera = input_data.point_id_in_camera_list.shape[0]
             self.assertEqual(num_points_in_camera,
                              input_data.grad_point_in_camera.shape[0])
             self.assertEqual(num_points_in_camera,

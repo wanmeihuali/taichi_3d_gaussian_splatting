@@ -20,14 +20,14 @@ log_taichi_kernel_profile_interval: 100
 loss-function-config:
   lambda-value: 0.2
   enable_regularization: True
-  regularization_weight: 4.0
+  regularization_weight: 1.0
 num-iterations: 300000
-pointcloud-parquet-path: 'data/boots/point_cloud.parquet'
+pointcloud-parquet-path: 'data/boots_sparse/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: logs/boots_experiment_only_enable_removing_stronger_reg
-train-dataset-json-path: 'data/boots/boots_train.json'
-val-dataset-json-path: 'data/boots/boots_val.json'
+summary-writer-log-dir: logs/boots_sparse_experiment_only_enable_removing_stronger_reg
+train-dataset-json-path: 'data/boots_sparse/boots_train.json'
+val-dataset-json-path: 'data/boots_sparse/boots_val.json'
 val-interval: 1000
