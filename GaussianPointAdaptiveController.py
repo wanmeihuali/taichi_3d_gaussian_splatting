@@ -1,7 +1,9 @@
+import numpy as np
 import torch
 from dataclasses import dataclass
 from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from dataclass_wizard import YAMLWizard
+from typing import Optional
 
 
 class GaussianPointAdaptiveController:
@@ -41,6 +43,16 @@ class GaussianPointAdaptiveController:
         # shape: [num_points], dtype: int8 because taichi doesn't support bool type
         point_invalid_mask: torch.Tensor
 
+    @dataclass
+    class GaussianPointAdaptiveControllerDensifyPointInfo:
+        floater_point_id: torch.Tensor # shape: [num_floater_points]
+        transparent_point_id: torch.Tensor # shape: [num_transparent_points]
+        under_reconstructed_point_id: torch.Tensor # shape: [num_points_under_reconstructed]
+        over_reconstructed_point_id: torch.Tensor # shape: [num_points_over_reconstructed]
+        under_reconstructed_point_position_before_optimization: torch.Tensor # shape: [num_points_under_reconstructed, 3]
+        over_reconstructed_point_position_before_optimization: torch.Tensor # shape: [num_points_over_reconstructed, 3]
+        
+
     def __init__(self,
                  config: GaussianPointAdaptiveControllerConfig,
                  maintained_parameters: GaussianPointAdaptiveControllerMaintainedParameters):
@@ -48,8 +60,7 @@ class GaussianPointAdaptiveController:
         self.config = config
         self.maintained_parameters = maintained_parameters
         self.input_data = None
-        self.densify_points = None
-        self.densify_point_features = None
+        self.densify_point_info: Optional[GaussianPointAdaptiveController.GaussianPointAdaptiveControllerDensifyPointInfo] = None
 
 
     def update(self, input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
@@ -82,76 +93,93 @@ class GaussianPointAdaptiveController:
         """
         pointcloud = self.maintained_parameters.pointcloud
         pointcloud_features = self.maintained_parameters.pointcloud_features
-        point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
-        point_in_camera_id: torch.Tensor = input_data.point_in_camera_id
-        point_features_in_camera = pointcloud_features[point_in_camera_id]
-        point_s_in_camera = point_features_in_camera[:, 4:7]
-        floater_mask = (point_s_in_camera.exp().norm(dim=1) > self.config.floater_threshold)
-        floater_point_id = point_in_camera_id[floater_mask]
-        num_floater_points = floater_point_id.shape[0]
-        self.maintained_parameters.point_invalid_mask[floater_point_id] = 1
-        point_to_remove_mask = (point_alpha < self.config.transparent_alpha_threshold) & \
+        point_id_list = torch.arange(pointcloud.shape[0], device=pointcloud.device)
+        
+        # Note that both floater points and transparent points are apply on all valid points
+        # while densification only apply on points in camera in the current frame
+        floater_mask = (pointcloud_features[:, 4:7].exp().norm(dim=1) > self.config.floater_threshold) & \
             (self.maintained_parameters.point_invalid_mask == 0)
-        total_valid_points_before_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
-            self.maintained_parameters.point_invalid_mask.sum()
-        # remove any Gaussians that are essentially transparent
-        self.maintained_parameters.point_invalid_mask[point_to_remove_mask] = 1
-        num_removed_points = point_to_remove_mask.sum()
-        print(f"remove {num_removed_points} points by alpha, {num_floater_points} points by floater points")
+        floater_point_id = point_id_list[floater_mask]
+        point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
+        transparent_point_mask = (point_alpha < self.config.transparent_alpha_threshold) & \
+            (self.maintained_parameters.point_invalid_mask == 0) & \
+                (~floater_mask) # ensure floater points and transparent points don't overlap
+        transparent_point_id = point_id_list[transparent_point_mask]
+        
 
-        num_of_invalid_points = self.maintained_parameters.point_invalid_mask.sum()
-        # split Gaussians with an average magnitude of view-space position gradients above a threshold
+        # find points that are under-reconstructed or over-reconstructed
+        point_id_in_camera_list: torch.Tensor = input_data.point_id_in_camera_list
+        point_features_in_camera = pointcloud_features[point_id_in_camera_list]
+        will_be_remove_mask = floater_mask[point_id_in_camera_list] | transparent_point_mask[point_id_in_camera_list]
         # shape: [num_points_in_camera, 2]
         grad_viewspace = input_data.grad_viewspace
         # shape: [num_points_in_camera, num_features]
         # all these three masks are on num_points_in_camera, not num_points
-        to_densify_mask = grad_viewspace.norm(
-            dim=1) > self.config.densification_view_space_position_gradients_threshold
+        to_densify_mask = (grad_viewspace.norm(
+            dim=1) > self.config.densification_view_space_position_gradients_threshold) & \
+                (~will_be_remove_mask)
         # shape: [num_points_in_camera, 3]
+        point_s_in_camera = point_features_in_camera[:, 4:7]
         under_reconstructed_mask = to_densify_mask & (point_s_in_camera.exp().norm(
             dim=1) < self.config.under_reconstructed_s_threshold)
         over_reconstructed_mask = to_densify_mask & (~under_reconstructed_mask)
 
-        under_reconstructed_point_id = point_in_camera_id[under_reconstructed_mask]
-        over_reconstructed_point_id = point_in_camera_id[over_reconstructed_mask]
+        under_reconstructed_point_id = point_id_in_camera_list[under_reconstructed_mask]
+        over_reconstructed_point_id = point_id_in_camera_list[over_reconstructed_mask]
 
-        under_reconstructed_points = pointcloud[under_reconstructed_point_id]
-        over_reconstructed_points = pointcloud[over_reconstructed_point_id]
-        under_reconstructed_point_features = point_features_in_camera[under_reconstructed_mask]
-        point_features_in_camera[over_reconstructed_mask, 4:7] /= self.config.gaussian_split_factor_phi
-        over_reconstructed_point_features = point_features_in_camera[over_reconstructed_mask]
-    
+        under_reconstructed_point_position_before_optimization = pointcloud[under_reconstructed_point_id]
+        over_reconstructed_point_position_before_optimization = pointcloud[over_reconstructed_point_id]
 
-        densify_points = torch.cat(
-            [under_reconstructed_points, over_reconstructed_points], dim=0)
-        densify_point_features = torch.cat(
-            [under_reconstructed_point_features, over_reconstructed_point_features], dim=0)
-
-        num_of_densify_points = densify_points.shape[0]
-        if num_of_densify_points > num_of_invalid_points:
-            densify_points = densify_points[:num_of_invalid_points]
-            densify_point_features = densify_point_features[:num_of_invalid_points]
-        num_of_densify_points = densify_points.shape[0]
-        total_valid_points = total_valid_points_before_densify + \
-            num_of_densify_points - num_removed_points
-        print(
-            f"total valid points: {total_valid_points_before_densify} -> {total_valid_points}, under reconstructed points: {under_reconstructed_points.shape[0]}, over reconstructed points: {over_reconstructed_points.shape[0]}")
-        self.densify_points = densify_points
-        self.densify_point_features = densify_point_features
+        self.densify_point_info = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerDensifyPointInfo(
+            floater_point_id=floater_point_id,
+            transparent_point_id=transparent_point_id,
+            under_reconstructed_point_id=under_reconstructed_point_id,
+            over_reconstructed_point_id=over_reconstructed_point_id,
+            under_reconstructed_point_position_before_optimization=under_reconstructed_point_position_before_optimization,
+            over_reconstructed_point_position_before_optimization=over_reconstructed_point_position_before_optimization,
+        )
 
     def _add_densify_points(self):
-        densify_points = self.densify_points
-        densify_point_features = self.densify_point_features
-        self.densify_points = None
-        self.densify_point_features = None
-        num_of_densify_points = densify_points.shape[0]
-        
-        # find the first num_of_densify_points invalid points
-        invalid_point_id = torch.where(self.maintained_parameters.point_invalid_mask == 1)[
-            0][:num_of_densify_points]
-        self.maintained_parameters.pointcloud[invalid_point_id] = densify_points
-        self.maintained_parameters.pointcloud_features[invalid_point_id] = densify_point_features
-        self.maintained_parameters.point_invalid_mask[invalid_point_id] = 0
+        assert self.densify_point_info is not None
+        total_valid_points_before_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
+            self.maintained_parameters.point_invalid_mask.sum()
+        num_transparent_points = self.densify_point_info.transparent_point_id.shape[0]
+        self.maintained_parameters.point_invalid_mask[self.densify_point_info.transparent_point_id] = 1
+        num_floaters_points = self.densify_point_info.floater_point_id.shape[0]
+        self.maintained_parameters.point_invalid_mask[self.densify_point_info.floater_point_id] = 1
+        num_under_reconstructed_points = self.densify_point_info.under_reconstructed_point_id.shape[0]
+        num_over_reconstructed_points = self.densify_point_info.over_reconstructed_point_id.shape[0]
+        num_of_densify_points = num_under_reconstructed_points + num_over_reconstructed_points
+        invalid_point_id_to_fill = torch.where(self.maintained_parameters.point_invalid_mask == 1)[0][:num_of_densify_points]
+
+        under_reconstructed_point_id_to_fill = invalid_point_id_to_fill[:self.densify_point_info.under_reconstructed_point_id.shape[0]]
+        over_reconstructed_point_id_to_fill = invalid_point_id_to_fill[self.densify_point_info.under_reconstructed_point_id.shape[0]:]
+
+        # for position, we use the position before optimization for new points, so that original points and new points have different positions
+        num_fillable_under_reconstructed_points = 0
+        if num_under_reconstructed_points > 0:
+            num_fillable_under_reconstructed_points = under_reconstructed_point_id_to_fill.shape[0]
+            self.maintained_parameters.pointcloud[under_reconstructed_point_id_to_fill] = \
+                self.densify_point_info.under_reconstructed_point_position_before_optimization[:num_fillable_under_reconstructed_points]
+            self.maintained_parameters.pointcloud_features[under_reconstructed_point_id_to_fill] = \
+                self.maintained_parameters.pointcloud_features[self.densify_point_info.under_reconstructed_point_id[:num_fillable_under_reconstructed_points]]
+            self.maintained_parameters.point_invalid_mask[under_reconstructed_point_id_to_fill] = 0
+
+        num_fillable_over_reconstructed_points = 0
+        if num_over_reconstructed_points > 0:
+            num_fillable_over_reconstructed_points = over_reconstructed_point_id_to_fill.shape[0]
+            self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill] = \
+                self.densify_point_info.over_reconstructed_point_position_before_optimization[:num_fillable_over_reconstructed_points]
+            self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill] = \
+                self.maintained_parameters.pointcloud_features[self.densify_point_info.over_reconstructed_point_id[:num_fillable_over_reconstructed_points]]
+            self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill, 4:7] -= np.log(self.config.gaussian_split_factor_phi)
+            self.maintained_parameters.pointcloud_features[self.densify_point_info.over_reconstructed_point_id, 4:7] -= np.log(self.config.gaussian_split_factor_phi)
+            self.maintained_parameters.point_invalid_mask[over_reconstructed_point_id_to_fill] = 0
+        total_valid_points_after_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
+            self.maintained_parameters.point_invalid_mask.sum()
+        assert total_valid_points_after_densify == total_valid_points_before_densify - num_transparent_points - num_floaters_points + num_fillable_under_reconstructed_points + num_fillable_over_reconstructed_points
+        print(f"total valid points: {total_valid_points_before_densify} -> {total_valid_points_after_densify}, under reconstructed points: {num_under_reconstructed_points}, over reconstructed points: {num_over_reconstructed_points}, transparent points: {num_transparent_points}, floaters points: {num_floaters_points}, fillable under reconstructed points: {num_fillable_under_reconstructed_points}, fillable over reconstructed points: {num_fillable_over_reconstructed_points}")
+        self.densify_point_info = None # clear densify point info
 
     def reset_alpha(self):
         pointcloud_features = self.maintained_parameters.pointcloud_features

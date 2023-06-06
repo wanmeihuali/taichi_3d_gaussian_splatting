@@ -40,6 +40,30 @@
                 "--train_config",
                 "config/boots_config.yaml",
             ]
+        },
+        {
+            "name": "boots sparse train",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/boots_sparse_config.yaml",
+            ]
+        },
+        {
+            "name": "boots super sparse train",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/boots_super_sparse_config.yaml",
+            ]
         }
     ]
 }

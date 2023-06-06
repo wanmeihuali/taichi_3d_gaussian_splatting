@@ -61,10 +61,12 @@ class GaussianPointCloudTrainer:
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
         )
+        """
         self.rasterisation = GaussianPointCloudRasterisation(
             config=self.config.rasterisation_config,
             backward_valid_point_hook=None,
         )
+        """
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
 
@@ -84,7 +86,7 @@ class GaussianPointCloudTrainer:
         optimizer = torch.optim.AdamW(
             [self.scene.point_cloud_features], lr=1e-3, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
-            [self.scene.point_cloud], lr=1e-6, betas=(0.9, 0.999))
+            [self.scene.point_cloud], lr=1e-5, betas=(0.9, 0.999))
             
         for iteration in tqdm(range(self.config.num_iterations)):
             optimizer.zero_grad()
@@ -119,7 +121,7 @@ class GaussianPointCloudTrainer:
                     self.adaptive_controller.input_data, writer=self.writer, iteration=iteration)
                 self._plot_value_histogram(
                     self.scene, writer=self.writer, iteration=iteration)
-            # self.adaptive_controller.refinement()
+            self.adaptive_controller.refinement()
             if iteration % self.config.log_loss_interval == 0:
                 self.writer.add_scalar(
                     "train/loss", loss.item(), iteration)
