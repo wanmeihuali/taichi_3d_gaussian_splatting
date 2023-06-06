@@ -101,6 +101,7 @@ def generate_num_overlap_tiles(
     num_overlap_tiles: ti.types.ndarray(ti.i64, ndim=1),  # (M)
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     camera_width: ti.i32,  # required to be multiple of 16
     camera_height: ti.i32,
 ):
@@ -109,6 +110,7 @@ def generate_num_overlap_tiles(
                             point_uv[point_offset, 1]])
         uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
                                 point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
+        point_alpha_after_activation_value = point_alpha_after_activation[point_offset]
         
         center_tile_u = ti.cast(uv[0] // 16, ti.i32)
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
@@ -154,7 +156,7 @@ def generate_num_overlap_tiles(
                         gaussian_mean=uv,
                         gaussian_covariance=uv_cov,
                     ))
-                    if gaussian_alpha > 1 / 255.:
+                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255.:
                         overlap_tiles_count += 1
         num_overlap_tiles[point_offset] = overlap_tiles_count
     
@@ -163,6 +165,7 @@ def generate_point_sort_key_by_num_overlap_tiles(
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     accumulated_num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K), K = sum(num_overlap_tiles)
     point_in_camera_sort_key: ti.types.ndarray(ti.i64, ndim=1),  # (K), K = sum(num_overlap_tiles)
@@ -177,6 +180,8 @@ def generate_point_sort_key_by_num_overlap_tiles(
             [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
         uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
                                 point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
+        point_alpha_after_activation_value = point_alpha_after_activation[point_offset]
+
         point_depth = xyz_in_camera[2]
         encoded_projected_depth = ti.cast(
             point_depth * depth_to_sort_key_scale, ti.i32)       
@@ -226,7 +231,7 @@ def generate_point_sort_key_by_num_overlap_tiles(
                         gaussian_covariance=uv_cov,
                     ))
                     
-                    if gaussian_alpha > 1 / 255.:
+                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255.:
                         key_idx = accumulated_num_overlap_tiles[point_offset] + overlap_tiles_count
                         encoded_tile_id = ti.cast(
                             tile_u + tile_v * (camera_width // 16), ti.i32)
@@ -310,6 +315,7 @@ def generate_point_attributes_in_camera_plane(
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
@@ -338,6 +344,8 @@ def generate_point_attributes_in_camera_plane(
                                                                           2] = xyz_in_camera[0], xyz_in_camera[1], xyz_in_camera[2]
         point_uv_covariance[idx, 0, 0], point_uv_covariance[idx, 0, 1], point_uv_covariance[idx, 1,
                                                                                             0], point_uv_covariance[idx, 1, 1] = uv_cov[0, 0], uv_cov[0, 1], uv_cov[1, 0], uv_cov[1, 1]
+        point_alpha_after_activation[idx] = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
 
 
 @ti.kernel
@@ -702,6 +710,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
                 point_uv = torch.zeros(
                     size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
+                point_alpha_after_activation = torch.zeros(
+                    size=(num_points_in_camera,), dtype=torch.float32, device=pointcloud.device)
                 point_in_camera = torch.zeros(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
                 point_uv_covariance = torch.zeros(
@@ -716,6 +726,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_uv=point_uv,
                     point_in_camera=point_in_camera,
                     point_uv_covariance=point_uv_covariance,
+                    point_alpha_after_activation=point_alpha_after_activation,
                 )
 
                 num_overlap_tiles = torch.zeros_like(point_id_in_camera_list)
@@ -723,6 +734,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     num_overlap_tiles=num_overlap_tiles,
                     point_uv=point_uv,
                     point_uv_covariance=point_uv_covariance,
+                    point_alpha_after_activation=point_alpha_after_activation,
                     camera_width=camera_info.camera_width,
                     camera_height=camera_info.camera_height,
                 )
@@ -741,6 +753,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_uv=point_uv,
                     point_in_camera=point_in_camera,
                     point_uv_covariance=point_uv_covariance,
+                    point_alpha_after_activation=point_alpha_after_activation,
                     accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
                     point_offset_with_sort_key=point_offset_with_sort_key,
                     point_in_camera_sort_key=point_in_camera_sort_key,
