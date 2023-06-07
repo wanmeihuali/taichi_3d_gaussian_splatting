@@ -131,6 +131,8 @@ THe result is visualized in tensorboard. The tensorboard log is stored in the ou
 ## TODO
 ### Algorithm part
 - [ ] Fix the adaptive controller part, something is wrong with the densify process, and the description in the paper is very vague. Further experiments are needed to figure out the correct/better implementation.
+    - figure if the densify shall apply to all points, or only points in current frame.
+    - figure what "average magnitude of view-space position gradients" means, is it average across frames, or average across pixel? 
 - [ ] Add result score/image in README.md
 
 ### Engineering part
