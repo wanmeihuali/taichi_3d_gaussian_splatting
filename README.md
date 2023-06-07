@@ -133,7 +133,10 @@ THe result is visualized in tensorboard. The tensorboard log is stored in the ou
 - [ ] Fix the adaptive controller part, something is wrong with the densify process, and the description in the paper is very vague. Further experiments are needed to figure out the correct/better implementation.
     - figure if the densify shall apply to all points, or only points in current frame.
     - figure what "average magnitude of view-space position gradients" means, is it average across frames, or average across pixel? 
+    - figure the correct split policy. Where shall the location of new point be? Currently the location is the location before optimization. Will it be better to put it at foci of the original ellipsoid?
 - [ ] Add result score/image in README.md
+    - try same dataset in the paper.
+    - fix issue in current blender plugin, and also make the plugin open source.
 
 ### Engineering part
 - [ ] fix bug: crash when there's no point in camrea.
