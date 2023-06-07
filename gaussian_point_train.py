@@ -25,6 +25,8 @@ class GaussianPointCloudTrainer:
         pointcloud_parquet_path: str = ""
         num_iterations: int = 300000
         val_interval: int = 1000
+        feature_learning_rate: float = 1e-3
+        position_learning_rate: float = 1e-5
         increase_color_max_sh_band_interval: int = 1000.
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
@@ -61,12 +63,7 @@ class GaussianPointCloudTrainer:
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
         )
-        """
-        self.rasterisation = GaussianPointCloudRasterisation(
-            config=self.config.rasterisation_config,
-            backward_valid_point_hook=None,
-        )
-        """
+        
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
 
@@ -79,14 +76,11 @@ class GaussianPointCloudTrainer:
         val_data_loader = torch.utils.data.DataLoader(
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=2)
         train_data_loader_iter = itertools.cycle(train_data_loader)
-        """
+        
         optimizer = torch.optim.AdamW(
-            self.scene.parameters(), lr=1e-3, betas=(0.9, 0.999))
-        """
-        optimizer = torch.optim.AdamW(
-            [self.scene.point_cloud_features], lr=1e-3, betas=(0.9, 0.999))
+            [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
-            [self.scene.point_cloud], lr=1e-5, betas=(0.9, 0.999))
+            [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
             
         for iteration in tqdm(range(self.config.num_iterations)):
             optimizer.zero_grad()

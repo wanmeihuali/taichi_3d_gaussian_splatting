@@ -95,7 +95,7 @@ def generate_point_sort_key(
             (ti.cast(encoded_tile_id, ti.i64) << 32)
         point_in_camera_sort_key[idx] = sort_key
 
-HALF_NEIGHBOR_TILE_SIZE = 5 # in paper it is 8
+HALF_NEIGHBOR_TILE_SIZE = 7 # in paper it is 8
 @ti.kernel
 def generate_num_overlap_tiles(
     num_overlap_tiles: ti.types.ndarray(ti.i64, ndim=1),  # (M)
