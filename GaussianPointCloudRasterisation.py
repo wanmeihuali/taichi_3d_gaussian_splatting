@@ -156,7 +156,8 @@ def generate_num_overlap_tiles(
                         gaussian_mean=uv,
                         gaussian_covariance=uv_cov,
                     ))
-                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255.:
+                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255. or \
+                        (ti.abs(tile_u_offset) <= 1 and ti.abs(tile_v_offset) <= 1 and point_alpha_after_activation_value > 1 / 255.):
                         overlap_tiles_count += 1
         num_overlap_tiles[point_offset] = overlap_tiles_count
     
@@ -231,7 +232,8 @@ def generate_point_sort_key_by_num_overlap_tiles(
                         gaussian_covariance=uv_cov,
                     ))
                     
-                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255.:
+                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255. or \
+                        (ti.abs(tile_u_offset) <= 1 and ti.abs(tile_v_offset) <= 1 and point_alpha_after_activation_value > 1 / 255.):
                         key_idx = accumulated_num_overlap_tiles[point_offset] + overlap_tiles_count
                         encoded_tile_id = ti.cast(
                             tile_u + tile_v * (camera_width // 16), ti.i32)
