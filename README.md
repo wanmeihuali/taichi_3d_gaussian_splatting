@@ -97,20 +97,11 @@ Two json file(for train and validation) is required.
 ]
 ```
 The projection is done by the following formula:
-$$
-\begin{bmatrix}
-x'\\
-y'\\
-z'\\
-1
-\end{bmatrix} = T_{pointcloud\_camera}^{-1} \cdot \begin{bmatrix}
-x\\
-y\\
-z\\
-1
-\end{bmatrix}
-$$
-$$
+```math
+\begin{bmatrix}x'\\y'\\z'\\1\end{bmatrix} = T_{pointcloud\_camera}^{-1} \cdot \begin{bmatrix}x\\y\\z\\1\end{bmatrix}
+```
+
+```math
 \begin{bmatrix}
 u\\
 v\\
@@ -120,7 +111,7 @@ x' / z'\\
 y' / z'\\
 1
 \end{bmatrix}
-$$
+```
 in which $u$ is the column index, $v$ is the row index, $x, y, z$ is the point directly from point cloud, $x', y', z'$ is the point after transformation, $K$ is the camera intrinsics matrix from the json, $T_{pointcloud\_camera}$ is the transformation matrix from camera coordinate to point cloud coordinate from the json.
 
 So the camera system in the json is with x-axis pointing right, y-axis pointing down, z-axis pointing forward. The image coordinate system is the standard pytorch image coordinate system, with origin at top left corner, x-axis pointing right, y-axis pointing down.
