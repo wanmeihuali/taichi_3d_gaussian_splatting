@@ -134,6 +134,7 @@ THe result is visualized in tensorboard. The tensorboard log is stored in the ou
 - [ ] Add result score/image in README.md
 
 ### Engineering part
+- [ ] fix bug: crash when there's no point in camrea.
 - [ ] Add a inference only framework to support adding/moving objects in the scene, scene merging, scene editing, etc.
 - [ ] Add a install script/docker image
 - [ ] Support batch training. Currently the code only supports single image training, and only uses small part of the GPU memory.
