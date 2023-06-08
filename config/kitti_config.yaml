@@ -5,7 +5,7 @@ adaptive-controller-config:
   num-iterations-reset-alpha: 8000
   num-iterations-warm-up: 1000
   reset-alpha-value: -2.0
-  transparent-alpha-threshold: -2.
+  transparent-alpha-threshold: -2.1
   under-reconstructed-s-threshold: 0.8
   floater_threshold: 5.0
 gaussian-point-cloud-scene-config:
@@ -29,7 +29,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 1.0
-summary-writer-log-dir: logs/kitti_base
+summary-writer-log-dir: logs/kitti_experiment
 train-dataset-json-path: 'data/kitti/kitti_train.json'
 val-dataset-json-path: 'data/kitti/kitti_val.json'
 val-interval: 5000
