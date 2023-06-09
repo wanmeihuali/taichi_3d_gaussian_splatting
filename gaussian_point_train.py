@@ -11,6 +11,7 @@ from dataclass_wizard import YAMLWizard
 from dataclasses import dataclass
 import itertools
 from torch.utils.tensorboard import SummaryWriter
+from torchvision.utils import make_grid
 from pytorch_msssim import ssim
 from tqdm import tqdm
 import taichi as ti
@@ -101,7 +102,7 @@ class GaussianPointCloudTrainer:
                 T_pointcloud_camera=T_pointcloud_camera,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
-            image_pred = self.rasterisation(
+            image_pred, image_depth = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
@@ -109,8 +110,9 @@ class GaussianPointCloudTrainer:
             loss.backward()
             optimizer.step()
             position_optimizer.step()
-
+            magnitude_grad_viewspace_on_image = None
             if self.adaptive_controller.input_data is not None:
+                magnitude_grad_viewspace_on_image = self.adaptive_controller.input_data.magnitude_grad_viewspace_on_image
                 self._plot_grad_histogram(
                     self.adaptive_controller.input_data, writer=self.writer, iteration=iteration)
                 self._plot_value_histogram(
@@ -134,10 +136,22 @@ class GaussianPointCloudTrainer:
                 self.writer.add_scalar(
                     "train/ssim", ssim_score.item(), iteration)
             if iteration % self.config.log_image_interval == 0:
+                # make image_depth to be 3 channels
+                image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / \
+                    image_depth.max()
+                image_list = [image_pred, image_gt, image_depth]
+                if magnitude_grad_viewspace_on_image is not None:
+                    magnitude_grad_viewspace_on_image = magnitude_grad_viewspace_on_image.permute(2, 0, 1)
+                    magnitude_grad_u_viewspace_on_image = magnitude_grad_viewspace_on_image[0]
+                    magnitude_grad_v_viewspace_on_image = magnitude_grad_viewspace_on_image[1]
+                    magnitude_grad_u_viewspace_on_image /= magnitude_grad_u_viewspace_on_image.max()
+                    magnitude_grad_v_viewspace_on_image /= magnitude_grad_v_viewspace_on_image.max()
+                    image_list.append(magnitude_grad_u_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
+                    image_list.append(magnitude_grad_v_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
+                grid = make_grid(image_list, nrow=2)
+                
                 self.writer.add_image(
-                    "train/image_pred", image_pred, iteration)
-                self.writer.add_image(
-                    "train/image_gt", image_gt, iteration)
+                    "train/image", grid, iteration)
             del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if iteration % self.config.val_interval == 0 and iteration != 0:
                 self.validation(val_data_loader, iteration)
@@ -211,20 +225,19 @@ class GaussianPointCloudTrainer:
                     T_pointcloud_camera=T_pointcloud_camera,
                     color_max_sh_band=3
                 )
-                image_pred = self.rasterisation(
+                image_pred, image_depth = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
-                # apply sigmoid
                 image_pred = image_pred.permute(2, 0, 1)
+                image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / image_depth.max()
                 loss, _, _ = self.loss_function(image_pred, image_gt)
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
                     image_pred=image_pred, image_gt=image_gt)
                 total_loss += loss.item()
                 total_psnr_score += psnr_score.item()
                 total_ssim_score += ssim_score.item()
+                grid = make_grid([image_pred, image_gt, image_depth], nrow=2)
                 self.writer.add_image(
-                    f"val/image pred {idx}", image_pred, iteration)
-                self.writer.add_image(
-                    f"val/image gt {idx}", image_gt, iteration)
+                    f"val/image {idx}", grid, iteration)
 
             mean_loss = total_loss / len(val_data_loader)
             mean_psnr_score = total_psnr_score / len(val_data_loader)

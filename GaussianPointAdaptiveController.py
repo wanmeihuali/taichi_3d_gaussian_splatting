@@ -56,7 +56,7 @@ class GaussianPointAdaptiveController:
     def __init__(self,
                  config: GaussianPointAdaptiveControllerConfig,
                  maintained_parameters: GaussianPointAdaptiveControllerMaintainedParameters):
-        self.iteration_counter = 0
+        self.iteration_counter = -1
         self.config = config
         self.maintained_parameters = maintained_parameters
         self.input_data = None
@@ -64,12 +64,11 @@ class GaussianPointAdaptiveController:
 
 
     def update(self, input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
+        self.iteration_counter += 1
         with torch.no_grad():
-            self.iteration_counter += 1
             if self.iteration_counter < self.config.num_iterations_warm_up:
-                return
-            if self.iteration_counter % self.config.num_iterations_densify == 0:
-                # self.input_data = input_data
+                pass
+            elif self.iteration_counter % self.config.num_iterations_densify == 0:
                 self._find_densify_points(input_data)
                 self.input_data = input_data
 
