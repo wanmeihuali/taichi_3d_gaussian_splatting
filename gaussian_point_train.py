@@ -102,7 +102,7 @@ class GaussianPointCloudTrainer:
                 T_pointcloud_camera=T_pointcloud_camera,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
-            image_pred, image_depth = self.rasterisation(
+            image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
@@ -121,6 +121,8 @@ class GaussianPointCloudTrainer:
                     self.adaptive_controller.input_data, writer=self.writer, iteration=iteration)
                 self._plot_value_histogram(
                     self.scene, writer=self.writer, iteration=iteration)
+                self.writer.add_histogram(
+                    pixel_valid_point_count, "train/pixel_valid_point_count", iteration)
             self.adaptive_controller.refinement()
             if iteration % self.config.log_loss_interval == 0:
                 self.writer.add_scalar(
@@ -143,7 +145,9 @@ class GaussianPointCloudTrainer:
                 # make image_depth to be 3 channels
                 image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / \
                     image_depth.max()
-                image_list = [image_pred, image_gt, image_depth]
+                pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / \
+                    pixel_valid_point_count.max()
+                image_list = [image_pred, image_gt, image_depth, pixel_valid_point_count]
                 if magnitude_grad_viewspace_on_image is not None:
                     magnitude_grad_viewspace_on_image = magnitude_grad_viewspace_on_image.permute(2, 0, 1)
                     magnitude_grad_u_viewspace_on_image = magnitude_grad_viewspace_on_image[0]
@@ -181,6 +185,7 @@ class GaussianPointCloudTrainer:
             r_grad = feature_grad[:, 8:24]
             g_grad = feature_grad[:, 24:40]
             b_grad = feature_grad[:, 40:56]
+            num_overlap_tiles = grad_input.num_overlap_tiles
             writer.add_histogram("grad/xyz_grad", xyz_grad, iteration)
             writer.add_histogram("grad/uv_grad", uv_grad, iteration)
             writer.add_histogram("grad/q_grad", q_grad, iteration)
@@ -189,18 +194,21 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("grad/r_grad", r_grad, iteration)
             writer.add_histogram("grad/g_grad", g_grad, iteration)
             writer.add_histogram("grad/b_grad", b_grad, iteration)
+            writer.add_histogram("value/num_overlap_tiles", num_overlap_tiles, iteration)
 
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
         with torch.no_grad():
             valid_point_cloud = scene.point_cloud[scene.point_invalid_mask == 0]
             valid_point_cloud_features = scene.point_cloud_features[scene.point_invalid_mask == 0]
+            num_valid_points = valid_point_cloud.shape[0]
             q = valid_point_cloud_features[:, :4]
             s = valid_point_cloud_features[:, 4:7]
             alpha = valid_point_cloud_features[:, 7]
             r = valid_point_cloud_features[:, 8:24]
             g = valid_point_cloud_features[:, 24:40]
             b = valid_point_cloud_features[:, 40:56]
+            writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)
@@ -229,17 +237,18 @@ class GaussianPointCloudTrainer:
                     T_pointcloud_camera=T_pointcloud_camera,
                     color_max_sh_band=3
                 )
-                image_pred, image_depth = self.rasterisation(
+                image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
                 image_pred = image_pred.permute(2, 0, 1)
                 image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / image_depth.max()
+                pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
                 loss, _, _ = self.loss_function(image_pred, image_gt)
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
                     image_pred=image_pred, image_gt=image_gt)
                 total_loss += loss.item()
                 total_psnr_score += psnr_score.item()
                 total_ssim_score += ssim_score.item()
-                grid = make_grid([image_pred, image_gt, image_depth], nrow=2)
+                grid = make_grid([image_pred, image_gt, image_depth, pixel_valid_point_count], nrow=2)
                 self.writer.add_image(
                     f"val/image {idx}", grid, iteration)
 
