@@ -372,6 +372,7 @@ def gaussian_point_rasterisation(
     pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     # (H, W)
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
+    pixel_valid_point_count: ti.types.ndarray(ti.i32, ndim=2),
 ):
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
@@ -403,6 +404,7 @@ def gaussian_point_rasterisation(
             camera_intrinsics=camera_intrinsics_mat,
             T_camera_pointcloud=T_camera_pointcloud_mat,
         )
+        valid_point_count: ti.i32 = 0
         for idx_point_offset_with_sort_key in range(start_offset, end_offset):
             point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
             point_id = point_id_in_camera_list[point_offset]
@@ -449,6 +451,7 @@ def gaussian_point_rasterisation(
             depth_normalization_factor += alpha * T_i
             T_i = T_i * (1 - alpha)
             accumulated_alpha = 1. - T_i
+            valid_point_count += 1
         rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
         rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
         rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
@@ -456,6 +459,7 @@ def gaussian_point_rasterisation(
         pixel_accumulated_alpha[pixel_v, pixel_u] = accumulated_alpha
         pixel_offset_of_last_effective_point[pixel_v,
                                              pixel_u] = offset_of_last_effective_point
+        pixel_valid_point_count[pixel_v, pixel_u] = valid_point_count
 
 
 @ti.func
@@ -682,6 +686,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         grad_pointfeatures_in_camera: torch.Tensor  # Mx56
         grad_viewspace: torch.Tensor  # Mx2
         magnitude_grad_viewspace_on_image: torch.Tensor  # HxWx2
+        num_overlap_tiles: torch.Tensor  # M
 
     def __init__(
         self,
@@ -757,7 +762,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 accumulated_num_overlap_tiles = torch.cat(
                     (torch.zeros(size=(1,), dtype=torch.int32, device=pointcloud.device), 
                      accumulated_num_overlap_tiles[:-1]))
-                del num_overlap_tiles
+                # del num_overlap_tiles
                 point_in_camera_sort_key = torch.zeros(
                     size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
                 point_offset_with_sort_key = torch.zeros(
@@ -801,6 +806,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
                 pixel_offset_of_last_effective_point = torch.zeros(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.int32, device=pointcloud.device)
+                pixel_valid_point_count = torch.zeros(
+                    camera_info.camera_height, camera_info.camera_width, dtype=torch.int32, device=pointcloud.device)
+                
 
                 gaussian_point_rasterisation(
                     camera_height=camera_info.camera_height,
@@ -819,7 +827,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     rasterized_image=rasterized_image,
                     rasterized_depth=rasterized_depth,
                     pixel_accumulated_alpha=pixel_accumulated_alpha,
-                    pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point)
+                    pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
+                    pixel_valid_point_count=pixel_valid_point_count)
                 ctx.save_for_backward(
                     pointcloud,
                     pointcloud_features,
@@ -830,19 +839,20 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     pixel_accumulated_alpha,
                     pixel_offset_of_last_effective_point,
                     T_pointcloud_camera,
-                    T_camera_pointcloud
+                    T_camera_pointcloud,
+                    num_overlap_tiles
                 )
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
                 # rasterized_image.requires_grad_(True)
-                return rasterized_image, rasterized_depth
+                return rasterized_image, rasterized_depth, pixel_valid_point_count
 
             @staticmethod
             @custom_bwd
             def backward(ctx, grad_rasterized_image, grad_rasterized_depth):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
-                    pointcloud, pointcloud_features, point_offset_with_sort_key, point_id_in_camera_list, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
+                    pointcloud, pointcloud_features, point_offset_with_sort_key, point_id_in_camera_list, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud, num_overlap_tiles = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     color_max_sh_band = ctx.color_max_sh_band
                     grad_rasterized_image = grad_rasterized_image.contiguous()
@@ -889,6 +899,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             grad_pointfeatures_in_camera=grad_pointcloud_features[point_id_in_camera_list],
                             grad_viewspace=grad_viewspace[point_id_in_camera_list],
                             magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
+                            num_overlap_tiles=num_overlap_tiles,
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
