@@ -368,6 +368,7 @@ def gaussian_point_rasterisation(
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
+    rasterized_depth: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     # (H, W)
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
@@ -393,6 +394,8 @@ def gaussian_point_rasterisation(
         T_i = 1.0
         accumulated_alpha = 0. # accumulated alpha is 1.0 - T_i
         accumulated_color = ti.math.vec3([0., 0., 0.])
+        accumulated_depth = 0.
+        depth_normalization_factor = 0.
         offset_of_last_effective_point = start_offset
         ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
             pixel_u=pixel_u,
@@ -407,6 +410,7 @@ def gaussian_point_rasterisation(
                               point_uv[point_offset, 1]])
             xyz_in_camera = ti.math.vec3(
                 [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
+            depth = xyz_in_camera[2]
             uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
                                   point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
             gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
@@ -441,11 +445,14 @@ def gaussian_point_rasterisation(
             )
             # print(color)
             accumulated_color += color * alpha * T_i
+            accumulated_depth += depth * alpha * T_i
+            depth_normalization_factor += alpha * T_i
             T_i = T_i * (1 - alpha)
             accumulated_alpha = 1. - T_i
         rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
         rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
         rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
+        rasterized_depth[pixel_v, pixel_u] = accumulated_depth / ti.max(depth_normalization_factor, 1e-6)
         pixel_accumulated_alpha[pixel_v, pixel_u] = accumulated_alpha
         pixel_offset_of_last_effective_point[pixel_v,
                                              pixel_u] = offset_of_last_effective_point
@@ -508,6 +515,7 @@ def gaussian_point_rasterisation_backward(
     grad_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     grad_pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
     viewspace_grad: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
+    magnitude_grad_viewspace_on_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 2)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
@@ -627,6 +635,8 @@ def gaussian_point_rasterisation_backward(
                 # gaussian_alpha_grad is dp
                 point_viewspace_grad = gaussian_alpha_grad * \
                     d_p_d_mean  # (2,) as the paper said, view space gradient is used for detect candidates for densification
+                magnitude_grad_viewspace_on_image[pixel_v, pixel_u, 0] += ti.abs(point_viewspace_grad[0])
+                magnitude_grad_viewspace_on_image[pixel_v, pixel_u, 1] += ti.abs(point_viewspace_grad[1])
                 translation_grad = point_viewspace_grad @ d_uv_d_translation
                 # cov is Sigma
                 gaussian_q_grad = gaussian_alpha_grad * \
@@ -671,6 +681,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         grad_point_in_camera: torch.Tensor  # Mx3
         grad_pointfeatures_in_camera: torch.Tensor  # Mx56
         grad_viewspace: torch.Tensor  # Mx2
+        magnitude_grad_viewspace_on_image: torch.Tensor  # HxWx2
 
     def __init__(
         self,
@@ -784,6 +795,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
                 rasterized_image = torch.zeros(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
+                rasterized_depth = torch.zeros(
+                    camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
                 pixel_accumulated_alpha = torch.zeros(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
                 pixel_offset_of_last_effective_point = torch.zeros(
@@ -804,6 +817,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_in_camera=point_in_camera,
                     point_uv_covariance=point_uv_covariance,
                     rasterized_image=rasterized_image,
+                    rasterized_depth=rasterized_depth,
                     pixel_accumulated_alpha=pixel_accumulated_alpha,
                     pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point)
                 ctx.save_for_backward(
@@ -821,11 +835,11 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
                 # rasterized_image.requires_grad_(True)
-                return rasterized_image
+                return rasterized_image, rasterized_depth
 
             @staticmethod
             @custom_bwd
-            def backward(ctx, grad_rasterized_image):
+            def backward(ctx, grad_rasterized_image, grad_rasterized_depth):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, pointcloud_features, point_offset_with_sort_key, point_id_in_camera_list, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud = ctx.saved_tensors
@@ -847,6 +861,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     """
                     grad_viewspace = torch.zeros(
                         size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
+                    magnitude_grad_viewspace_on_image = torch.zeros_like(
+                        grad_rasterized_image[:, :, :2])
                     gaussian_point_rasterisation_backward(
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
@@ -857,14 +873,13 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         tile_points_start=tile_points_start,
                         point_offset_with_sort_key=point_offset_with_sort_key,
                         point_id_in_camera_list=point_id_in_camera_list,
-                        # point_in_camera_id=point_in_camera_id,
                         rasterized_image_grad=grad_rasterized_image,
                         pixel_accumulated_alpha=pixel_accumulated_alpha,
                         pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
-                        # point_in_camera_grad=grad_point_in_camera,
                         grad_pointcloud=grad_pointcloud,
                         grad_pointcloud_features=grad_pointcloud_features,
                         viewspace_grad=grad_viewspace,
+                        magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     if backward_valid_point_hook is not None:
@@ -873,6 +888,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             grad_point_in_camera=grad_pointcloud[point_id_in_camera_list],
                             grad_pointfeatures_in_camera=grad_pointcloud_features[point_id_in_camera_list],
                             grad_viewspace=grad_viewspace[point_id_in_camera_list],
+                            magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
