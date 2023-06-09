@@ -98,12 +98,15 @@ class GaussianPointAdaptiveController:
         # while densification only apply on points in camera in the current frame
         floater_mask = (pointcloud_features[:, 4:7].exp().norm(dim=1) > self.config.floater_threshold) & \
             (self.maintained_parameters.point_invalid_mask == 0)
+        
         floater_point_id = point_id_list[floater_mask]
         point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
-        transparent_point_mask = (point_alpha < self.config.transparent_alpha_threshold) & \
+        nan_mask = torch.isnan(pointcloud_features).any(dim=1)
+        transparent_point_mask = ((point_alpha < self.config.transparent_alpha_threshold) | nan_mask) & \
             (self.maintained_parameters.point_invalid_mask == 0) & \
                 (~floater_mask) # ensure floater points and transparent points don't overlap
         transparent_point_id = point_id_list[transparent_point_mask]
+        
         
 
         # find points that are under-reconstructed or over-reconstructed

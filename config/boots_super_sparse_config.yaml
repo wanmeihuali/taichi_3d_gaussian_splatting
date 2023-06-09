@@ -1,5 +1,5 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.0000008
+  densification-view-space-position-gradients-threshold: 0.000004
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
   num-iterations-reset-alpha: 4000
@@ -27,7 +27,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: logs/boots_super_sparse_experiment
+summary-writer-log-dir: logs/boots_super_sparse_experiment_abs_grad_uv
 train-dataset-json-path: 'data/boots_super_sparse/boots_train.json'
 val-dataset-json-path: 'data/boots_super_sparse/boots_val.json'
 val-interval: 1000

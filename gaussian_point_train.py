@@ -106,7 +106,11 @@ class GaussianPointCloudTrainer:
                 gaussian_point_cloud_rasterisation_input)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
-            loss, l1_loss, ssim_loss = self.loss_function(image_pred, image_gt, pointcloud_features=self.scene.point_cloud_features)
+            loss, l1_loss, ssim_loss = self.loss_function(
+                image_pred, 
+                image_gt, 
+                point_invalid_mask=self.scene.point_invalid_mask,
+                pointcloud_features=self.scene.point_cloud_features)
             loss.backward()
             optimizer.step()
             position_optimizer.step()
