@@ -349,6 +349,147 @@ def generate_point_attributes_in_camera_plane(
         point_alpha_after_activation[idx] = 1. / \
                 (1. + ti.math.exp(-gaussian_point_3d.alpha))
 
+@ti.kernel
+def generate_point_attributes_in_camera_plane_inference_only(
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
+    pointcloud_q_inference_training: ti.types.ndarray(ti.f32, ndim=2),  # (N, 4)
+    pointcloud_scale_inference: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
+    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
+    point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
+):
+    T_camera_pointcloud_mat = ti.Matrix(
+        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
+    camera_intrinsics_mat = ti.Matrix(
+        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
+    for idx in range(point_id_list.shape[0]):
+        point_id = point_id_list[idx]
+        normalize_cov_rotation_in_pointcloud_features(
+            pointcloud_features=pointcloud_features,
+            point_id=point_id)
+        gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
+            pointcloud=pointcloud,
+            pointcloud_features=pointcloud_features,
+            point_id=point_id)
+        q_inference_training = ti.math.vec4(
+            [pointcloud_q_inference_training[point_id, 0], pointcloud_q_inference_training[point_id, 1], pointcloud_q_inference_training[point_id, 2], pointcloud_q_inference_training[point_id, 3]])
+        scale_inference = ti.math.vec3(
+            [pointcloud_scale_inference[point_id, 0], pointcloud_scale_inference[point_id, 1], pointcloud_scale_inference[point_id, 2]])
+        uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
+            T_camera_world=T_camera_pointcloud_mat,
+            projective_transform=camera_intrinsics_mat,
+        )
+        uv_cov = gaussian_point_3d.project_to_camera_covariance_with_point_rotation_and_scale(
+            T_camera_world=T_camera_pointcloud_mat,
+            projective_transform=camera_intrinsics_mat,
+            translation_camera=xyz_in_camera,
+            q_inference_training=q_inference_training,
+            scale_inference=scale_inference,
+        )
+        point_uv[idx, 0], point_uv[idx, 1] = uv[0], uv[1]
+        point_in_camera[idx, 0], point_in_camera[idx, 1], point_in_camera[idx,
+                                                                          2] = xyz_in_camera[0], xyz_in_camera[1], xyz_in_camera[2]
+        point_uv_covariance[idx, 0, 0], point_uv_covariance[idx, 0, 1], point_uv_covariance[idx, 1,
+                                                                                            0], point_uv_covariance[idx, 1, 1] = uv_cov[0, 0], uv_cov[0, 1], uv_cov[1, 0], uv_cov[1, 1]
+        point_alpha_after_activation[idx] = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
+
+
+@ti.kernel
+def gaussian_point_rasterisation_inference_only(
+    camera_height: ti.i32,
+    camera_width: ti.i32,
+    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
+    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
+    # (tiles_per_row * tiles_per_col)
+    tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
+    # (tiles_per_row * tiles_per_col)
+    tile_points_end: ti.types.ndarray(ti.i32, ndim=1),
+    point_id_in_camera_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K) the offset of the point in point_id_in_camera_list
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
+):
+    T_camera_pointcloud_mat = ti.Matrix(
+        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
+    camera_intrinsics_mat = ti.Matrix(
+        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
+    # taichi does not support thread block, so we just have a single thread for each pixel
+    # hope the missing for shared block memory will not hurt the performance too much
+    ti.loop_config(block_dim=256)
+    for pixel_offset in ti.ndrange(camera_height * camera_width):
+        tile_id = pixel_offset // 256
+        tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
+        tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
+        pixel_offset_in_tile = pixel_offset - tile_id * 256
+        pixel_offset_u_in_tile = pixel_offset_in_tile % 16
+        pixel_offset_v_in_tile = pixel_offset_in_tile // 16
+        pixel_u = tile_u * 16 + pixel_offset_u_in_tile
+        pixel_v = tile_v * 16 + pixel_offset_v_in_tile
+        start_offset = tile_points_start[tile_id]
+        end_offset = tile_points_end[tile_id]
+        T_i = 1.0
+        accumulated_alpha = 0. # accumulated alpha is 1.0 - T_i
+        accumulated_color = ti.math.vec3([0., 0., 0.])
+        ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
+            pixel_u=pixel_u,
+            pixel_v=pixel_v,
+            camera_intrinsics=camera_intrinsics_mat,
+            T_camera_pointcloud=T_camera_pointcloud_mat,
+        )
+        for idx_point_offset_with_sort_key in range(start_offset, end_offset):
+            point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
+            point_id = point_id_in_camera_list[point_offset]
+            uv = ti.math.vec2([point_uv[point_offset, 0],
+                              point_uv[point_offset, 1]])
+            uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
+                                  point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
+            gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
+                pointcloud=pointcloud,
+                pointcloud_features=pointcloud_features,
+                point_id=point_id)
+
+            gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
+                xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
+                gaussian_mean=uv,
+                gaussian_covariance=uv_cov,
+            )
+            point_alpha_after_activation = 1. / \
+                (1. + ti.math.exp(-gaussian_point_3d.alpha))
+            alpha = gaussian_alpha * point_alpha_after_activation
+            # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
+            # 255 ) and also clamp 𝛼 with 0.99 from above.
+            # print(
+            #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
+            if alpha < 1. / 255.:
+                continue
+            alpha = ti.min(alpha, 0.99)
+            # from paper: before a Gaussian is included in the forward rasterization
+            # pass, we compute the accumulated opacity if we were to include it
+            # and stop front-to-back blending before it can exceed 0.9999.
+            if 1 - (1 - accumulated_alpha) * (1 - alpha) > 0.9999:
+                break
+            color = gaussian_point_3d.get_color_by_ray(
+                ray_origin=ray_origin,
+                ray_direction=ray_direction,
+            )
+            # print(color)
+            accumulated_color += color * alpha * T_i
+            T_i = T_i * (1 - alpha)
+            accumulated_alpha = 1. - T_i
+        rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
+        rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
+        rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
+
+
 
 @ti.kernel
 def gaussian_point_rasterisation(
@@ -944,3 +1085,146 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             T_pointcloud_camera,
             camera_info,
             color_max_sh_band)
+
+class GaussianPointCloudRasterisationInferenceOnly(torch.nn.Module):
+    @dataclass
+    class GaussianPointCloudRasterisationInferenceOnlyInput:
+        point_cloud: torch.Tensor  # Nx3
+        point_cloud_features: torch.Tensor  # NxM
+        point_cloud_q_inference_training: torch.Tensor  # Nx4, allow extra rotation on gaussian point, in case the object is rotated at a different angle in inference
+        point_cloud_scale_inference: torch.Tensor  # Nx3, allow extra scale on gaussian point, in case the object is scaled at a different size in inference
+        point_invalid_mask: torch.Tensor  # N
+        camera_info: CameraInfo
+        T_pointcloud_camera: torch.Tensor  # 4x4 x to the right, y down, z forward
+
+    def __init__(
+        self,
+        config: GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig,
+    ):
+        super().__init__()
+        self._config = config
+
+    def forward(self, input_data: GaussianPointCloudRasterisationInferenceOnlyInput):
+        with torch.no_grad():
+            pointcloud = input_data.point_cloud
+            pointcloud_features = input_data.point_cloud_features
+            pointcloud_q_inference_training = input_data.point_cloud_q_inference_training
+            pointcloud_scale_inference = input_data.point_cloud_scale_inference
+            T_pointcloud_camera = input_data.T_pointcloud_camera
+            point_invalid_mask = input_data.point_invalid_mask
+            camera_info = input_data.camera_info
+            point_in_camera_mask = torch.zeros(
+                size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
+            point_id = torch.arange(
+                pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
+            T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
+            filter_point_in_camera(
+                pointcloud=pointcloud,
+                point_invalid_mask=point_invalid_mask,
+                camera_intrinsics=camera_info.camera_intrinsics,
+                T_camera_pointcloud=T_camera_pointcloud,
+                point_in_camera_mask=point_in_camera_mask,
+                near_plane=self.config.near_plane,
+                far_plane=self.config.far_plane,
+                camera_height=camera_info.camera_height,
+                camera_width=camera_info.camera_width,
+            )
+            point_in_camera_mask = point_in_camera_mask.bool()
+            point_id_in_camera_list = point_id[point_in_camera_mask].contiguous(
+            )
+            del point_id
+            del point_in_camera_mask
+
+            num_points_in_camera = point_id_in_camera_list.shape[0]
+
+            point_uv = torch.zeros(
+                size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
+            point_alpha_after_activation = torch.zeros(
+                size=(num_points_in_camera,), dtype=torch.float32, device=pointcloud.device)
+            point_in_camera = torch.zeros(
+                size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
+            point_uv_covariance = torch.zeros(
+                size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
+
+            generate_point_attributes_in_camera_plane_inference_only(
+                pointcloud=pointcloud,
+                pointcloud_features=pointcloud_features,
+                pointcloud_q_inference_training=pointcloud_q_inference_training,
+                pointcloud_scale_inference=pointcloud_scale_inference,
+                camera_intrinsics=camera_info.camera_intrinsics,
+                T_camera_pointcloud=T_camera_pointcloud,
+                point_id_list=point_id_in_camera_list,
+                point_uv=point_uv,
+                point_in_camera=point_in_camera,
+                point_uv_covariance=point_uv_covariance,
+                point_alpha_after_activation=point_alpha_after_activation,
+            )
+
+            num_overlap_tiles = torch.zeros_like(point_id_in_camera_list)
+            generate_num_overlap_tiles(
+                num_overlap_tiles=num_overlap_tiles,
+                point_uv=point_uv,
+                point_uv_covariance=point_uv_covariance,
+                point_alpha_after_activation=point_alpha_after_activation,
+                camera_width=camera_info.camera_width,
+                camera_height=camera_info.camera_height,
+            )
+            accumulated_num_overlap_tiles = torch.cumsum(
+                num_overlap_tiles, dim=0)
+            total_num_overlap_tiles = accumulated_num_overlap_tiles[-1]
+            accumulated_num_overlap_tiles = torch.cat(
+                (torch.zeros(size=(1,), dtype=torch.int32, device=pointcloud.device), 
+                    accumulated_num_overlap_tiles[:-1]))
+            # del num_overlap_tiles
+            point_in_camera_sort_key = torch.zeros(
+                size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
+            point_offset_with_sort_key = torch.zeros(
+                size=(total_num_overlap_tiles,), dtype=torch.int32, device=pointcloud.device)
+            generate_point_sort_key_by_num_overlap_tiles(
+                point_uv=point_uv,
+                point_in_camera=point_in_camera,
+                point_uv_covariance=point_uv_covariance,
+                point_alpha_after_activation=point_alpha_after_activation,
+                accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
+                point_offset_with_sort_key=point_offset_with_sort_key,
+                point_in_camera_sort_key=point_in_camera_sort_key,
+                camera_width=camera_info.camera_width,
+                camera_height=camera_info.camera_height,
+                depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
+            )
+
+            point_in_camera_sort_key, permutation = point_in_camera_sort_key.sort()
+            point_offset_with_sort_key = point_offset_with_sort_key[permutation].contiguous(
+            )  # now the point_offset_with_sort_key is sorted by the sort_key
+            del permutation
+            tiles_per_row = camera_info.camera_width // 16
+            tiles_per_col = camera_info.camera_height // 16
+            tile_points_start = torch.zeros(size=(
+                tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
+            tile_points_end = torch.zeros(size=(
+                tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
+            find_tile_start_and_end(
+                point_in_camera_sort_key=point_in_camera_sort_key,
+                tile_points_start=tile_points_start,
+                tile_points_end=tile_points_end,
+            )
+
+            rasterized_image = torch.zeros(
+                camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
+
+            gaussian_point_rasterisation_inference_only(
+                camera_height=camera_info.camera_height,
+                camera_width=camera_info.camera_width,
+                camera_intrinsics=camera_info.camera_intrinsics,
+                T_camera_pointcloud=T_camera_pointcloud,
+                pointcloud=pointcloud,
+                pointcloud_features=pointcloud_features,
+                tile_points_start=tile_points_start,
+                tile_points_end=tile_points_end,
+                point_id_in_camera_list=point_id_in_camera_list,
+                point_offset_with_sort_key=point_offset_with_sort_key,
+                point_uv=point_uv,
+                point_uv_covariance=point_uv_covariance,
+                rasterized_image=rasterized_image,
+            )
+            return rasterized_image

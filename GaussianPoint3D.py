@@ -170,6 +170,49 @@ class GaussianPoint3D:
         return cov_uv
 
     @ti.func
+    def project_to_camera_covariance_with_point_rotation_and_scale(
+        self,
+        T_camera_world: ti.math.mat4,
+        projective_transform: ti.math.mat3,
+        translation_camera: ti.math.vec3,
+        q_inference_training: ti.math.vec4,  # quaternion, extra rotation of the point, for inference
+        scale_inference: ti.math.vec3,  # scale, extra scale of the point, for inference
+    ):
+        """
+        Project the Gaussian point to camera space, without jacobian.
+        """
+        J = get_projective_transform_jacobian(
+            projective_transform, translation_camera)
+        T = T_camera_world
+        
+        # the rotation matrix from the training world coordinate to the inference world coordinate
+        R_inference_training = rotation_matrix_from_quaternion(q_inference_training)
+        R_training_base = rotation_matrix_from_quaternion(self.cov_rotation)
+        exp_cov_scale = ti.math.exp(self.cov_scale) * scale_inference
+        S = ti.math.mat3([
+            [exp_cov_scale.x, 0, 0],
+            [0, exp_cov_scale.y, 0],
+            [0, 0, exp_cov_scale.z]
+        ])
+        scale_inference_matrix = ti.math.mat3([
+            [scale_inference.x, 0, 0],
+            [0, scale_inference.y, 0],
+            [0, 0, scale_inference.z]
+        ])
+
+        # covariance matrix, 3x3, equation (6) in the paper
+        Sigma = R_inference_training @ scale_inference_matrix @ R_training_base @ S @ S.transpose() @ R_training_base.transpose() @ scale_inference_matrix.transpose() @ R_inference_training.transpose()
+
+        W = ti.math.mat3([
+            [T[0, 0], T[0, 1], T[0, 2]],
+            [T[1, 0], T[1, 1], T[1, 2]],
+            [T[2, 0], T[2, 1], T[2, 2]]
+        ])
+
+        cov_uv = J @ W @ Sigma @ W.transpose() @ J.transpose()  # equation (5) in the paper
+        return cov_uv
+
+    @ti.func
     def project_to_camera_covariance_jacobian(
         self,
         T_camera_world: ti.math.mat4,
