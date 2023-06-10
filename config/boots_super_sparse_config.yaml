@@ -4,7 +4,7 @@ adaptive-controller-config:
   num-iterations-densify: 100
   num-iterations-reset-alpha: 4000
   num-iterations-warm-up: 500
-  reset-alpha-value: -2.
+  reset-alpha-value: 0.
   transparent-alpha-threshold: -2.
   under-reconstructed-s-threshold: 0.03 # the same unit as the point cloud
   floater_threshold: 3. # shall not rely on floater points removal too much, otherwise we will stuck in the remove large point->increase points loop, and finally remove all points
@@ -21,13 +21,13 @@ loss-function-config:
   lambda-value: 0.2
   enable_regularization: True
   regularization_weight: 0.5
-num-iterations: 300000
+num-iterations: 30000
 pointcloud-parquet-path: 'data/boots_super_sparse/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: logs/boots_super_sparse_experiment_abs_grad_uv
+summary-writer-log-dir: logs/boots_super_sparse_experiment
 train-dataset-json-path: 'data/boots_super_sparse/boots_train.json'
 val-dataset-json-path: 'data/boots_super_sparse/boots_val.json'
 val-interval: 1000

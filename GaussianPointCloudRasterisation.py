@@ -849,7 +849,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
             @staticmethod
             @custom_bwd
-            def backward(ctx, grad_rasterized_image, grad_rasterized_depth):
+            def backward(ctx, grad_rasterized_image, grad_rasterized_depth, grad_pixel_valid_point_count):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, pointcloud_features, point_offset_with_sort_key, point_id_in_camera_list, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud, num_overlap_tiles = ctx.saved_tensors

@@ -122,7 +122,7 @@ class GaussianPointCloudTrainer:
                 self._plot_value_histogram(
                     self.scene, writer=self.writer, iteration=iteration)
                 self.writer.add_histogram(
-                    pixel_valid_point_count, "train/pixel_valid_point_count", iteration)
+                    "train/pixel_valid_point_count", pixel_valid_point_count, iteration)
             self.adaptive_controller.refinement()
             if iteration % self.config.log_loss_interval == 0:
                 self.writer.add_scalar(
