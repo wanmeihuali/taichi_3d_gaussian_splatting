@@ -1,10 +1,28 @@
 import numpy as np
 import torch
 from dataclasses import dataclass
-from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
+from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation, load_point_cloud_row_into_gaussian_point_3d
 from dataclass_wizard import YAMLWizard
 from typing import Optional
+import taichi as ti
 
+@ti.kernel
+def compute_ellipsoid_offset(
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, 56)
+    ellipsoid_offset: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+):
+    for idx in range(pointcloud.shape[0]):
+        point = load_point_cloud_row_into_gaussian_point_3d(
+            pointcloud=pointcloud,
+            pointcloud_features=pointcloud_features,
+            point_id=idx,
+        )
+        foci_vector = point.get_ellipsoid_foci_vector()
+        ellipsoid_offset[idx, 0] = foci_vector[0]
+        ellipsoid_offset[idx, 1] = foci_vector[1]
+        ellipsoid_offset[idx, 2] = foci_vector[2]
+        
 
 class GaussianPointAdaptiveController:
     """
@@ -166,6 +184,13 @@ class GaussianPointAdaptiveController:
             self.maintained_parameters.pointcloud_features[under_reconstructed_point_id_to_fill] = \
                 self.maintained_parameters.pointcloud_features[self.densify_point_info.under_reconstructed_point_id[:num_fillable_under_reconstructed_points]]
             self.maintained_parameters.point_invalid_mask[under_reconstructed_point_id_to_fill] = 0
+            point_offset = self._generate_point_offset(
+                point_to_split=self.maintained_parameters.pointcloud[under_reconstructed_point_id_to_fill],
+                point_feature_to_split=self.maintained_parameters.pointcloud_features[under_reconstructed_point_id_to_fill])
+            self.maintained_parameters.pointcloud[under_reconstructed_point_id_to_fill] += point_offset
+            under_reconstructed_point_id = self.densify_point_info.under_reconstructed_point_id[:num_fillable_under_reconstructed_points]
+            self.maintained_parameters.pointcloud[under_reconstructed_point_id] -= point_offset
+            
 
         num_fillable_over_reconstructed_points = 0
         if num_over_reconstructed_points > 0:
@@ -175,7 +200,15 @@ class GaussianPointAdaptiveController:
             self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill] = \
                 self.maintained_parameters.pointcloud_features[self.densify_point_info.over_reconstructed_point_id[:num_fillable_over_reconstructed_points]]
             self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill, 4:7] -= np.log(self.config.gaussian_split_factor_phi)
-            self.maintained_parameters.pointcloud_features[self.densify_point_info.over_reconstructed_point_id, 4:7] -= np.log(self.config.gaussian_split_factor_phi)
+            self.maintained_parameters.pointcloud_features[
+                self.densify_point_info.over_reconstructed_point_id, 4:7] -= \
+                    np.log(self.config.gaussian_split_factor_phi)
+            over_reconstructed_point_id = self.densify_point_info.over_reconstructed_point_id[:num_fillable_over_reconstructed_points]
+            point_offset = self._generate_point_offset(
+                point_to_split=self.maintained_parameters.pointcloud[over_reconstructed_point_id],
+                point_feature_to_split=self.maintained_parameters.pointcloud_features[over_reconstructed_point_id])
+            self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill] += point_offset
+            self.maintained_parameters.pointcloud[over_reconstructed_point_id] -= point_offset
             self.maintained_parameters.point_invalid_mask[over_reconstructed_point_id_to_fill] = 0
         total_valid_points_after_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
             self.maintained_parameters.point_invalid_mask.sum()
@@ -186,3 +219,25 @@ class GaussianPointAdaptiveController:
     def reset_alpha(self):
         pointcloud_features = self.maintained_parameters.pointcloud_features
         pointcloud_features[:, 7] = self.config.reset_alpha_value
+
+    def _generate_point_offset(self, 
+                               point_to_split: torch.Tensor, # (N, 3)
+                               point_feature_to_split: torch.Tensor, # (N, 56)
+    ):
+        # generate extra offset for the point to split. The point is modeled as ellipsoid, with center at point_to_split, 
+        # and axis length specified by s, and rotation specified by q.
+        # For this solution, we want to put the two new points on the foci of the ellipsoid, so the offset
+        # is the vector from the center to the foci.
+        select_points = point_to_split.contiguous()
+        select_point_features = point_feature_to_split.contiguous()
+        point_offset = torch.zeros_like(select_points)
+        compute_ellipsoid_offset(
+            pointcloud=select_points,
+            pointcloud_features=select_point_features,
+            ellipsoid_offset=point_offset,
+        )
+        return point_offset
+        
+        
+        
+        
