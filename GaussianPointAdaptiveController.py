@@ -41,6 +41,7 @@ class GaussianPointAdaptiveController:
         # I have no idea why their threshold is so low, may be their view space is normalized to [0, 1]?
         # TODO: find out a proper threshold
         densification_view_space_position_gradients_threshold: float = 0.005
+        densification_overlap_tiles_threshold: int = 64
         # from paper:  large Gaussians in regions with high variance need to be split into smaller Gaussians. We replace such Gaussians by two new ones, and divide their scale by a factor of 𝜙 = 1.6
         gaussian_split_factor_phi: float = 1.6
         # in paper section 5.2, they describe a method to moderate the increase in the number of Gaussians is to set the 𝛼 value close to zero every
@@ -136,8 +137,9 @@ class GaussianPointAdaptiveController:
         # shape: [num_points_in_camera, num_features]
         # all these three masks are on num_points_in_camera, not num_points
         to_densify_mask = (grad_viewspace.norm(
-            dim=1) > self.config.densification_view_space_position_gradients_threshold) & \
-                (~will_be_remove_mask)
+            dim=1) > self.config.densification_view_space_position_gradients_threshold) 
+        to_densify_mask |= input_data.num_overlap_tiles > self.config.densification_overlap_tiles_threshold
+        to_densify_mask &= (~will_be_remove_mask)
         # shape: [num_points_in_camera, 3]
         point_s_in_camera = point_features_in_camera[:, 4:7]
         under_reconstructed_mask = to_densify_mask & (point_s_in_camera.exp().norm(
