@@ -307,6 +307,21 @@ class GaussianPoint3D:
         # return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
         return ti.math.vec3(r_normalized, g_normalized, b_normalized), r_jacobian, g_jacobian, b_jacobian
 
+    @ti.func
+    def get_ellipsoid_foci_vector(self) -> ti.math.vec3:
+        base_vector = ti.math.vec3(1, 0, 0)
+        if self.cov_scale.x < self.cov_scale.y and self.cov_scale.y > self.cov_scale.z:
+            base_vector = ti.math.vec3(0, 1, 0)
+        elif self.cov_scale.x < self.cov_scale.z and self.cov_scale.y < self.cov_scale.z:
+            base_vector = ti.math.vec3(0, 0, 1)
+        R = rotation_matrix_from_quaternion(self.cov_rotation)
+        base_vector = R @ base_vector
+        s = ti.exp(self.cov_scale)
+        r_c = ti.max(s.x, s.y, s.z)
+        r_a = ti.min(s.x, s.y, s.z)
+        foci_vector = ti.sqrt(r_c**2 - r_a**2) * base_vector
+        return foci_vector
+
 
 # %%
 """
