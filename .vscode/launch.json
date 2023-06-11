@@ -30,6 +30,18 @@
             ]
         },
         {
+            "name": "kitti train super sparse",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/kitti_config_super_sparse.yaml",
+            ]
+        },
+        {
             "name": "boots train",
             "type": "python",
             "request": "launch",

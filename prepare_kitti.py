@@ -60,8 +60,24 @@ class KittiPreprocessor:
         # also save the point cloud to the disk
         point_cloud_df = pd.DataFrame(
             self.point_cloud.numpy(), columns=["x", "y", "z"])
+        min_x, min_y, min_z = point_cloud_df.min()
+        max_x, max_y, max_z = point_cloud_df.max()
+        center_x, center_y, center_z = (min_x + max_x) / 2, (min_y + max_y) / 2, (min_z + max_z) / 2
+        radius = max(max_x - min_x, max_y - min_y, max_z - min_z) / 2
+        # downsample the point cloud
+        point_cloud_df = point_cloud_df.sample(
+            frac=0.01, replace=False, random_state=1)
+        # add a sphere shell for background, by sample points on a sphere
+        center_vec = np.array([center_x, center_y, center_z])
+        num_shell_points = 1000
+        shell_points = center_vec + radius * np.random.randn(
+            num_shell_points, 3)
+        shell_points_df = pd.DataFrame(
+            shell_points, columns=["x", "y", "z"])
+        point_cloud_df = pd.concat([point_cloud_df, shell_points_df])
+        
         point_cloud_df.to_parquet(os.path.join(
-            output_dir, "point_cloud.parquet"))
+            output_dir, "point_cloud_downsample.parquet"))
         data = {
             "image_path": [camera_view.path for camera_view in self.camera_view_list],
             "T_pointcloud_camera": [camera_view.T_pointcloud_camera.numpy() for camera_view in self.camera_view_list],
@@ -80,6 +96,8 @@ class KittiPreprocessor:
         # df.to_json(os.path.join(output_dir, "kitti.json"), orient="records")
         train_df.to_json(os.path.join(output_dir, "kitti_train.json"), orient="records")
         val_df.to_json(os.path.join(output_dir, "kitti_val.json"), orient="records")
+        val_df_downsample = val_df.sample(frac=0.1, replace=False, random_state=1)
+        val_df_downsample.to_json(os.path.join(output_dir, "kitti_val_downsample.json"), orient="records")
 
     @staticmethod
     def extrinsics_from_xml(xml_file, image_dir, verbose=False):
