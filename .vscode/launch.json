@@ -42,6 +42,18 @@
             ]
         },
         {
+            "name": "tat train training",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/tat_train.yaml",
+            ]
+        },
+        {
             "name": "boots train",
             "type": "python",
             "request": "launch",

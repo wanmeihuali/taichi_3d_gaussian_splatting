@@ -138,7 +138,13 @@ class GaussianPointAdaptiveController:
         # all these three masks are on num_points_in_camera, not num_points
         to_densify_mask = (grad_viewspace.norm(
             dim=1) > self.config.densification_view_space_position_gradients_threshold) 
-        to_densify_mask |= input_data.num_overlap_tiles > self.config.densification_overlap_tiles_threshold
+        num_densify_by_grad = to_densify_mask.sum().item()
+        large_in_view_mask = input_data.num_overlap_tiles > self.config.densification_overlap_tiles_threshold
+        to_densify_mask |= large_in_view_mask
+        num_densify_by_large_in_view = large_in_view_mask.sum().item()
+        del large_in_view_mask
+        print(f"num_densify_by_grad: {num_densify_by_grad}, num_densify_by_large_in_view: {num_densify_by_large_in_view}")
+        
         to_densify_mask &= (~will_be_remove_mask)
         # shape: [num_points_in_camera, 3]
         point_s_in_camera = point_features_in_camera[:, 4:7]
