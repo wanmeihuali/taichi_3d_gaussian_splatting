@@ -16,7 +16,7 @@ log-image-interval: 1000
 log-loss-interval: 10
 log-metrics-interval: 100
 enable_taichi_kernel_profiler: True
-log_taichi_kernel_profile_interval: 3000
+log_taichi_kernel_profile_interval: 1000
 loss-function-config:
   lambda-value: 0.2
   enable_regularization: True
@@ -27,7 +27,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: logs/boots_super_sparse_split_to_foci
+summary-writer-log-dir: logs/boots_another_base
 train-dataset-json-path: 'data/boots_super_sparse/boots_train.json'
 val-dataset-json-path: 'data/boots_super_sparse/boots_val.json'
 val-interval: 1000

@@ -398,12 +398,7 @@ def gaussian_point_rasterisation(
         accumulated_depth = 0.
         depth_normalization_factor = 0.
         offset_of_last_effective_point = start_offset
-        ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
-            pixel_u=pixel_u,
-            pixel_v=pixel_v,
-            camera_intrinsics=camera_intrinsics_mat,
-            T_camera_pointcloud=T_camera_pointcloud_mat,
-        )
+        
         valid_point_count: ti.i32 = 0
         for idx_point_offset_with_sort_key in range(start_offset, end_offset):
             point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
@@ -438,9 +433,15 @@ def gaussian_point_rasterisation(
             # from paper: before a Gaussian is included in the forward rasterization
             # pass, we compute the accumulated opacity if we were to include it
             # and stop front-to-back blending before it can exceed 0.9999.
-            if 1 - (1 - accumulated_alpha) * (1 - alpha) > 0.9999:
+            if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
                 break
             offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
+            ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
+                pixel_u=pixel_u,
+                pixel_v=pixel_v,
+                camera_intrinsics=camera_intrinsics_mat,
+                T_camera_pointcloud=T_camera_pointcloud_mat,
+            )
             color = gaussian_point_3d.get_color_by_ray(
                 ray_origin=ray_origin,
                 ray_direction=ray_direction,
