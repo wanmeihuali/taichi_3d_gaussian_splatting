@@ -14,6 +14,10 @@ class GaussianPointCloudScene(torch.nn.Module):
     class PointCloudSceneConfig(YAMLWizard):
         num_of_features: int = 56
         max_num_points_ratio: Optional[float] = None,
+        add_sphere: bool = False
+        sphere_radius_factor: float = 10.0
+        num_points_sphere: int = 10000
+        max_initial_covariance: Optional[float] = None
 
     def __init__(
         self,
@@ -63,7 +67,7 @@ class GaussianPointCloudScene(torch.nn.Module):
                 valid_point_cloud_np, k = 3 + 1)
             initial_covariance = np.mean(nearest_three_neighbor_distance[:, 1:], axis=1)
             # clip the initial covariance to [1e-6, inf]
-            initial_covariance = np.clip(initial_covariance, 1e-6, None)
+            initial_covariance = np.clip(initial_covariance, 1e-6, self.config.max_initial_covariance)
             # s is log of the covariance, so we take log of the initial covariance
             self.point_cloud_features[(self.point_invalid_mask == 0), 4:7] = torch.tensor(
                 np.log(initial_covariance), dtype=torch.float32).unsqueeze(1)
@@ -109,13 +113,17 @@ class GaussianPointCloudScene(torch.nn.Module):
     @staticmethod
     def from_parquet(path: str, config=PointCloudSceneConfig()):
         scene_df = pd.read_parquet(path)
-        point_cloud = scene_df[["x", "y", "z"]].to_numpy()
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
             [f"r_sh{i}" for i in range(16)] + \
             [f"g_sh{i}" for i in range(16)] + \
             [f"b_sh{i}" for i in range(16)]
+        if config.add_sphere:
+            scene_df = GaussianPointCloudScene._add_sphere(
+                scene_df, config.sphere_radius_factor, config.num_points_sphere)
+
+        point_cloud = scene_df[["x", "y", "z"]].to_numpy()
         scene = GaussianPointCloudScene(
             point_cloud, config)
         if not set(feature_columns).issubset(set(scene_df.columns)):
@@ -126,3 +134,29 @@ class GaussianPointCloudScene(torch.nn.Module):
             scene.point_cloud_features[~(
                 scene.point_invalid_mask)] = valid_point_cloud_features
         return scene
+    
+    @staticmethod
+    def _add_sphere(scene_df: pd.DataFrame, radius_factor: float, num_points: int):
+        """ add a sphere to the scene, with radius equal to center to the farthest point * radius_factor
+
+        Args:
+            scene_df (pd.DataFrame): requires columns: x, y, z
+            radius_factor (float): the radius of the sphere is equal to center to the farthest point * radius_factor
+        """
+        x_min, x_max = scene_df["x"].min(), scene_df["x"].max()
+        y_min, y_max = scene_df["y"].min(), scene_df["y"].max()
+        z_min, z_max = scene_df["z"].min(), scene_df["z"].max()
+        far_distance = max(x_max - x_min, y_max - y_min, z_max - z_min) / 2.0
+        radius = far_distance * radius_factor
+        # sample points on the sphere
+        phi = 2.0 * np.pi * np.random.rand(num_points)
+        theta = np.arccos(2.0 * np.random.rand(num_points) - 1.0)
+        x = radius * np.sin(theta) * np.cos(phi)
+        y = radius * np.sin(theta) * np.sin(phi)
+        z = radius * np.cos(theta)
+        points = np.stack([x, y, z], axis=1)
+        scene_df = pd.concat([scene_df, pd.DataFrame(points, columns=["x", "y", "z"])])
+        return scene_df
+
+        
+    

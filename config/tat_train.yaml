@@ -1,5 +1,5 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.000004
+  densification-view-space-position-gradients-threshold: 0.000002
   densification_overlap_tiles_threshold: 16
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 200
@@ -12,6 +12,8 @@ adaptive-controller-config:
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
   num-of-features: 56
+  add_sphere: True
+  max_initial_covariance: 1.0
 increase-color-max-sh-band-interval: 1000.0
 log-image-interval: 200
 log-loss-interval: 10

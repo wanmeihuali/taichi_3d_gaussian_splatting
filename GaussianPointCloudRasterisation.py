@@ -719,6 +719,10 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         near_plane: float = 0.8
         far_plane: float = 1000.
         depth_to_sort_key_scale: float = 100.
+        grad_color_factor = 5.
+        grad_s_factor = 0.5
+        grad_q_factor = 1.
+        grad_alpha_factor = 1.
 
     @dataclass
     class GaussianPointCloudRasterisationInput:
@@ -972,6 +976,14 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         num_affected_pixels=num_affected_pixels,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
+                    grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
+                        grad_pointcloud_features=grad_pointcloud_features,
+                        color_max_sh_band=color_max_sh_band)
+                    grad_pointcloud_features[:, :4] *= self.config.grad_q_factor
+                    grad_pointcloud_features[:, 4:7] *= self.config.grad_s_factor
+                    grad_pointcloud_features[:, 7] *= self.config.grad_alpha_factor
+                    grad_pointcloud_features[:, 8:] *= self.config.grad_color_factor
+                    
                     if backward_valid_point_hook is not None:
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
                             point_id_in_camera_list=point_id_in_camera_list,
@@ -985,9 +997,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
-                    grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
-                        grad_pointcloud_features=grad_pointcloud_features,
-                        color_max_sh_band=color_max_sh_band)
+                    
                     
                 return grad_pointcloud, grad_pointcloud_features, None, grad_T_pointcloud_camera, None, None
 

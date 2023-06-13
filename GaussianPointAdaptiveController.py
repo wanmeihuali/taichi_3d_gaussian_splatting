@@ -52,7 +52,7 @@ class GaussianPointAdaptiveController:
         # TODO: find out a proper threshold
         floater_num_pixels_threshold: int = 2048
         floater_near_camrea_num_pixels_threshold: int = 1024
-        floater_depth_threshold: float = 10
+        floater_depth_threshold: float = 20
         under_reconstructed_num_pixels_threshold: int = 512
 
     @dataclass
@@ -126,11 +126,13 @@ class GaussianPointAdaptiveController:
         
         # Note that transparent points are apply on all valid points
         # while floater and densification only apply on points in camera in the current frame
-        floater_mask_in_camera = (num_affected_pixels > self.config.floater_num_pixels_threshold) | \
-            ((num_affected_pixels > self.config.floater_near_camrea_num_pixels_threshold) & \
+        floater_mask_in_camera = ((num_affected_pixels > self.config.floater_near_camrea_num_pixels_threshold) & \
                 (point_depth_in_camera < self.config.floater_depth_threshold))
+
+        # floater_mask_in_camera = (num_affected_pixels > self.config.floater_num_pixels_threshold)
         floater_point_id = point_id_in_camera_list[floater_mask_in_camera]
-        floater_mask = average_num_affect_pixels > self.config.floater_num_pixels_threshold
+        # floater_mask = average_num_affect_pixels > self.config.floater_num_pixels_threshold
+        floater_mask = torch.zeros_like(point_id_list, dtype=torch.bool)
         floater_mask[floater_point_id] = True
         floater_mask = floater_mask & (self.maintained_parameters.point_invalid_mask == 0)
         
