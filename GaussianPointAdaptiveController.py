@@ -50,10 +50,12 @@ class GaussianPointAdaptiveController:
         # the paper doesn't mention this value, but we need a value and method to determine whether a point is under-reconstructed or over-reconstructed
         # for now, the method is to threshold norm of exp(s)
         # TODO: find out a proper threshold
-        floater_num_pixels_threshold: int = 2048
-        floater_near_camrea_num_pixels_threshold: int = 1024
-        floater_depth_threshold: float = 20
+        floater_num_pixels_threshold: int = 10000
+        floater_near_camrea_num_pixels_threshold: int = 10000
+        floater_depth_threshold: float = 100
+        iteration_start_remove_floater: int = 2000
         under_reconstructed_num_pixels_threshold: int = 512
+        enable_ellipsoid_offset: bool = False
 
     @dataclass
     class GaussianPointAdaptiveControllerMaintainedParameters:
@@ -126,15 +128,18 @@ class GaussianPointAdaptiveController:
         
         # Note that transparent points are apply on all valid points
         # while floater and densification only apply on points in camera in the current frame
-        floater_mask_in_camera = ((num_affected_pixels > self.config.floater_near_camrea_num_pixels_threshold) & \
-                (point_depth_in_camera < self.config.floater_depth_threshold))
-
-        # floater_mask_in_camera = (num_affected_pixels > self.config.floater_num_pixels_threshold)
-        floater_point_id = point_id_in_camera_list[floater_mask_in_camera]
-        # floater_mask = average_num_affect_pixels > self.config.floater_num_pixels_threshold
         floater_mask = torch.zeros_like(point_id_list, dtype=torch.bool)
-        floater_mask[floater_point_id] = True
-        floater_mask = floater_mask & (self.maintained_parameters.point_invalid_mask == 0)
+        floater_mask_in_camera = torch.zeros_like(point_id_in_camera_list, dtype=torch.bool)
+        floater_point_id = torch.empty(0, dtype=torch.int32, device=pointcloud.device)
+        if self.iteration_counter > self.config.iteration_start_remove_floater:
+            floater_mask_in_camera = ((num_affected_pixels > self.config.floater_near_camrea_num_pixels_threshold) & \
+                    (point_depth_in_camera < self.config.floater_depth_threshold))
+
+            # floater_mask_in_camera = (num_affected_pixels > self.config.floater_num_pixels_threshold)
+            floater_point_id = point_id_in_camera_list[floater_mask_in_camera]
+            # floater_mask = average_num_affect_pixels > self.config.floater_num_pixels_threshold
+            floater_mask[floater_point_id] = True
+            floater_mask = floater_mask & (self.maintained_parameters.point_invalid_mask == 0)
         
         point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
         nan_mask = torch.isnan(pointcloud_features).any(dim=1)
@@ -158,8 +163,8 @@ class GaussianPointAdaptiveController:
         densify_point_id = point_id_in_camera_list[to_densify_mask]
         densify_point_position_before_optimization = pointcloud[densify_point_id]
         densify_size_reduction_factor = torch.zeros_like(densify_point_id, dtype=torch.float32, device=pointcloud.device)
-        under_reconstructed_mask = (num_affected_pixels[to_densify_mask] > self.config.under_reconstructed_num_pixels_threshold)
-        densify_size_reduction_factor[under_reconstructed_mask] = \
+        over_reconstructed_mask = (num_affected_pixels[to_densify_mask] > self.config.under_reconstructed_num_pixels_threshold)
+        densify_size_reduction_factor[over_reconstructed_mask] = \
             np.log(self.config.gaussian_split_factor_phi)
         densify_size_reduction_factor = densify_size_reduction_factor.unsqueeze(-1)
         self.densify_point_info = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerDensifyPointInfo(
@@ -199,11 +204,12 @@ class GaussianPointAdaptiveController:
             densify_point_id = self.densify_point_info.densify_point_id[:num_fillable_densify_points]
             self.maintained_parameters.pointcloud_features[densify_point_id, 4:7] -= \
                     self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points]
-            point_offset = self._generate_point_offset(
-                point_to_split=self.maintained_parameters.pointcloud[densify_point_id],
-                point_feature_to_split=self.maintained_parameters.pointcloud_features[densify_point_id])
-            self.maintained_parameters.pointcloud[invalid_point_id_to_fill] += point_offset
-            self.maintained_parameters.pointcloud[densify_point_id] -= point_offset
+            if self.config.enable_ellipsoid_offset:
+                point_offset = self._generate_point_offset(
+                    point_to_split=self.maintained_parameters.pointcloud[densify_point_id],
+                    point_feature_to_split=self.maintained_parameters.pointcloud_features[densify_point_id])
+                self.maintained_parameters.pointcloud[invalid_point_id_to_fill] += point_offset
+                self.maintained_parameters.pointcloud[densify_point_id] -= point_offset
             self.maintained_parameters.point_invalid_mask[invalid_point_id_to_fill] = 0
         total_valid_points_after_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
             self.maintained_parameters.point_invalid_mask.sum()

@@ -12,14 +12,14 @@ gaussian-point-cloud-scene-config:
   max-num-points-ratio: 100.
   num-of-features: 56
 increase-color-max-sh-band-interval: 1000.0
-log-image-interval: 1000
+log-image-interval: 200
 log-loss-interval: 10
 log-metrics-interval: 100
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 1000
 loss-function-config:
   lambda-value: 0.2
-  enable_regularization: True
+  enable_regularization: False
   regularization_weight: 0.5
 num-iterations: 30000
 pointcloud-parquet-path: 'data/boots_super_sparse/point_cloud.parquet'
@@ -27,7 +27,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: logs/boots_another_base
+summary-writer-log-dir: logs/boots_super_sparse_view_space_control
 train-dataset-json-path: 'data/boots_super_sparse/boots_train.json'
 val-dataset-json-path: 'data/boots_super_sparse/boots_val.json'
 val-interval: 1000

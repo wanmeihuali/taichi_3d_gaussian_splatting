@@ -1,19 +1,18 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.000002
+  densification-view-space-position-gradients-threshold: 0.000001
   densification_overlap_tiles_threshold: 16
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 200
-  num-iterations-reset-alpha: 8000
+  num-iterations-reset-alpha: 3000
   num-iterations-warm-up: 500
   reset-alpha-value: 0.0
   transparent-alpha-threshold: -2.0
-  floater_num_pixels_threshold: 2048
+  floater_num_pixels_threshold: 10000
   under_reconstructed_num_pixels_threshold: 512
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
   num-of-features: 56
   add_sphere: True
-  max_initial_covariance: 1.0
 increase-color-max-sh-band-interval: 1000.0
 log-image-interval: 200
 log-loss-interval: 10
@@ -30,9 +29,9 @@ num-iterations: 300000
 pointcloud-parquet-path: 'data/tat_train/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 10.0
-  far-plane: 1000.0
+  far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_train_experiment_densify_by_view_only
+summary-writer-log-dir: logs/tat_train_experiment_densify_by_view_only_disable_extra_offset
 train-dataset-json-path: 'data/tat_train/train.json'
 val-dataset-json-path: 'data/tat_train/val.json'
 val-interval: 1000
