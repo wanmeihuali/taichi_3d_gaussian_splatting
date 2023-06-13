@@ -51,6 +51,8 @@ class GaussianPointAdaptiveController:
         # for now, the method is to threshold norm of exp(s)
         # TODO: find out a proper threshold
         floater_num_pixels_threshold: int = 2048
+        floater_near_camrea_num_pixels_threshold: int = 1024
+        floater_depth_threshold: float = 10
         under_reconstructed_num_pixels_threshold: int = 512
 
     @dataclass
@@ -78,11 +80,17 @@ class GaussianPointAdaptiveController:
         self.maintained_parameters = maintained_parameters
         self.input_data = None
         self.densify_point_info: Optional[GaussianPointAdaptiveController.GaussianPointAdaptiveControllerDensifyPointInfo] = None
+        self.accumulated_num_pixels = torch.zeros_like(
+            self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
+        self.accumulated_num_in_camera = torch.zeros_like(
+            self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
 
 
     def update(self, input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
         self.iteration_counter += 1
         with torch.no_grad():
+            self.accumulated_num_in_camera[input_data.point_id_in_camera_list] += 1
+            self.accumulated_num_pixels[input_data.point_id_in_camera_list] += input_data.num_affected_pixels
             if self.iteration_counter < self.config.num_iterations_warm_up:
                 pass
             elif self.iteration_counter % self.config.num_iterations_densify == 0:
@@ -112,13 +120,19 @@ class GaussianPointAdaptiveController:
         point_id_list = torch.arange(pointcloud.shape[0], device=pointcloud.device)
         point_id_in_camera_list: torch.Tensor = input_data.point_id_in_camera_list
         num_affected_pixels: torch.Tensor = input_data.num_affected_pixels
+        point_depth_in_camera: torch.Tensor = input_data.point_depth
+        average_num_affect_pixels = self.accumulated_num_pixels / self.accumulated_num_in_camera
+        average_num_affect_pixels[torch.isnan(average_num_affect_pixels)] = 0
         
         # Note that transparent points are apply on all valid points
         # while floater and densification only apply on points in camera in the current frame
-        floater_mask_in_camera = num_affected_pixels > self.config.floater_num_pixels_threshold
+        floater_mask_in_camera = (num_affected_pixels > self.config.floater_num_pixels_threshold) | \
+            ((num_affected_pixels > self.config.floater_near_camrea_num_pixels_threshold) & \
+                (point_depth_in_camera < self.config.floater_depth_threshold))
         floater_point_id = point_id_in_camera_list[floater_mask_in_camera]
-        floater_mask = torch.zeros_like(point_id_list, dtype=torch.bool, device=pointcloud.device)
+        floater_mask = average_num_affect_pixels > self.config.floater_num_pixels_threshold
         floater_mask[floater_point_id] = True
+        floater_mask = floater_mask & (self.maintained_parameters.point_invalid_mask == 0)
         
         point_alpha = pointcloud_features[:, 7]  # alpha before sigmoid
         nan_mask = torch.isnan(pointcloud_features).any(dim=1)
