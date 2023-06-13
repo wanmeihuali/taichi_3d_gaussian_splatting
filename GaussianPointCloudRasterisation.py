@@ -529,6 +529,7 @@ def gaussian_point_rasterisation_backward(
     d_uv_d_translation_buffer: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 3)
     d_Sigma_prime_d_q_buffer: ti.types.ndarray(ti.f32, ndim=3),  # (M, 4, 4)
     d_Sigma_prime_d_s_buffer: ti.types.ndarray(ti.f32, ndim=3),  # (M, 4, 3)
+    num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
@@ -690,6 +691,7 @@ def gaussian_point_rasterisation_backward(
                     d_p_d_cov_flat @ d_Sigma_prime_d_q
                 gaussian_s_grad = gaussian_alpha_grad * \
                     d_p_d_cov_flat @ d_Sigma_prime_d_s
+                ti.atomic_add(num_affected_pixels[point_offset], 1)
                 atomic_accumulate_grad_for_point(
                     point_id=point_id,
                     point_in_camera_grad=grad_pointcloud,
@@ -732,6 +734,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         grad_viewspace: torch.Tensor  # Mx2
         magnitude_grad_viewspace_on_image: torch.Tensor  # HxWx2
         num_overlap_tiles: torch.Tensor  # M
+        num_affected_pixels: torch.Tensor  # M
 
     def __init__(
         self,
@@ -935,6 +938,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(point_id_in_camera_list.shape[0], 4, 4), dtype=torch.float32, device=pointcloud.device)
                     d_Sigma_prime_d_s_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 4, 3), dtype=torch.float32, device=pointcloud.device)
+                    num_affected_pixels = torch.zeros(
+                        size=(point_id_in_camera_list.shape[0],), dtype=torch.int32, device=pointcloud.device)
                     gaussian_point_rasterisation_backward(
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
@@ -957,6 +962,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         d_uv_d_translation_buffer=d_uv_d_translation_buffer,
                         d_Sigma_prime_d_q_buffer=d_Sigma_prime_d_q_buffer,
                         d_Sigma_prime_d_s_buffer=d_Sigma_prime_d_s_buffer,
+                        num_affected_pixels=num_affected_pixels,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     if backward_valid_point_hook is not None:
@@ -967,6 +973,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             grad_viewspace=grad_viewspace[point_id_in_camera_list],
                             magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                             num_overlap_tiles=num_overlap_tiles,
+                            num_affected_pixels=num_affected_pixels,
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
