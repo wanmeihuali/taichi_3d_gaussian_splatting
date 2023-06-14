@@ -138,7 +138,7 @@ class TestRasterisation(unittest.TestCase):
                 point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
                 T_pointcloud_camera=T_pointcloud_to_camera)
-            image = gaussian_point_cloud_rasterisation(input_data)
+            image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
         

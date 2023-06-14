@@ -74,7 +74,7 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
                 camera_info=camera_info,
                 T_pointcloud_camera=T_camera_world,
                 color_max_sh_band=idx // 1000)
-            pred_image = gaussian_point_cloud_rasterisation(input_data)
+            pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()
             loss.backward()
             optimizer.step()

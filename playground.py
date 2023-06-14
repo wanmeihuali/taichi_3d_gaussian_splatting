@@ -262,6 +262,11 @@ tmp = -0.5 * ((xy - mu).transpose()) @ inv_cov @ (xy - mu)
 p = sympy.exp(tmp[0, 0])
 p_vec = sympy.Matrix([p])
 # %%
+print(tmp.shape)
+tmp1 = sympy.Matrix([tmp[0, 0]])
+# %%
+sympy.simplify(tmp1.jacobian(xy))
+# %%
 J = p_vec.jacobian(tmp)
 print(J.shape)
 print(sympy.python(J))
@@ -551,3 +556,124 @@ for col in df.columns:
 # %%
 df = df.dropna() 
 
+# %%
+import numpy as np
+from sympy import symbols, Matrix, diff, exp
+def compute_derivatives(mu, Sigma, x):
+    # 定义符号变量
+    mu1, mu2, x1, x2 = symbols('mu1 mu2 x1 x2')
+    s11, s12, s21, s22 = symbols('s11 s12 s21 s22')
+
+    # 定义向量和矩阵
+    mu_sym = Matrix([mu1, mu2])
+    x_sym = Matrix([x1, x2])
+    Sigma_sym = Matrix([[s11, s12], [s21, s22]])
+
+    # 定义概率密度函数
+    p = exp(-1/2 * (mu_sym - x_sym).T * Sigma_sym.inv() * (mu_sym - x_sym))
+
+    # 计算导数
+    dp_dmu = diff(p[0], mu_sym)
+    dp_dSigma = diff(p[0], Sigma_sym)
+    """
+    sympy.sympify(dp_dmu)
+    sympy.sympify(dp_dSigma)
+    print("dp_dmu:", dp_dmu)
+    print("dp_dSigma:", dp_dSigma)
+    """
+
+    # 用实际值替换符号变量
+    subs = {mu1: mu[0], mu2: mu[1], x1: x[0], x2: x[1], 
+            s11: Sigma[0, 0], s12: Sigma[0, 1], s21: Sigma[1, 0], s22: Sigma[1, 1]}
+    dp_dmu_val = dp_dmu.subs(subs)
+    dp_dSigma_val = dp_dSigma.subs(subs)
+
+    return dp_dmu_val, dp_dSigma_val
+
+# 测试函数
+mu = np.array([1, 2])
+Sigma = np.array([[100., 0], [0, 100]])
+x = np.array([0, 0])
+
+dp_dmu, dp_dSigma = compute_derivatives(mu, Sigma, x)
+print("dp/dmu:", dp_dmu)
+print("dp/dSigma:", dp_dSigma)
+# %%
+import torch
+
+def compute_derivatives_torch(mu, Sigma, x):
+    # 将输入转换为PyTorch张量，并设置requires_grad=True以启用自动微分
+    mu_torch = torch.tensor(mu, dtype=torch.float32, requires_grad=True)
+    Sigma_torch = torch.tensor(Sigma, dtype=torch.float32, requires_grad=True)
+    x_torch = torch.tensor(x, dtype=torch.float32)
+
+    # 定义概率密度函数
+    diff = mu_torch - x_torch
+    exponent = -0.5 * diff @ torch.inverse(Sigma_torch) @ diff
+    p_torch = torch.exp(exponent)
+
+    # 计算导数
+    p_torch.backward()
+
+    return mu_torch.grad, Sigma_torch.grad
+
+def my_compute(mu, Sigma, x):
+    gaussian_mean = mu
+    xy = x
+    gaussian_covariance = Sigma
+    xy_mean = xy - gaussian_mean
+    # det_cov = gaussian_covariance.determinant()
+    det_cov = Sigma[0, 0] * Sigma[1, 1] - Sigma[0, 1] * Sigma[1, 0]
+    inv_cov = (1. / det_cov) * \
+        np.array([[gaussian_covariance[1, 1], -gaussian_covariance[0, 1]],
+                      [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
+    cov_inv_xy_mean = inv_cov @ xy_mean
+    xy_mean_T_cov_inv_xy_mean = xy_mean @ cov_inv_xy_mean
+    exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
+    p = np.exp(exponent)
+    d_p_d_mean = p * cov_inv_xy_mean
+    xy_mean_outer_xy_mean = np.array([[xy_mean[0] * xy_mean[0], xy_mean[0] * xy_mean[1]],
+                                      [xy_mean[1] * xy_mean[0], xy_mean[1] * xy_mean[1]]])
+    d_p_d_cov = 0.5 * p * (inv_cov @
+                            xy_mean_outer_xy_mean @ inv_cov)
+    return d_p_d_mean, d_p_d_cov
+
+# 测试函数
+mu = np.array([1.0, 2.0])
+Sigma = np.array([[1.0, 0.0], [0.0, 1.0]])
+x = np.array([0.0, 0.0])
+
+dp_dmu_torch, dp_dSigma_torch = compute_derivatives_torch(mu, Sigma, x)
+dp_dmu_my, dp_dSigma_my = my_compute(mu, Sigma, x)
+print("dp/dmu (torch):", dp_dmu_torch)
+print("dp/dSigma (torch):", dp_dSigma_torch)
+print("dp/dmu (my):", dp_dmu_my)
+print("dp/dSigma (my):", dp_dSigma_my)
+# %%
+for i in range(100):
+    mu = np.random.rand(2) * 1
+    x = np.random.rand(2) * 1
+    # covariance matrix must be symmetric and positive semi-definite
+    tmp = np.random.rand(2, 2)
+    Sigma = tmp @ tmp.T
+    dp_dmu, dp_dSigma = compute_derivatives(mu, Sigma, x)
+    dp_dmu, dp_dSigma = np.array(dp_dmu, dtype=np.float32), np.array(dp_dSigma, dtype=np.float32)
+    dp_dmu = dp_dmu.reshape(-1)
+    dp_dSigma = dp_dSigma.reshape(2, 2)
+    dp_dmu_torch, dp_dSigma_torch = compute_derivatives_torch(mu, Sigma, x)
+    dp_dmu_my, dp_dSigma_my = my_compute(mu, Sigma, x)
+
+    print("dp/dmu:", dp_dmu)
+    print("dp/dmu (my):", dp_dmu_my)
+    print("dp/dmu (torch):", dp_dmu_torch)
+    print("dp/dSigma:", dp_dSigma)
+    print("dp/dSigma (my):", dp_dSigma_my)
+    print("dp/dSigma (torch):", dp_dSigma_torch)
+    
+    # assert np.allclose(dp_dmu, dp_dmu_torch.detach().numpy(), rtol=1e-3), f"dp_dmu: {dp_dmu}, dp_dmu_torch: {dp_dmu_torch}"
+    # assert np.allclose(dp_dSigma, dp_dSigma_torch.detach().numpy(), rtol=1e-3), f"dp_dSigma: {dp_dSigma}, dp_dSigma_torch: {dp_dSigma_torch}"
+    assert np.allclose(dp_dmu, dp_dmu_my, rtol=1e-3), f"dp_dmu: {dp_dmu}, dp_dmu_my: {dp_dmu_my}"
+    assert np.allclose(dp_dSigma, dp_dSigma_my, rtol=1e-3), f"dp_dSigma: {dp_dSigma}, dp_dSigma_my: {dp_dSigma_my}"
+    
+    
+# %%
