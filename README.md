@@ -2,7 +2,8 @@
 An unofficial implementation of paper https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/3d_gaussian_splatting_high.pdf by taichi lang. 
 
 ## Current status
-Partially working. The Rasterization part is working. The Adaptive controller part is not working. Now the code can build and run, and generate result for Bounded small objects dataset. Still need to do some work to make it work for large unbounded scenes dataset.
+Partially working. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is highly dependent on the way to split the dataset, the way to generate point cloud, and the way to generate camera parameters. I still don't know if the algorithm reaches the performance claimed in the paper.
+ The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
 
 ## Installation
 Right now a install script/docker image is still not ready. User needs to install dependencies manually. The dependencies are:
