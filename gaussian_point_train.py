@@ -187,6 +187,10 @@ class GaussianPointCloudTrainer:
             b_grad = feature_grad[:, 40:56]
             num_overlap_tiles = grad_input.num_overlap_tiles
             num_affected_pixels = grad_input.num_affected_pixels
+            magnitude_grad_color = grad_input.magnitude_grad_color
+            mean_magnitude_grad_color = magnitude_grad_color / num_affected_pixels
+            # fill nan with 0
+            mean_magnitude_grad_color[mean_magnitude_grad_color != mean_magnitude_grad_color] = 0
             writer.add_histogram("grad/xyz_grad", xyz_grad, iteration)
             writer.add_histogram("grad/uv_grad", uv_grad, iteration)
             writer.add_histogram("grad/q_grad", q_grad, iteration)
@@ -197,6 +201,8 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("grad/b_grad", b_grad, iteration)
             writer.add_histogram("value/num_overlap_tiles", num_overlap_tiles, iteration)
             writer.add_histogram("value/num_affected_pixels", num_affected_pixels, iteration)
+            writer.add_histogram("value/magnitude_grad_color", magnitude_grad_color, iteration)
+            writer.add_histogram("value/mean_magnitude_grad_color", mean_magnitude_grad_color, iteration)
 
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
