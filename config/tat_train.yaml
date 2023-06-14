@@ -1,20 +1,23 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.000001
+  densification-view-space-position-gradients-threshold: 0.000004
   densification_overlap_tiles_threshold: 16
   gaussian-split-factor-phi: 1.6
-  num-iterations-densify: 200
-  num-iterations-reset-alpha: 3000
+  num-iterations-densify: 100
+  num-iterations-reset-alpha: 4000
   num-iterations-warm-up: 500
-  reset-alpha-value: -2.1
+  reset-alpha-value: -1.9
   transparent-alpha-threshold: -2.0
-  floater_num_pixels_threshold: 10000
-  under_reconstructed_num_pixels_threshold: 64
+  floater_num_pixels_threshold: 40000
+  floater_near_camrea_num_pixels_threshold: 30000
+  iteration_start_remove_floater: 2000
+  under_reconstructed_num_pixels_threshold: 256
   enable_sample_from_point: True
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
   num-of-features: 56
   add_sphere: True
-  initial_alpha: -2.0
+  initial_alpha: -0.0
+  max_initial_covariance: 3.0
 increase-color-max-sh-band-interval: 1000.0
 log-image-interval: 200
 log-loss-interval: 10
@@ -33,7 +36,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_train_experiment
+summary-writer-log-dir: logs/tat_train_experiment_tune
 train-dataset-json-path: 'data/tat_train/train.json'
 val-dataset-json-path: 'data/tat_train/val.json'
 val-interval: 1000
