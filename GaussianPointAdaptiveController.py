@@ -22,7 +22,25 @@ def compute_ellipsoid_offset(
         ellipsoid_offset[idx, 0] = foci_vector[0]
         ellipsoid_offset[idx, 1] = foci_vector[1]
         ellipsoid_offset[idx, 2] = foci_vector[2]
-        
+
+@ti.kernel
+def sample_from_point(
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, 56)
+    sample_result: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
+):
+    for idx in range(pointcloud.shape[0]):
+        point = load_point_cloud_row_into_gaussian_point_3d(
+            pointcloud=pointcloud,
+            pointcloud_features=pointcloud_features,
+            point_id=idx,
+        )
+        foci_vector = point.sample()
+        sample_result[idx, 0] = foci_vector[0]
+        sample_result[idx, 1] = foci_vector[1]
+        sample_result[idx, 2] = foci_vector[2]
+
+       
 
 class GaussianPointAdaptiveController:
     """
@@ -56,6 +74,7 @@ class GaussianPointAdaptiveController:
         iteration_start_remove_floater: int = 2000
         under_reconstructed_num_pixels_threshold: int = 512
         enable_ellipsoid_offset: bool = False
+        enable_sample_from_point: bool = True
 
     @dataclass
     class GaussianPointAdaptiveControllerMaintainedParameters:
@@ -198,7 +217,8 @@ class GaussianPointAdaptiveController:
                 self.maintained_parameters.pointcloud_features[self.densify_point_info.densify_point_id[:num_fillable_densify_points]]
             self.maintained_parameters.pointcloud_features[invalid_point_id_to_fill, 4:7] -= \
                 self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points]
-            num_over_reconstructed = (self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points] > 1e-6).sum().item()
+            over_reconstructed_mask = (self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points] > 1e-6).reshape(-1)
+            num_over_reconstructed = over_reconstructed_mask.sum().item()
             num_under_reconstructed = num_fillable_densify_points - num_over_reconstructed
             print(f"num_over_reconstructed: {num_over_reconstructed}, num_under_reconstructed: {num_under_reconstructed}")
             densify_point_id = self.densify_point_info.densify_point_id[:num_fillable_densify_points]
@@ -210,6 +230,13 @@ class GaussianPointAdaptiveController:
                     point_feature_to_split=self.maintained_parameters.pointcloud_features[densify_point_id])
                 self.maintained_parameters.pointcloud[invalid_point_id_to_fill] += point_offset
                 self.maintained_parameters.pointcloud[densify_point_id] -= point_offset
+            if self.config.enable_sample_from_point:
+                over_reconstructed_point_id_to_fill = invalid_point_id_to_fill[over_reconstructed_mask]
+                point_position = self._sample_from_point(
+                    point_to_split=self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill],
+                    point_feature_to_split=self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill])
+                self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill] = point_position
+                
             self.maintained_parameters.point_invalid_mask[invalid_point_id_to_fill] = 0
         total_valid_points_after_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \
             self.maintained_parameters.point_invalid_mask.sum()
@@ -239,6 +266,19 @@ class GaussianPointAdaptiveController:
             ellipsoid_offset=point_offset,
         )
         return point_offset
+    
+    def _sample_from_point(self,
+                           point_to_split: torch.Tensor, # (N, 3)
+                            point_feature_to_split: torch.Tensor, # (N, 56)
+    ):
+        select_points = point_to_split.contiguous()
+        select_point_features = point_feature_to_split.contiguous()
+        point_sampled = torch.zeros_like(select_points)
+        sample_from_point(
+            pointcloud=select_points,
+            pointcloud_features=select_point_features,
+            sample_result=point_sampled)
+        return point_sampled
         
         
         

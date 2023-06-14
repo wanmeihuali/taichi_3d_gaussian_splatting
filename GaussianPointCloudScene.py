@@ -18,6 +18,7 @@ class GaussianPointCloudScene(torch.nn.Module):
         sphere_radius_factor: float = 4.0
         num_points_sphere: int = 10000
         max_initial_covariance: Optional[float] = None
+        initial_alpha: float = -2.0
 
     def __init__(
         self,
@@ -84,7 +85,7 @@ class GaussianPointCloudScene(torch.nn.Module):
 
             # for alpha before sigmoid, we set it to 0.0, so sigmoid(alpha) is 0.5
             # self.point_cloud_features[:, 7] = 0.0
-            self.point_cloud_features[:, 7] = 0.0
+            self.point_cloud_features[:, 7] = self.config.initial_alpha
             # for color spherical harmonics factors, we set them to 0.5
             self.point_cloud_features[:, 8] = 1.0
             self.point_cloud_features[:, 9:24] = 0.0

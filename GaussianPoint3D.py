@@ -86,6 +86,12 @@ def get_projective_transform_jacobian(
         [0, fy / z, -(fy * y) / (z * z)]
     ])
 
+@ti.func
+def box_muller_transform(u1, u2):
+    z1 = ti.sqrt(-2 * ti.log(u1)) * ti.cos(2 * 3.141592653589 * u2)
+    z2 = ti.sqrt(-2 * ti.log(u1)) * ti.sin(2 * 3.141592653589 * u2)
+    return z1, z2
+
 
 @ti.dataclass
 class GaussianPoint3D:
@@ -321,6 +327,25 @@ class GaussianPoint3D:
         r_a = ti.min(s.x, s.y, s.z)
         foci_vector = ti.sqrt(r_c**2 - r_a**2) * base_vector
         return foci_vector
+
+    @ti.func
+    def sample(self) -> ti.math.vec3:
+        u1 = ti.random()
+        u2 = ti.random()
+        u3 = ti.random()
+        u4 = ti.random()
+        z1, z2 = box_muller_transform(u1, u2)
+        z3, _ = box_muller_transform(u3, u4)
+        R = rotation_matrix_from_quaternion(self.cov_rotation)
+        exp_cov_scale = ti.math.exp(self.cov_scale)
+        S = ti.math.mat3([
+            [exp_cov_scale.x, 0, 0],
+            [0, exp_cov_scale.y, 0],
+            [0, 0, exp_cov_scale.z]
+        ])
+        base = ti.math.vec3(z1, z2, z3)
+        return self.translation + R @ S @ base
+        
 
 
 # %%
