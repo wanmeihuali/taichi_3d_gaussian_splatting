@@ -126,14 +126,21 @@ See [here](config/boots_super_sparse_config.yaml) for example. The config is in 
 ```bash
 python gaussian_point_train.py --train_config {path to config file}
 ```
-THe result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file.
+The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file.
+
+### From colmap
+- Reconstruct using colmap: See https://colmap.github.io/tutorial.html. The image should be undistorted. Sparse reconstruction is usually enough.
+- save as txt: the standard colmap txt output contains three files, cameras.txt, images.txt, points3D.txt
+- transform the txt into json and parquet: see [this file](prepare_colmap.py) about how to prepare it.
+- prepare config yaml: see [this file](config/tat_train.yaml) as an example
+- run with the config.
 
 ## TODO
 ### Algorithm part
 - [ ] Fix the adaptive controller part, something is wrong with the densify process, and the description in the paper is very vague. Further experiments are needed to figure out the correct/better implementation.
     - figure if the densify shall apply to all points, or only points in current frame.
     - figure what "average magnitude of view-space position gradients" means, is it average across frames, or average across pixel? 
-    - figure the correct split policy. Where shall the location of new point be? Currently the location is the location before optimization. Will it be better to put it at foci of the original ellipsoid?
+    - ~figure the correct split policy. Where shall the location of new point be? Currently the location is the location before optimization. Will it be better to put it at foci of the original ellipsoid?~ use sampling of pdf for over-reconstruct, use position before optimization for under-reconstruct.
 - [ ] Add result score/image in README.md
     - try same dataset in the paper.
     - fix issue in current blender plugin, and also make the plugin open source.
