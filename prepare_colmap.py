@@ -3,11 +3,19 @@ import os
 import pandas as pd
 import json
 import numpy as np
+import argparse
 
 # %%
-base_path = "/home/kuangyuan/hdd/datasets/tanks_and_temples/tat_intermediate_Train/colmap_output"
-image_path = "/home/kuangyuan/hdd/datasets/tanks_and_temples/tat_intermediate_Train/all"
-output_dir = "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/data/tat_train"
+parser = argparse.ArgumentParser("Prepare dataset for 3D Gaussian Splatting from COLMAP text output")
+parser.add_argument("--base_path", type=str, required=True, help="Path to the COLMAP output folder, containing cameras.txt, images.txt, points3D.txt")
+parser.add_argument("--image_path", type=str, required=True, help="Path to the COLMAP Image folder")
+parser.add_argument("--test_image_list_path", type=str, required=True, help="Path to the test image list")
+parser.add_argument("--output_dir", type=str, required=True, help="Path to the output folder")
+args = parser.parse_args()
+base_path = args.base_path
+image_path = args.image_path
+output_dir = args.output_dir
+test_image_list_path = args.test_image_list_path
 # %%
 def read_images_txt(file):
     with open(file, 'r') as f:
@@ -162,7 +170,9 @@ for name, image in images.items():
     plt.show()
     break
     """
-test_images = [f"00{idx}.png" for idx in range(175, 250)]
+with open(test_image_list_path, "r") as f:
+    test_images = f.readlines()
+# test_images = [f"00{idx}.png" for idx in range(175, 250)]
 df = pd.DataFrame(data)
 # select training data and validation data, have a val every 3 frames
 df["is_train"] = df["image_path"].apply(lambda x: os.path.basename(x) not in test_images)
