@@ -19,6 +19,7 @@ class GaussianPointCloudScene(torch.nn.Module):
         num_points_sphere: int = 10000
         max_initial_covariance: Optional[float] = None
         initial_alpha: float = -2.0
+        initial_covariance_ratio: float = 1.0
 
     def __init__(
         self,
@@ -66,7 +67,8 @@ class GaussianPointCloudScene(torch.nn.Module):
             nearest_neighbor_tree = cKDTree(valid_point_cloud_np)
             nearest_three_neighbor_distance, _ = nearest_neighbor_tree.query(
                 valid_point_cloud_np, k = 3 + 1)
-            initial_covariance = np.mean(nearest_three_neighbor_distance[:, 1:], axis=1)
+            initial_covariance = np.mean(nearest_three_neighbor_distance[:, 1:], axis=1) * \
+                self.config.initial_covariance_ratio
             # clip the initial covariance to [1e-6, inf]
             initial_covariance = np.clip(initial_covariance, 1e-6, self.config.max_initial_covariance)
             # s is log of the covariance, so we take log of the initial covariance
