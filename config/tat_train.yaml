@@ -39,7 +39,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_train_experiment_small_initial_exp_lr_2
+summary-writer-log-dir: logs/tat_train_experiment_downsample_warmup
 train-dataset-json-path: 'data/tat_train/train.json'
 val-dataset-json-path: 'data/tat_train/val.json'
 val-interval: 1000
