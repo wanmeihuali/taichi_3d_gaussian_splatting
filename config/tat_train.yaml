@@ -26,7 +26,7 @@ log-metrics-interval: 100
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 3000
 feature_learning_rate: 0.005
-position_learning_rate: 0.00005
+position_learning_rate: 0.001
 loss-function-config:
   lambda-value: 0.2
   enable_regularization: False
@@ -37,7 +37,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_train_experiment_small_initial
+summary-writer-log-dir: logs/tat_train_experiment_small_initial_exp_lr
 train-dataset-json-path: 'data/tat_train/train.json'
 val-dataset-json-path: 'data/tat_train/val.json'
 val-interval: 1000

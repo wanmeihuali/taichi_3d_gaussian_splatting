@@ -28,6 +28,8 @@ class GaussianPointCloudTrainer:
         val_interval: int = 1000
         feature_learning_rate: float = 1e-3
         position_learning_rate: float = 1e-5
+        position_learning_rate_decay_rate: float = 0.97
+        position_learning_rate_decay_interval: int = 100
         increase_color_max_sh_band_interval: int = 1000.
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
@@ -82,8 +84,13 @@ class GaussianPointCloudTrainer:
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
+
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer=optimizer, gamma=self.config.position_learning_rate_decay_rate)
             
         for iteration in tqdm(range(self.config.num_iterations)):
+            if iteration % self.config.position_learning_rate_decay_interval == 0:
+                scheduler.step()
             optimizer.zero_grad()
             position_optimizer.zero_grad()
             
