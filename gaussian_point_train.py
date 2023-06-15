@@ -86,7 +86,7 @@ class GaussianPointCloudTrainer:
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer=optimizer, gamma=self.config.position_learning_rate_decay_rate)
+            optimizer=position_optimizer, gamma=self.config.position_learning_rate_decay_rate)
             
         for iteration in tqdm(range(self.config.num_iterations)):
             if iteration % self.config.position_learning_rate_decay_interval == 0:
