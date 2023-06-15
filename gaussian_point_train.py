@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import itertools
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
+import torchvision.transforms as transforms
 from pytorch_msssim import ssim
 from tqdm import tqdm
 import taichi as ti
@@ -28,12 +29,16 @@ class GaussianPointCloudTrainer:
         val_interval: int = 1000
         feature_learning_rate: float = 1e-3
         position_learning_rate: float = 1e-5
+        position_learning_rate_decay_rate: float = 0.97
+        position_learning_rate_decay_interval: int = 100
         increase_color_max_sh_band_interval: int = 1000.
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
         log_image_interval: int = 1000
         enable_taichi_kernel_profiler: bool = False
         log_taichi_kernel_profile_interval: int = 1000
+        initial_downsample_factor: int = 4
+        half_downsample_factor_interval: int = 250
         summary_writer_log_dir: str = "logs"
         rasterisation_config: GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig()
         adaptive_controller_config: GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig()
@@ -70,6 +75,27 @@ class GaussianPointCloudTrainer:
 
         # move scene to GPU
 
+    @staticmethod
+    def _downsample_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo, downsample_factor: int):
+        camera_height = camera_info.camera_height // downsample_factor
+        camera_width = camera_info.camera_width // downsample_factor
+        image = transforms.functional.resize(image, size=(camera_height, camera_width))
+        camera_width = camera_width - camera_width % 16
+        camera_height = camera_height - camera_height % 16
+        image = image[:3, :camera_height, :camera_width].contiguous()
+        camera_intrinsics = camera_info.camera_intrinsics
+        camera_intrinsics = camera_intrinsics.clone()
+        camera_intrinsics[0, 0] /= downsample_factor
+        camera_intrinsics[1, 1] /= downsample_factor
+        camera_intrinsics[0, 2] /= downsample_factor
+        camera_intrinsics[1, 2] /= downsample_factor
+        resized_camera_info = CameraInfo(
+            camera_intrinsics=camera_intrinsics,
+            camera_height=camera_height,
+            camera_width=camera_width,
+            camera_id=camera_info.camera_id)
+        return image, resized_camera_info
+
     def train(self):
         ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
@@ -82,13 +108,22 @@ class GaussianPointCloudTrainer:
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
+
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer=position_optimizer, gamma=self.config.position_learning_rate_decay_rate)
+        downsample_factor = self.config.initial_downsample_factor
             
         for iteration in tqdm(range(self.config.num_iterations)):
+            if iteration % self.config.half_downsample_factor_interval == 0 and iteration > 0 and downsample_factor > 1:
+                downsample_factor = downsample_factor // 2
             optimizer.zero_grad()
             position_optimizer.zero_grad()
             
             image_gt, T_pointcloud_camera, camera_info = next(
                 train_data_loader_iter)
+            if downsample_factor > 1:
+                image_gt, camera_info = GaussianPointCloudTrainer._downsample_image_and_camera_info(
+                    image_gt, camera_info, downsample_factor=downsample_factor)
             image_gt = image_gt.cuda()
             T_pointcloud_camera = T_pointcloud_camera.cuda()
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
@@ -114,6 +149,8 @@ class GaussianPointCloudTrainer:
             loss.backward()
             optimizer.step()
             position_optimizer.step()
+            if iteration % self.config.position_learning_rate_decay_interval == 0:
+                scheduler.step()
             magnitude_grad_viewspace_on_image = None
             if self.adaptive_controller.input_data is not None:
                 magnitude_grad_viewspace_on_image = self.adaptive_controller.input_data.magnitude_grad_viewspace_on_image
