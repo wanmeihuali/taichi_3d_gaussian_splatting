@@ -54,6 +54,42 @@
             ]
         },
         {
+            "name": "tat truck training",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/tat_truck.yaml",
+            ]
+        },
+        {
+            "name": "tat m60 training",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/tat_m60.yaml",
+            ]
+        },
+        {
+            "name": "tat playground training",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/tat_playground.yaml",
+            ]
+        },
+        {
             "name": "boots train",
             "type": "python",
             "request": "launch",

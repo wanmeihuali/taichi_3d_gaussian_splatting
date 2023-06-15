@@ -172,6 +172,7 @@ for name, image in images.items():
     """
 with open(test_image_list_path, "r") as f:
     test_images = f.readlines()
+    test_images = [x.strip() for x in test_images]
 # test_images = [f"00{idx}.png" for idx in range(175, 250)]
 df = pd.DataFrame(data)
 # select training data and validation data, have a val every 3 frames

@@ -34,12 +34,12 @@ loss-function-config:
   enable_regularization: False
   regularization_weight: 0.005
 num-iterations: 30000
-pointcloud-parquet-path: 'data/tat_train/point_cloud.parquet'
+pointcloud-parquet-path: 'data/tat_playground/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_train_experiment_downsample_warmup
-train-dataset-json-path: 'data/tat_train/train.json'
-val-dataset-json-path: 'data/tat_train/val.json'
+summary-writer-log-dir: logs/tat_playground_experiment_downsample_warmup
+train-dataset-json-path: 'data/tat_playground/train.json'
+val-dataset-json-path: 'data/tat_playground/val.json'
 val-interval: 1000
