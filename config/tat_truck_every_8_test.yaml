@@ -40,7 +40,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_truck_every_8_experiment_under_reconstructed_move_factor_10
+summary-writer-log-dir: logs/tat_truck_every_8_experiment_fix_boundary
 train-dataset-json-path: 'data/tat_truck_every_8_test/train.json'
 val-dataset-json-path: 'data/tat_truck_every_8_test/val.json'
 val-interval: 1000
