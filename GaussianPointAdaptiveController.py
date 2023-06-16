@@ -73,6 +73,7 @@ class GaussianPointAdaptiveController:
         floater_depth_threshold: float = 100
         iteration_start_remove_floater: int = 2000
         under_reconstructed_num_pixels_threshold: int = 512
+        under_reconstructed_move_factor: float = 100.0
         enable_ellipsoid_offset: bool = False
         enable_sample_from_point: bool = True
 
@@ -91,6 +92,8 @@ class GaussianPointAdaptiveController:
         densify_point_id: torch.Tensor # shape: [num_points_to_densify]
         densify_point_position_before_optimization: torch.Tensor # shape: [num_points_to_densify, 3]
         densify_size_reduction_factor: torch.Tensor # shape: [num_points_to_densify]
+        densify_point_grad_position: torch.Tensor # shape: [num_points_to_densify, 3]
+
         
 
     def __init__(self,
@@ -181,6 +184,7 @@ class GaussianPointAdaptiveController:
         
         densify_point_id = point_id_in_camera_list[to_densify_mask]
         densify_point_position_before_optimization = pointcloud[densify_point_id]
+        densify_point_grad_position = input_data.grad_point_in_camera[to_densify_mask]
         densify_size_reduction_factor = torch.zeros_like(densify_point_id, dtype=torch.float32, device=pointcloud.device)
         over_reconstructed_mask = (num_affected_pixels[to_densify_mask] > self.config.under_reconstructed_num_pixels_threshold)
         densify_size_reduction_factor[over_reconstructed_mask] = \
@@ -192,6 +196,7 @@ class GaussianPointAdaptiveController:
             densify_point_id=densify_point_id,
             densify_point_position_before_optimization=densify_point_position_before_optimization,
             densify_size_reduction_factor=densify_size_reduction_factor,
+            densify_point_grad_position=densify_point_grad_position,
         )
 
     def _add_densify_points(self):
@@ -218,6 +223,7 @@ class GaussianPointAdaptiveController:
             self.maintained_parameters.pointcloud_features[invalid_point_id_to_fill, 4:7] -= \
                 self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points]
             over_reconstructed_mask = (self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points] > 1e-6).reshape(-1)
+            under_reconstructed_mask = ~over_reconstructed_mask
             num_over_reconstructed = over_reconstructed_mask.sum().item()
             num_under_reconstructed = num_fillable_densify_points - num_over_reconstructed
             print(f"num_over_reconstructed: {num_over_reconstructed}, num_under_reconstructed: {num_under_reconstructed}")
@@ -236,6 +242,10 @@ class GaussianPointAdaptiveController:
                     point_to_split=self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill],
                     point_feature_to_split=self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill])
                 self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill] = point_position
+                under_reconstructed_point_id_to_fill = invalid_point_id_to_fill[under_reconstructed_mask]
+                under_reconstructed_point_grad_position = self.densify_point_info.densify_point_grad_position[:num_fillable_densify_points][under_reconstructed_mask]
+                self.maintained_parameters.pointcloud[under_reconstructed_point_id_to_fill] += under_reconstructed_point_grad_position * \
+                    self.config.under_reconstructed_move_factor
                 
             self.maintained_parameters.point_invalid_mask[invalid_point_id_to_fill] = 0
         total_valid_points_after_densify = self.maintained_parameters.point_invalid_mask.shape[0] - \

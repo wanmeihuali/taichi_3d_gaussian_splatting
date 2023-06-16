@@ -677,3 +677,95 @@ for i in range(100):
     
     
 # %%
+import pandas as pd
+import numpy as np
+import open3d as o3d
+parquet_path = "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/logs/tat_truck_experiment_more_val/scene_13750.parquet"
+df = pd.read_parquet(parquet_path)
+# %%
+df.head()
+# %%
+point_cloud = df[["x", "y", "z"]].values
+point_cloud_rgb = df[["r_sh0", "g_sh0", "b_sh0"]].values
+# here rgb are actually sh coefficients (-inf, inf), 
+# need to apply sigmoid to get (0, 1) rgb
+point_cloud_rgb = 1.0 / (1.0 + np.exp(-point_cloud_rgb))
+# %%
+point_cloud_o3d = o3d.geometry.PointCloud()
+point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud)
+point_cloud_o3d.colors = o3d.utility.Vector3dVector(point_cloud_rgb)
+# visualize point cloud
+o3d.visualization.draw_geometries([point_cloud_o3d])
+
+# %%
+# then only visualize the points close to the origin
+mask = np.linalg.norm(point_cloud, axis=1) < 10
+point_cloud_o3d = o3d.geometry.PointCloud()
+point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud[mask])
+point_cloud_o3d.colors = o3d.utility.Vector3dVector(point_cloud_rgb[mask])
+o3d.visualization.draw_geometries([point_cloud_o3d])
+# %%
+q = df[["cov_q0", "cov_q1", "cov_q2", "cov_q3"]].values
+s = df[["cov_s0", "cov_s1", "cov_s2"]].values
+
+# each point is actually a ellipsoid with rotation q and scale s
+# here we use the shortest axis as the direction of the normal
+# and the length of the longest axis as the length of the normal to visualize
+# first, create a [0, 0, 1] like vector with shape (N, 3), the shortest axis is 1
+# then, rotate the vector by q, the shortest axis is rotated to the direction of the normal
+base_vector = np.zeros((len(q), 3))
+shortest_axis = np.argmin(s, axis=1)
+base_vector[np.arange(len(q)), shortest_axis] = 1.0
+# quaternion rotation, q is xyzw
+"""
+def rotation_matrix_from_quaternion(q: ti.math.vec4) -> ti.math.mat3:
+    xx = q.x * q.x
+    yy = q.y * q.y
+    zz = q.z * q.z
+    xy = q.x * q.y
+    xz = q.x * q.z
+    yz = q.y * q.z
+    wx = q.w * q.x
+    wy = q.w * q.y
+    wz = q.w * q.z
+    return ti.math.mat3([
+        [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
+        [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)],
+        [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)]
+    ])
+"""
+
+def rotation_matrix_from_quaternion(q: np.ndarray) -> np.ndarray:
+    xx = q[0] * q[0]
+    yy = q[1] * q[1]
+    zz = q[2] * q[2]
+    xy = q[0] * q[1]
+    xz = q[0] * q[2]
+    yz = q[1] * q[2]
+    wx = q[3] * q[0]
+    wy = q[3] * q[1]
+    wz = q[3] * q[2]
+    return np.array([
+        [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
+        [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)],
+        [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)]
+    ])
+
+S = np.exp(s)
+
+rotated_S = np.zeros((len(q), 3))
+normal = np.zeros((len(q), 3))
+for i in range(len(q)):
+    rotated_S[i] = rotation_matrix_from_quaternion(q[i]) @ S[i]
+    normal[i] = rotation_matrix_from_quaternion(q[i]) @ base_vector[i]
+    normal[i] *= np.linalg.norm(rotated_S[i])
+
+ 
+    
+# %%
+point_cloud_o3d = o3d.geometry.PointCloud()
+point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud[mask])
+point_cloud_o3d.colors = o3d.utility.Vector3dVector(point_cloud_rgb[mask])
+point_cloud_o3d.normals = o3d.utility.Vector3dVector(normal[mask] * 3)
+o3d.visualization.draw_geometries([point_cloud_o3d])
+# %%
