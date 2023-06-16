@@ -17,6 +17,7 @@ from pytorch_msssim import ssim
 from tqdm import tqdm
 import taichi as ti
 import os
+import matplotlib.pyplot as plt
 
 
 class GaussianPointCloudTrainer:
@@ -63,8 +64,7 @@ class GaussianPointCloudTrainer:
                 pointcloud=self.scene.point_cloud,
                 pointcloud_features=self.scene.point_cloud_features,
                 point_invalid_mask=self.scene.point_invalid_mask,
-            )
-        )
+            ))
         self.rasterisation = GaussianPointCloudRasterisation(
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
@@ -161,6 +161,16 @@ class GaussianPointCloudTrainer:
                 self.writer.add_histogram(
                     "train/pixel_valid_point_count", pixel_valid_point_count, iteration)
             self.adaptive_controller.refinement()
+            if self.adaptive_controller.has_plot:
+                fig, ax = self.adaptive_controller.figure, self.adaptive_controller.ax
+                # plot image_pred in ax
+                ax.imshow(image_pred.detach().cpu().numpy().transpose(
+                    1, 2, 0), zorder=1, vmin=0, vmax=1)
+
+                self.writer.add_figure(
+                    "train/densify_points", fig, iteration)
+                self.adaptive_controller.figure, self.adaptive_controller.ax = plt.subplots()
+                self.adaptive_controller.has_plot = False
             if iteration % self.config.log_loss_interval == 0:
                 self.writer.add_scalar(
                     "train/loss", loss.item(), iteration)
