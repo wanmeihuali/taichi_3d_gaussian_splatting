@@ -322,6 +322,7 @@ class GaussianPointCloudTrainer:
 
 # %%
 if __name__ == "__main__":
+    plt.switch_backend("agg")
     parser = argparse.ArgumentParser("Train a Gaussian Point Cloud Scene")
     parser.add_argument("--train_config", type=str, required=True)
     parser.add_argument("--gen_template_only",
