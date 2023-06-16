@@ -9,7 +9,7 @@ import argparse
 parser = argparse.ArgumentParser("Prepare dataset for 3D Gaussian Splatting from COLMAP text output")
 parser.add_argument("--base_path", type=str, required=True, help="Path to the COLMAP output folder, containing cameras.txt, images.txt, points3D.txt")
 parser.add_argument("--image_path", type=str, required=True, help="Path to the COLMAP Image folder")
-parser.add_argument("--test_image_list_path", type=str, required=True, help="Path to the test image list")
+parser.add_argument("--test_image_list_path", type=str, default=None, help="Path to the test image list")
 parser.add_argument("--output_dir", type=str, required=True, help="Path to the output folder")
 args = parser.parse_args()
 base_path = args.base_path
@@ -170,13 +170,20 @@ for name, image in images.items():
     plt.show()
     break
     """
-with open(test_image_list_path, "r") as f:
-    test_images = f.readlines()
-    test_images = [x.strip() for x in test_images]
-# test_images = [f"00{idx}.png" for idx in range(175, 250)]
+
 df = pd.DataFrame(data)
+if test_image_list_path is not None:
+    with open(test_image_list_path, "r") as f:
+        test_images = f.readlines()
+        test_images = [x.strip() for x in test_images]
+
+    df["is_train"] = df["image_path"].apply(lambda x: os.path.basename(x) not in test_images)
+else:
+    # taking every 8th photo for test,
+    df["is_train"] = df["image_path"].apply(lambda x: int(os.path.basename(x)[0:6]) % 8 != 0)
+    
+# test_images = [f"00{idx}.png" for idx in range(175, 250)]
 # select training data and validation data, have a val every 3 frames
-df["is_train"] = df["image_path"].apply(lambda x: os.path.basename(x) not in test_images)
 train_df = df[df["is_train"]].copy()
 val_df = df[~df["is_train"]].copy()
 print(train_df.shape)
