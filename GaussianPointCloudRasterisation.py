@@ -19,6 +19,8 @@ from dataclass_wizard import YAMLWizard
 mat4x4f = ti.types.matrix(n=4, m=4, dtype=ti.f32)
 mat4x3f = ti.types.matrix(n=4, m=3, dtype=ti.f32)
 
+BOUNDARY_TILES = 3
+
 @ti.kernel
 def filter_point_in_camera(
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
@@ -53,8 +55,8 @@ def filter_point_in_camera(
         depth_in_camera = point_in_camera[2]
         if depth_in_camera > near_plane and \
             depth_in_camera < far_plane and \
-            pixel_u >= 0 and pixel_u < camera_width and \
-                pixel_v >= 0 and pixel_v < camera_height:
+            pixel_u >= -16 * BOUNDARY_TILES and pixel_u < camera_width + 16 * BOUNDARY_TILES and \
+                pixel_v >= -16 * BOUNDARY_TILES and pixel_v < camera_height + 16 * BOUNDARY_TILES:
             point_in_camera_mask[point_id] = ti.cast(1, ti.i8)
         else:
             point_in_camera_mask[point_id] = ti.cast(0, ti.i8)
