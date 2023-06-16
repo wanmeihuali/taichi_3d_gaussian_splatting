@@ -9,7 +9,6 @@ import torch
 import argparse
 from dataclass_wizard import YAMLWizard
 from dataclasses import dataclass
-import itertools
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import torchvision.transforms as transforms
@@ -19,6 +18,10 @@ import taichi as ti
 import os
 import matplotlib.pyplot as plt
 
+def cycle(dataloader):
+    while True:
+        for data in dataloader:
+            yield data
 
 class GaussianPointCloudTrainer:
     @dataclass
@@ -102,7 +105,7 @@ class GaussianPointCloudTrainer:
             self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
         val_data_loader = torch.utils.data.DataLoader(
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=2)
-        train_data_loader_iter = itertools.cycle(train_data_loader)
+        train_data_loader_iter = cycle(train_data_loader)
         
         optimizer = torch.optim.AdamW(
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
