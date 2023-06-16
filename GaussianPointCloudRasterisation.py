@@ -747,6 +747,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         num_overlap_tiles: torch.Tensor  # M
         num_affected_pixels: torch.Tensor  # M
         point_depth: torch.Tensor  # M
+        point_uv_in_camera: torch.Tensor  # Mx2
         magnitude_grad_color: torch.Tensor  # M
 
     def __init__(
@@ -1001,6 +1002,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                             num_overlap_tiles=num_overlap_tiles,
                             num_affected_pixels=num_affected_pixels,
+                            point_uv_in_camera=uv_buffer,
                             point_depth=depth_buffer,
                             magnitude_grad_color=magnitude_grad_color,
                         )

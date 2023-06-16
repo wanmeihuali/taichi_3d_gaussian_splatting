@@ -5,6 +5,7 @@ from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation, loa
 from dataclass_wizard import YAMLWizard
 from typing import Optional
 import taichi as ti
+import matplotlib.pyplot as plt
 
 @ti.kernel
 def compute_ellipsoid_offset(
@@ -72,6 +73,7 @@ class GaussianPointAdaptiveController:
         floater_near_camrea_num_pixels_threshold: int = 10000
         floater_depth_threshold: float = 100
         iteration_start_remove_floater: int = 2000
+        plot_densify_interval: int = 200
         under_reconstructed_num_pixels_threshold: int = 512
         under_reconstructed_move_factor: float = 100.0
         enable_ellipsoid_offset: bool = False
@@ -108,6 +110,8 @@ class GaussianPointAdaptiveController:
             self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
         self.accumulated_num_in_camera = torch.zeros_like(
             self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
+        self.figure, self.ax = plt.subplots() # plt must be in main thread, it sucks
+        self.has_plot = False
 
 
     def update(self, input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
@@ -145,6 +149,7 @@ class GaussianPointAdaptiveController:
         point_id_in_camera_list: torch.Tensor = input_data.point_id_in_camera_list
         num_affected_pixels: torch.Tensor = input_data.num_affected_pixels
         point_depth_in_camera: torch.Tensor = input_data.point_depth
+        point_uv_in_camera: torch.Tensor = input_data.point_uv_in_camera
         average_num_affect_pixels = self.accumulated_num_pixels / self.accumulated_num_in_camera
         average_num_affect_pixels[torch.isnan(average_num_affect_pixels)] = 0
         
@@ -152,6 +157,7 @@ class GaussianPointAdaptiveController:
         # while floater and densification only apply on points in camera in the current frame
         floater_mask = torch.zeros_like(point_id_list, dtype=torch.bool)
         floater_mask_in_camera = torch.zeros_like(point_id_in_camera_list, dtype=torch.bool)
+
         floater_point_id = torch.empty(0, dtype=torch.int32, device=pointcloud.device)
         if self.iteration_counter > self.config.iteration_start_remove_floater:
             floater_mask_in_camera = ((num_affected_pixels > self.config.floater_near_camrea_num_pixels_threshold) & \
@@ -198,6 +204,27 @@ class GaussianPointAdaptiveController:
             densify_size_reduction_factor=densify_size_reduction_factor,
             densify_point_grad_position=densify_point_grad_position,
         )
+        
+        if self.iteration_counter % self.config.plot_densify_interval == 0:
+            ax = self.ax
+            floater_uv = point_uv_in_camera[floater_mask_in_camera]
+            self._add_points_to_plt_figure(ax, floater_uv, 'b', 'floater', 2)
+            over_reconstructed_uv = point_uv_in_camera[to_densify_mask][over_reconstructed_mask]
+            under_reconstructed_uv = point_uv_in_camera[to_densify_mask][~over_reconstructed_mask]
+            self._add_points_to_plt_figure(ax, over_reconstructed_uv, 'r', 'over_reconstructed', 3)
+            self._add_points_to_plt_figure(ax, under_reconstructed_uv, 'g', 'under_reconstructed', 4)
+            ax.legend()
+            image_height = input_data.magnitude_grad_viewspace_on_image.shape[0]
+            image_width = input_data.magnitude_grad_viewspace_on_image.shape[1]
+            print(image_height, image_width)
+            ax.set_xlim([0, image_width])
+            ax.set_ylim([image_height, 0])
+            self.has_plot = True
+
+    def _add_points_to_plt_figure(self, ax: plt.Axes, uv: torch.Tensor, color: str, description: str, zorder: int = 1):
+        col = uv[:, 0].cpu().numpy()
+        row = uv[:, 1].cpu().numpy()
+        ax.scatter(col, row, s=1, c=color, label=description, zorder=zorder)
 
     def _add_densify_points(self):
         assert self.densify_point_info is not None
