@@ -73,8 +73,6 @@ def generate_point_sort_key(
     camera_height: ti.i32,
     depth_to_sort_key_scale: ti.f32,
 ):
-    # we do not save the point_uv and point_in_camera here to save GPU memory. Re-compute should be fast enough.
-    # if we save them, we will need to permute them according to the sort_key.
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
     camera_intrinsics_mat = ti.Matrix(
@@ -120,7 +118,8 @@ def generate_num_overlap_tiles(
         center_tile_u = ti.cast(uv[0] // 16, ti.i32)
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
         overlap_tiles_count = 0
-        # we define overlap as: the pdf at the center of the tile is larger than 1e-3.
+        # we define overlap as: the alpha at the center or four corners of the tile is larger than 1/255,
+        # or the point is inside the 3x3 tile block
         for tile_u_offset in range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1):
             for tile_v_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
                 tile_u = center_tile_u + tile_u_offset
@@ -195,7 +194,8 @@ def generate_point_sort_key_by_num_overlap_tiles(
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
 
         overlap_tiles_count = 0
-        # we define overlap as: the pdf at the center or any corner of the tile is larger than 1e-3.
+        # we define overlap as: the alpha at the center or four corners of the tile is larger than 1/255,
+        # or the point is inside the 3x3 tile block
         for tile_u_offset in range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1):
             for tile_v_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
                 tile_u = center_tile_u + tile_u_offset
@@ -581,7 +581,7 @@ def gaussian_point_rasterisation_backward(
                 d_Sigma_prime_d_s_buffer[idx, row, col] = d_Sigma_prime_d_s[row, col]
 
     # taichi does not support thread block, so we just have a single thread for each pixel
-    # 90% of the taichi time is spent on backward(consider the sorting in forward also takes time, the real backward time is 70%)
+    # 70%-90% of the taichi time is spent on backward(consider the sorting in forward also takes time, the real backward time is 70%)
     # I believe it is slower than what the paper claims because of taichi does not support shared memory directly.
     # In paper, they keep the point information in block shared memory and only compute it once.
     # Also, it is possible to first write the gradient to a shared memory and then write it to global memory.
@@ -658,8 +658,6 @@ def gaussian_point_rasterisation_backward(
                     ray_direction=ray_direction,
                 )
 
-                # TODO: have no idea why taichi does not allow the following code under debug. However, it works under release mode.
-                # accumulated_alpha = accumulated_alpha - alpha
                 T_i = T_i / (1. - alpha)
                 accumulated_alpha = 1. - T_i
 
