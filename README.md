@@ -11,7 +11,7 @@ Partially working. Now the repo can generate result for datasets such as tank an
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
 
 ## example result
-top left: result from this repo, top right: ground truth, bottom left: normalized depth, bottom right: normalized num of points per pixel
+top left: [result from this repo(30k iteration)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/blob/cf7c1428e8d26495a236726adf9546e4f2a9adb7/config/tat_truck_every_8_test.yaml), top right: ground truth, bottom left: normalized depth, bottom right: normalized num of points per pixel
 ![image](images/tat_truck_image5_val.png)
 ![image](images/tat_truck_image7_val.png)
 ![image](images/tat_truck_image14_val.png)
