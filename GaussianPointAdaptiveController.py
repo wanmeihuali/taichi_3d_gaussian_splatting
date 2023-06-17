@@ -60,6 +60,7 @@ class GaussianPointAdaptiveController:
         # I have no idea why their threshold is so low, may be their view space is normalized to [0, 1]?
         # TODO: find out a proper threshold
         densification_view_space_position_gradients_threshold: float = 0.005
+        densification_view_avg_space_position_gradients_threshold: float = 0.000004
         # from paper:  large Gaussians in regions with high variance need to be split into smaller Gaussians. We replace such Gaussians by two new ones, and divide their scale by a factor of 𝜙 = 1.6
         gaussian_split_factor_phi: float = 1.6
         # in paper section 5.2, they describe a method to moderate the increase in the number of Gaussians is to set the 𝛼 value close to zero every
@@ -184,9 +185,15 @@ class GaussianPointAdaptiveController:
         grad_viewspace = input_data.grad_viewspace
         # shape: [num_points_in_camera, num_features]
         # all these three masks are on num_points_in_camera, not num_points
-        to_densify_mask = (grad_viewspace.norm(
-            dim=1) > self.config.densification_view_space_position_gradients_threshold) 
+        grad_viewspace_norm = grad_viewspace.norm(dim=1)
+        to_densify_mask = (grad_viewspace_norm > self.config.densification_view_space_position_gradients_threshold) 
         to_densify_mask &= (~will_be_remove_mask) # don't densify floater or transparent points
+        num_to_densify_by_viewspace = to_densify_mask.sum().item()
+        to_densify_mask |= (grad_viewspace_norm / num_affected_pixels > self.config.densification_view_avg_space_position_gradients_threshold)
+        to_densify_mask &= (~will_be_remove_mask) # don't densify floater or transparent points
+        num_to_densify = to_densify_mask.sum().item()
+        num_to_densify_by_viewspace_avg = num_to_densify - num_to_densify_by_viewspace
+        print(f"num_to_densify: {num_to_densify}, num_to_densify_by_viewspace: {num_to_densify_by_viewspace}, num_to_densify_by_viewspace_avg: {num_to_densify_by_viewspace_avg}")
         
         densify_point_id = point_id_in_camera_list[to_densify_mask]
         densify_point_position_before_optimization = pointcloud[densify_point_id]
