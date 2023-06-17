@@ -2,8 +2,19 @@
 An unofficial implementation of paper https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/3d_gaussian_splatting_high.pdf by taichi lang. 
 
 ## Current status
-Partially working. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is highly dependent on the way to split the dataset, the way to generate point cloud, and the way to generate camera parameters. I still don't know if the algorithm reaches the performance claimed in the paper.
+Partially working. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
+
+| Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo |
+| --- | --- | --- | --- | --- |
+| Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 |
+
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
+
+## example result
+top left: result from this repo, top right: ground truth, bottom left: normalized depth, bottom right: normalized num of points per pixel
+![image](images/tat_truck_image5_val.png)
+![image](images/tat_truck_image7_val.png)
+![image](images/tat_truck_image14_val.png)
 
 ## Installation
 Right now a install script/docker image is still not ready. User needs to install dependencies manually. The dependencies are:
