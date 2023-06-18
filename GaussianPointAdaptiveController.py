@@ -61,6 +61,8 @@ class GaussianPointAdaptiveController:
         # TODO: find out a proper threshold
         densification_view_space_position_gradients_threshold: float = 0.005
         densification_view_avg_space_position_gradients_threshold: float = 0.000004
+        densification_multi_frame_view_space_position_gradients_threshold: float = 0.0002
+        densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: float = 0.000004
         # from paper:  large Gaussians in regions with high variance need to be split into smaller Gaussians. We replace such Gaussians by two new ones, and divide their scale by a factor of 𝜙 = 1.6
         gaussian_split_factor_phi: float = 1.6
         # in paper section 5.2, they describe a method to moderate the increase in the number of Gaussians is to set the 𝛼 value close to zero every
@@ -111,6 +113,12 @@ class GaussianPointAdaptiveController:
             self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
         self.accumulated_num_in_camera = torch.zeros_like(
             self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
+        self.accumulated_view_space_position_gradients = torch.zeros_like(
+            self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
+        self.accumulated_view_space_position_gradients_avg = torch.zeros_like(
+            self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
+        self.accumulated_position_gradients = torch.zeros_like(
+            self.maintained_parameters.pointcloud, dtype=torch.float32)
         self.figure, self.ax = plt.subplots() # plt must be in main thread, it sucks
         self.has_plot = False
 
@@ -120,6 +128,13 @@ class GaussianPointAdaptiveController:
         with torch.no_grad():
             self.accumulated_num_in_camera[input_data.point_id_in_camera_list] += 1
             self.accumulated_num_pixels[input_data.point_id_in_camera_list] += input_data.num_affected_pixels
+            grad_viewspace = input_data.grad_viewspace
+            grad_viewspace_norm = grad_viewspace.norm(dim=1)   
+            self.accumulated_view_space_position_gradients[input_data.point_id_in_camera_list] += grad_viewspace_norm
+            avg_grad_viewspace_norm = grad_viewspace_norm / input_data.num_affected_pixels
+            avg_grad_viewspace_norm[torch.isnan(avg_grad_viewspace_norm)] = 0
+            self.accumulated_view_space_position_gradients_avg[input_data.point_id_in_camera_list] += avg_grad_viewspace_norm
+            self.accumulated_position_gradients[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera
             if self.iteration_counter < self.config.num_iterations_warm_up:
                 pass
             elif self.iteration_counter % self.config.num_iterations_densify == 0:
@@ -132,6 +147,16 @@ class GaussianPointAdaptiveController:
                 return
             if self.iteration_counter % self.config.num_iterations_densify == 0:
                 self._add_densify_points()
+                self.accumulated_num_in_camera = torch.zeros_like(
+                    self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
+                self.accumulated_num_pixels = torch.zeros_like(
+                    self.maintained_parameters.pointcloud[:, 0], dtype=torch.int32)
+                self.accumulated_view_space_position_gradients = torch.zeros_like(
+                    self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
+                self.accumulated_view_space_position_gradients_avg = torch.zeros_like(
+                    self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
+                self.accumulated_position_gradients = torch.zeros_like(
+                    self.maintained_parameters.pointcloud, dtype=torch.float32)
             if self.iteration_counter % self.config.num_iterations_reset_alpha == 0:
                 self.reset_alpha()
             self.input_data = None
@@ -176,30 +201,50 @@ class GaussianPointAdaptiveController:
             (self.maintained_parameters.point_invalid_mask == 0) & \
                 (~floater_mask) # ensure floater points and transparent points don't overlap
         transparent_point_id = point_id_list[transparent_point_mask]
+        will_be_remove_mask = floater_mask | transparent_point_mask
         
-
         # find points that are under-reconstructed or over-reconstructed
         # point_features_in_camera = pointcloud_features[point_id_in_camera_list]
-        will_be_remove_mask = floater_mask_in_camera | transparent_point_mask[point_id_in_camera_list]
+        in_camera_will_be_remove_mask = floater_mask_in_camera | transparent_point_mask[point_id_in_camera_list]
         # shape: [num_points_in_camera, 2]
         grad_viewspace = input_data.grad_viewspace
         # shape: [num_points_in_camera, num_features]
         # all these three masks are on num_points_in_camera, not num_points
         grad_viewspace_norm = grad_viewspace.norm(dim=1)
-        to_densify_mask = (grad_viewspace_norm > self.config.densification_view_space_position_gradients_threshold) 
-        to_densify_mask &= (~will_be_remove_mask) # don't densify floater or transparent points
-        num_to_densify_by_viewspace = to_densify_mask.sum().item()
-        to_densify_mask |= (grad_viewspace_norm / num_affected_pixels > self.config.densification_view_avg_space_position_gradients_threshold)
-        to_densify_mask &= (~will_be_remove_mask) # don't densify floater or transparent points
-        num_to_densify = to_densify_mask.sum().item()
+        in_camera_to_densify_mask = (grad_viewspace_norm > self.config.densification_view_space_position_gradients_threshold) 
+        in_camera_to_densify_mask &= (~in_camera_will_be_remove_mask) # don't densify floater or transparent points
+        num_to_densify_by_viewspace = in_camera_to_densify_mask.sum().item()
+        in_camera_to_densify_mask |= (grad_viewspace_norm / num_affected_pixels > self.config.densification_view_avg_space_position_gradients_threshold)
+        in_camera_to_densify_mask &= (~in_camera_will_be_remove_mask) # don't densify floater or transparent points
+        num_to_densify = in_camera_to_densify_mask.sum().item()
         num_to_densify_by_viewspace_avg = num_to_densify - num_to_densify_by_viewspace
         print(f"num_to_densify: {num_to_densify}, num_to_densify_by_viewspace: {num_to_densify_by_viewspace}, num_to_densify_by_viewspace_avg: {num_to_densify_by_viewspace_avg}")
         
-        densify_point_id = point_id_in_camera_list[to_densify_mask]
+        single_frame_densify_point_id = point_id_in_camera_list[in_camera_to_densify_mask]
+        single_frame_densify_point_mask = torch.zeros_like(point_id_list, dtype=torch.bool)
+        single_frame_densify_point_mask[single_frame_densify_point_id] = True
+
+        multi_frame_average_accumulated_view_space_position_gradients = self.accumulated_view_space_position_gradients / self.accumulated_num_in_camera
+        # fill in nan with 0
+        multi_frame_average_accumulated_view_space_position_gradients[torch.isnan(multi_frame_average_accumulated_view_space_position_gradients)] = 0
+        multi_frame_densify_mask = multi_frame_average_accumulated_view_space_position_gradients > self.config.densification_multi_frame_view_space_position_gradients_threshold
+        
+        multi_frame_average_accumulated_avg_pixel_view_space_position_gradients = self.accumulated_view_space_position_gradients_avg / self.accumulated_num_in_camera
+        # fill in nan with 0
+        multi_frame_average_accumulated_avg_pixel_view_space_position_gradients[torch.isnan(multi_frame_average_accumulated_avg_pixel_view_space_position_gradients)] = 0
+        multi_frame_densify_mask |= (multi_frame_average_accumulated_avg_pixel_view_space_position_gradients / average_num_affect_pixels > self.config.densification_multi_frame_view_pixel_avg_space_position_gradients_threshold)
+        to_densify_mask = (single_frame_densify_point_mask | multi_frame_densify_mask) & (~will_be_remove_mask)
+        num_merged_densify = to_densify_mask.sum().item()
+        print(f"num_merged_densify_with_multi_frame: {num_merged_densify}")
+        densify_point_id = point_id_list[to_densify_mask]
+        
+
         densify_point_position_before_optimization = pointcloud[densify_point_id]
-        densify_point_grad_position = input_data.grad_point_in_camera[to_densify_mask]
+        densify_point_grad_position = self.accumulated_position_gradients[densify_point_id] / self.accumulated_num_in_camera[densify_point_id].unsqueeze(-1)
+        # although acummulated_num_in_camera shall not be 0, but we still need to check it/fill in nan
+        densify_point_grad_position[torch.isnan(densify_point_grad_position)] = 0
         densify_size_reduction_factor = torch.zeros_like(densify_point_id, dtype=torch.float32, device=pointcloud.device)
-        over_reconstructed_mask = (num_affected_pixels[to_densify_mask] > self.config.under_reconstructed_num_pixels_threshold)
+        over_reconstructed_mask = (self.accumulated_num_pixels[to_densify_mask] > self.config.under_reconstructed_num_pixels_threshold)
         densify_size_reduction_factor[over_reconstructed_mask] = \
             np.log(self.config.gaussian_split_factor_phi)
         densify_size_reduction_factor = densify_size_reduction_factor.unsqueeze(-1)
@@ -216,8 +261,10 @@ class GaussianPointAdaptiveController:
             ax = self.ax
             floater_uv = point_uv_in_camera[floater_mask_in_camera]
             self._add_points_to_plt_figure(ax, floater_uv, 'b', 'floater', 2)
-            over_reconstructed_uv = point_uv_in_camera[to_densify_mask][over_reconstructed_mask]
-            under_reconstructed_uv = point_uv_in_camera[to_densify_mask][~over_reconstructed_mask]
+            in_camera_over_reconstructed_mask = self.accumulated_num_pixels[single_frame_densify_point_mask] > self.config.under_reconstructed_num_pixels_threshold
+            in_camera_under_reconstructed_mask = ~in_camera_over_reconstructed_mask
+            over_reconstructed_uv = point_uv_in_camera[in_camera_to_densify_mask][in_camera_over_reconstructed_mask]
+            under_reconstructed_uv = point_uv_in_camera[in_camera_to_densify_mask][in_camera_under_reconstructed_mask]
             self._add_points_to_plt_figure(ax, over_reconstructed_uv, 'r', 'over_reconstructed', 3)
             self._add_points_to_plt_figure(ax, under_reconstructed_uv, 'g', 'under_reconstructed', 4)
             ax.legend()
