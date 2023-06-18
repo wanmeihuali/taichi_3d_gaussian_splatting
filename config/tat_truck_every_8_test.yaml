@@ -34,7 +34,7 @@ loss-function-config:
   lambda-value: 0.2
   enable_regularization: False
   regularization_weight: 0.005
-num-iterations: 30000
+num-iterations: 30001
 pointcloud-parquet-path: 'data/tat_truck/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 10.0
