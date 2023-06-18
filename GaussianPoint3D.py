@@ -279,15 +279,23 @@ class GaussianPoint3D:
     ) -> ti.math.vec3:
         o = ray_origin
         d = ray_direction
+        # d = self.translation - o
         # TODO: try other methods to get the query point for SH, e.g. the intersection point of the ray and the ellipsoid
         r = SphericalHarmonics(self.color_r).evaluate(d)
-        r_normalized = ti_sigmoid(r)
+        r += 0.5
+        # r_normalized = ti_sigmoid(r)
+        r_clamped = r if r > 0. else 0.
         g = SphericalHarmonics(self.color_g).evaluate(d)
-        g_normalized = ti_sigmoid(g)
+        g += 0.5
+        g_clamped = g if g > 0. else 0.
+        # g_normalized = ti_sigmoid(g)
         b = SphericalHarmonics(self.color_b).evaluate(d)
-        b_normalized = ti_sigmoid(b)
+        b += 0.5
+        b_clamped = b if b > 0. else 0.
+        # b_normalized = ti_sigmoid(b)
         # return ti.math.vec3(r, g, b)
-        return ti.math.vec3(r_normalized, g_normalized, b_normalized)
+        # return ti.math.vec3(r_normalized, g_normalized, b_normalized)
+        return ti.math.vec3(r_clamped, g_clamped, b_clamped)
 
     @ti.func
     def get_color_with_jacobian_by_ray(
@@ -297,21 +305,37 @@ class GaussianPoint3D:
     ):
         o = ray_origin
         d = ray_direction
+        # d = self.translation - o
         r, r_jacobian = SphericalHarmonics(
             self.color_r).evaluate_with_jacobian(d)
-        r_normalized, r_normalized_jacobian = ti_sigmoid_with_jacobian(r)
+        r += 0.5
+        # r_normalized, r_normalized_jacobian = ti_sigmoid_with_jacobian(r)
+        if r < 0.:
+            r = 0.
+            r_jacobian = ti.zero(r_jacobian)
         g, g_jacobian = SphericalHarmonics(
             self.color_g).evaluate_with_jacobian(d)
-        g_normalized, g_normalized_jacobian = ti_sigmoid_with_jacobian(g)
+        g += 0.5
+        # g_normalized, g_normalized_jacobian = ti_sigmoid_with_jacobian(g)
+        if g < 0.:
+            g = 0.
+            g_jacobian = ti.zero(g_jacobian)
         b, b_jacobian = SphericalHarmonics(
             self.color_b).evaluate_with_jacobian(d)
-        b_normalized, b_normalized_jacobian = ti_sigmoid_with_jacobian(b)
+        b += 0.5
+        if b < 0.:
+            b = 0.
+            b_jacobian = ti.zero(b_jacobian)
+        # b_normalized, b_normalized_jacobian = ti_sigmoid_with_jacobian(b)
+        """
         r_jacobian = r_normalized_jacobian * r_jacobian
         g_jacobian = g_normalized_jacobian * g_jacobian
         b_jacobian = b_normalized_jacobian * b_jacobian
         
         # return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
         return ti.math.vec3(r_normalized, g_normalized, b_normalized), r_jacobian, g_jacobian, b_jacobian
+        """
+        return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
 
     @ti.func
     def get_ellipsoid_foci_vector(self) -> ti.math.vec3:
