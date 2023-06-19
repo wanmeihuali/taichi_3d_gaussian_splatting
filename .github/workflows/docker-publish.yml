@@ -2,11 +2,8 @@ name: Deploy to ECR
 
 on:
  
-  push:
-    branches: [ main ]
-  
   pull_request:
-    types: [ labeled, synchronize ]
+    types: [ labeled ]
 
 jobs:
   
@@ -72,6 +69,21 @@ jobs:
         rm train.json
         aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-truck --trial-name $EXPERIMENT_NAME-truck
         aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-train --trial-name $EXPERIMENT_NAME-train
+
+    - name: Comment experiment information for PR
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `Experiment name: ${process.env.EXPERIMENT_NAME}\nS3 output path: ${process.env.S3_OUTPUT_PATH}`
+          })
+
+    - name: Wait for the experiment to finish
+      id: wait-experiment
         # wait for the training jobs to finish
         aws sagemaker wait training-job-completed-or-stopped --training-job-name $EXPERIMENT_NAME-truck
         aws sagemaker wait training-job-completed-or-stopped --training-job-name $EXPERIMENT_NAME-train
