@@ -80,7 +80,7 @@ jobs:
             owner: context.repo.owner,
             repo: context.repo.repo,
             body: `Experiment name: ${process.env.EXPERIMENT_NAME}\nS3 output path: ${process.env.S3_OUTPUT_PATH}`
-          })
+          });
 
     - name: Wait for the experiment to finish
       id: wait-experiment
