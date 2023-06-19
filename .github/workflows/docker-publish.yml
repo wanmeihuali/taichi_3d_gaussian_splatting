@@ -75,11 +75,12 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
+          const message = `Experiment ${process.env.EXPERIMENT_NAME} is running.`
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `Experiment name: ${process.env.EXPERIMENT_NAME}\nS3 output path: ${process.env.S3_OUTPUT_PATH}`
+            body: message
           });
 
     - name: Wait for the experiment to finish
