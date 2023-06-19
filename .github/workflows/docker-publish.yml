@@ -57,8 +57,8 @@ jobs:
       run: |
         aws sagemaker create-experiment --experiment-name $EXPERIMENT_NAME --description "CI triggered experiment"
         # two datasets, truck and train
-        aws sagemaker create-trial --trial-name truck --experiment-name $EXPERIMENT_NAME
-        aws sagemaker create-trial --trial-name train --experiment-name $EXPERIMENT_NAME
+        aws sagemaker create-trial --trial-name truck-$EXPERIMENT_NAME --experiment-name $EXPERIMENT_NAME
+        aws sagemaker create-trial --trial-name train-$EXPERIMENT_NAME --experiment-name $EXPERIMENT_NAME
         # two trial components, truck and train
         (echo $(cat config/ci_sagemaker_tat_truck.json | \
           jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} --arg train_job_name $EXPERIMENT_NAME-truck --arg s3_output_path $S3_OUTPUT_PATH/truck '.AlgorithmSpecification.TrainingImage=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path')) > truck.json
@@ -70,8 +70,8 @@ jobs:
         aws sagemaker create-training-job --training-job-name train \
           --cli-input-json file://train.json
         rm train.json
-        aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-truck --trial-name truck
-        aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-train --trial-name train
+        aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-truck --trial-name $EXPERIMENT_NAME-truck
+        aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-train --trial-name $EXPERIMENT_NAME-train
         # wait for the training jobs to finish
         aws sagemaker wait training-job-completed-or-stopped --training-job-name $EXPERIMENT_NAME-truck
         aws sagemaker wait training-job-completed-or-stopped --training-job-name $EXPERIMENT_NAME-train
