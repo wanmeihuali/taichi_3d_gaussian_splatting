@@ -37,6 +37,7 @@ jobs:
       uses: aws-actions/amazon-ecr-login@v1
 
     - name: Build, tag, and push image to Amazon ECR
+      id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: taichi_3d_gaussian_splatting
@@ -46,14 +47,13 @@ jobs:
         aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 763104351884.dkr.ecr.us-east-2.amazonaws.com
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.aws .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      outputs:
+        image_uri: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
     - name: Run the experiment
       id: run-experiment
       env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: taichi_3d_gaussian_splatting
-        IMAGE_TAG: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
-        IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/taichi_3d_gaussian_splatting:${{ steps.get-branch-name.outputs.BRANCH_NAME }}
+        IMAGE_URI: ${{ steps.build-image.outputs.image_uri }}
         # experiment name is the branch name + the commit SHA
         EXPERIMENT_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
         S3_OUTPUT_PATH: s3://kuangyuan-logs/${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
