@@ -63,17 +63,17 @@ jobs:
         aws sagemaker create-training-job --training-job-name truck \
           --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_truck.json | \
           jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} \
-          --arg train_job_name ${{ EXPERIMENT_NAME }}-truck \
-          --arg s3_output_path ${{ S3_OUTPUT_PATH }}/truck \
+          --arg train_job_name $EXPERIMENT_NAME-truck \
+          --arg s3_output_path $S3_OUTPUT_PATH/truck \
           '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
         aws sagemaker create-training-job --training-job-name train \
           --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_train.json | \
           jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} \
-          --arg train_job_name ${{ EXPERIMENT_NAME }}-train \
-          --arg s3_output_path ${{ S3_OUTPUT_PATH }}/train \
+          --arg train_job_name $EXPERIMENT_NAME-train \
+          --arg s3_output_path $S3_OUTPUT_PATH/train \
           '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
-        aws sagemaker associate-trial-component --trial-component-name ${{ EXPERIMENT_NAME }}-truck --trial-name truck
-        aws sagemaker associate-trial-component --trial-component-name ${{ EXPERIMENT_NAME }}-train --trial-name train
+        aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-truck --trial-name truck
+        aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-train --trial-name train
         # wait for the training jobs to finish
-        aws sagemaker wait training-job-completed-or-stopped --training-job-name ${{ EXPERIMENT_NAME }}-truck
-        aws sagemaker wait training-job-completed-or-stopped --training-job-name ${{ EXPERIMENT_NAME }}-train
+        aws sagemaker wait training-job-completed-or-stopped --training-job-name $EXPERIMENT_NAME-truck
+        aws sagemaker wait training-job-completed-or-stopped --training-job-name $EXPERIMENT_NAME-train
