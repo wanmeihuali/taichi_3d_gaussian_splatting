@@ -63,6 +63,7 @@ class GaussianPointAdaptiveController:
         densification_view_avg_space_position_gradients_threshold: float = 0.000004
         densification_multi_frame_view_space_position_gradients_threshold: float = 0.0002
         densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: float = 0.000004
+        densification_multi_frame_position_gradients_threshold: float = 0.0002
         # from paper:  large Gaussians in regions with high variance need to be split into smaller Gaussians. We replace such Gaussians by two new ones, and divide their scale by a factor of 𝜙 = 1.6
         gaussian_split_factor_phi: float = 1.6
         # in paper section 5.2, they describe a method to moderate the increase in the number of Gaussians is to set the 𝛼 value close to zero every
@@ -119,6 +120,8 @@ class GaussianPointAdaptiveController:
             self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
         self.accumulated_position_gradients = torch.zeros_like(
             self.maintained_parameters.pointcloud, dtype=torch.float32)
+        self.accumulated_position_gradients_norm = torch.zeros_like(
+            self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
         self.figure, self.ax = plt.subplots() # plt must be in main thread, it sucks
         self.has_plot = False
 
@@ -135,6 +138,7 @@ class GaussianPointAdaptiveController:
             avg_grad_viewspace_norm[torch.isnan(avg_grad_viewspace_norm)] = 0
             self.accumulated_view_space_position_gradients_avg[input_data.point_id_in_camera_list] += avg_grad_viewspace_norm
             self.accumulated_position_gradients[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera
+            self.accumulated_position_gradients_norm[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera.norm(dim=1)
             if self.iteration_counter < self.config.num_iterations_warm_up:
                 pass
             elif self.iteration_counter % self.config.num_iterations_densify == 0:
@@ -157,6 +161,8 @@ class GaussianPointAdaptiveController:
                     self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
                 self.accumulated_position_gradients = torch.zeros_like(
                     self.maintained_parameters.pointcloud, dtype=torch.float32)
+                self.accumulated_position_gradients_norm = torch.zeros_like(
+                    self.maintained_parameters.pointcloud[:, 0], dtype=torch.float32)
             if self.iteration_counter % self.config.num_iterations_reset_alpha == 0:
                 self.reset_alpha()
             self.input_data = None
@@ -233,6 +239,8 @@ class GaussianPointAdaptiveController:
         # fill in nan with 0
         multi_frame_average_accumulated_avg_pixel_view_space_position_gradients[torch.isnan(multi_frame_average_accumulated_avg_pixel_view_space_position_gradients)] = 0
         multi_frame_densify_mask |= (multi_frame_average_accumulated_avg_pixel_view_space_position_gradients / average_num_affect_pixels > self.config.densification_multi_frame_view_pixel_avg_space_position_gradients_threshold)
+        multi_frame_average_position_gradients_norm = self.accumulated_position_gradients_norm / self.accumulated_num_in_camera
+        multi_frame_densify_mask |= (multi_frame_average_position_gradients_norm > self.config.densification_multi_frame_position_gradients_threshold)
         to_densify_mask = (single_frame_densify_point_mask | multi_frame_densify_mask) & (~will_be_remove_mask)
         num_merged_densify = to_densify_mask.sum().item()
         print(f"num_merged_densify_with_multi_frame: {num_merged_densify}")

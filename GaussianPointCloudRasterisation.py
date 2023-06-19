@@ -704,7 +704,7 @@ def gaussian_point_rasterisation_backward(
                     point_in_camera_grad=grad_pointcloud,
                     pointfeatures_grad=grad_pointcloud_features,
                     viewspace_grad=viewspace_grad,
-                    point_viewspace_grad=ti.abs(point_viewspace_grad),
+                    point_viewspace_grad=point_viewspace_grad,
                     translation_grad=translation_grad,
                     gaussian_q_grad=gaussian_q_grad,
                     gaussian_s_grad=gaussian_s_grad,

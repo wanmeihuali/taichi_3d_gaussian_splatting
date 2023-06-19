@@ -1,8 +1,9 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 4e-5
-  densification_view_avg_space_position_gradients_threshold: 1e-6
+  densification-view-space-position-gradients-threshold: 4e-6
+  densification_view_avg_space_position_gradients_threshold: 1e-1
   densification_multi_frame_view_space_position_gradients_threshold: 4e-6
-  densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: 5e-7
+  densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: 5e-1
+  densification_multi_frame_position_gradients_threshold: 1e-3
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
   num-iterations-reset-alpha: 4000
@@ -42,7 +43,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_truck_every_8_experiment_density_by_multi_frame_average
+summary-writer-log-dir: logs/tat_truck_every_8_experiment_densify_by_no_abs_also_xyz
 train-dataset-json-path: 'data/tat_truck_every_8_test/train.json'
 val-dataset-json-path: 'data/tat_truck_every_8_test/val.json'
 val-interval: 1000
