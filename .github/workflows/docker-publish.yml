@@ -11,7 +11,7 @@ on:
 jobs:
   
   build:
-    if: contains(github.event.pull_request.labels.*.name, 'need_experiment')
+    if: contains(github.event.pull_request.labels.*.name, 'need_experiment') || github.ref == 'refs/heads/main'
     name: Build Image
     runs-on: ubuntu-latest
 
