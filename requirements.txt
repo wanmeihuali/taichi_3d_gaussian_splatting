@@ -1,0 +1,11 @@
+taichi>=1.5.0
+matplotlib
+numpy
+pytorch_msssim
+dataclass-wizard
+pillow
+pyyaml
+pandas[parquet]>=2.0.0
+scipy
+argparse
+tensorboard
