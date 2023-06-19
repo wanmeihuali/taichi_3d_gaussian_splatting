@@ -1,0 +1,39 @@
+{
+    "TrainingJobName": "",
+    "HyperParameters": {
+        "config": "config/tat_truck_every_8_test_sagemaker.yaml"
+    },
+    "AlgorithmSpecification": {
+        "TrainingImage": "",
+        "TrainingInputMode": "File",
+        "TrainingEntryPoint": "gaussian_point_train.py"
+    },
+    "RoleArn": "arn:aws:iam::018306018935:role/service-role/AmazonSageMaker-ExecutionRole-20221120T152725",
+    "InputDataConfig": [
+        {
+            "ChannelName": "training",
+            "DataSource": {
+                "S3DataSource": {
+                    "S3DataType": "S3Prefix",
+                    "S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/train/",
+                    "S3DataDistributionType": "FullyReplicated"
+                }
+            },
+            "ContentType": "application/x-recordio",
+            "CompressionType": "None"
+        }
+    ],
+    "OutputDataConfig": {
+        "S3OutputPath": ""
+    },
+    "ResourceConfig": {
+        "InstanceType": "ml.g4dn.xlarge",
+        "InstanceCount": 1,
+        "VolumeSizeInGB": 50
+    },
+    "StoppingCondition": {
+        "MaxRuntimeInSeconds": 18000,
+        "MaxWaitTimeInSeconds": 36000
+    },
+    "EnableManagedSpotTraining": true 
+}

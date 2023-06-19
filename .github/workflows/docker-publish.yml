@@ -46,3 +46,37 @@ jobs:
         aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 763104351884.dkr.ecr.us-east-2.amazonaws.com
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.aws .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+    - name: Run the experiment
+      id: run-experiment
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: taichi_3d_gaussian_splatting
+        IMAGE_TAG: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
+        IMAGE_URI: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        # experiment name is the branch name + the commit SHA
+        EXPERIMENT_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
+        S3_OUTPUT_PATH: s3://kuangyuan-logs/${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
+      run: |
+        aws sagemaker create-experiment --experiment-name $EXPERIMENT_NAME --description "CI triggered experiment"
+        # two datasets, truck and train
+        aws sagemaker create-trial --trial-name truck --experiment-name $EXPERIMENT_NAME
+        aws sagemaker create-trial --trial-name train --experiment-name $EXPERIMENT_NAME
+        # two trial components, truck and train
+        aws sagemaker create-training-job --training-job-name truck \
+          --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_truck.json | \
+          jq --arg image_uri ${{ IMAGE_URI }} \
+          --arg train_job_name ${{ EXPERIMENT_NAME }}-truck \
+          --arg s3_output_path ${{ S3_OUTPUT_PATH }}/truck \
+          '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
+        aws sagemaker create-training-job --training-job-name train \
+          --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_train.json | \
+          jq --arg image_uri ${{ IMAGE_URI }} \
+          --arg train_job_name ${{ EXPERIMENT_NAME }}-train \
+          --arg s3_output_path ${{ S3_OUTPUT_PATH }}/train \
+          '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
+        aws sagemaker associate-trial-component --trial-component-name ${{ EXPERIMENT_NAME }}-truck --trial-name truck
+        aws sagemaker associate-trial-component --trial-component-name ${{ EXPERIMENT_NAME }}-train --trial-name train
+        # wait for the training jobs to finish
+        aws sagemaker wait training-job-completed-or-stopped --training-job-name ${{ EXPERIMENT_NAME }}-truck
+        aws sagemaker wait training-job-completed-or-stopped --training-job-name ${{ EXPERIMENT_NAME }}-train

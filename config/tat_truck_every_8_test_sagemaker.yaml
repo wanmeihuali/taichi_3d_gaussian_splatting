@@ -1,0 +1,46 @@
+adaptive-controller-config:
+  densification-view-space-position-gradients-threshold: 0.000004
+  densification_overlap_tiles_threshold: 16
+  gaussian-split-factor-phi: 1.6
+  num-iterations-densify: 100
+  num-iterations-reset-alpha: 4000
+  num-iterations-warm-up: 500
+  reset-alpha-value: -1.9
+  transparent-alpha-threshold: -2.0
+  floater_num_pixels_threshold: 40000
+  floater_near_camrea_num_pixels_threshold: 30000
+  iteration_start_remove_floater: 2000
+  under_reconstructed_num_pixels_threshold: 32
+  enable_sample_from_point: True
+  under_reconstructed_move_factor: 10.
+gaussian-point-cloud-scene-config:
+  max-num-points-ratio: 10.0
+  num-of-features: 56
+  add_sphere: True
+  initial_alpha: -0.0
+  max_initial_covariance: 3000.0
+  initial_covariance_ratio: 0.1
+increase-color-max-sh-band-interval: 1000.0
+log-image-interval: 2000
+log-loss-interval: 10
+log-metrics-interval: 100
+enable_taichi_kernel_profiler: True
+log_taichi_kernel_profile_interval: 3000
+feature_learning_rate: 0.005
+position_learning_rateo: 0.00005
+position_learning_rate_decay_rate: 0.9847
+position_learning_rate_decay_interval: 100
+loss-function-config:
+  lambda-value: 0.2
+  enable_regularization: False
+  regularization_weight: 0.005
+num-iterations: 30001
+pointcloud-parquet-path: '/opt/ml/input/data/training/point_cloud.parquet'
+rasterisation-config:
+  depth-to-sort-key-scale: 10.0
+  far-plane: 2000.0
+  near-plane: 0.4
+summary-writer-log-dir: /opt/ml/output/tensorboard
+train-dataset-json-path: '/opt/ml/input/data/training/tat_truck_every_8_test/train.json'
+val-dataset-json-path: '/opt/ml/input/data/training/tat_truck_every_8_test/val.json'
+val-interval: 10000
