@@ -285,13 +285,14 @@ class GaussianPoint3D:
         r += 0.5
         # r_normalized = ti_sigmoid(r)
         r_clamped = r if r > 0. else 0.
+        r_clamped = ti.math.clamp(r, 0., 1.)
         g = SphericalHarmonics(self.color_g).evaluate(d)
         g += 0.5
-        g_clamped = g if g > 0. else 0.
+        g_clamped = ti.math.clamp(g, 0., 1.)
         # g_normalized = ti_sigmoid(g)
         b = SphericalHarmonics(self.color_b).evaluate(d)
         b += 0.5
-        b_clamped = b if b > 0. else 0.
+        b_clamped = ti.math.clamp(b, 0., 1.)
         # b_normalized = ti_sigmoid(b)
         # return ti.math.vec3(r, g, b)
         # return ti.math.vec3(r_normalized, g_normalized, b_normalized)
@@ -310,22 +311,16 @@ class GaussianPoint3D:
             self.color_r).evaluate_with_jacobian(d)
         r += 0.5
         # r_normalized, r_normalized_jacobian = ti_sigmoid_with_jacobian(r)
-        if r < 0.:
-            r = 0.
-            r_jacobian = ti.zero(r_jacobian)
+        r = ti.math.clamp(r, 0., 1.)
         g, g_jacobian = SphericalHarmonics(
             self.color_g).evaluate_with_jacobian(d)
         g += 0.5
         # g_normalized, g_normalized_jacobian = ti_sigmoid_with_jacobian(g)
-        if g < 0.:
-            g = 0.
-            g_jacobian = ti.zero(g_jacobian)
+        g = ti.math.clamp(g, 0., 1.)
         b, b_jacobian = SphericalHarmonics(
             self.color_b).evaluate_with_jacobian(d)
         b += 0.5
-        if b < 0.:
-            b = 0.
-            b_jacobian = ti.zero(b_jacobian)
+        b = ti.math.clamp(b, 0., 1.)
         # b_normalized, b_normalized_jacobian = ti_sigmoid_with_jacobian(b)
         """
         r_jacobian = r_normalized_jacobian * r_jacobian
