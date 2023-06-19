@@ -180,7 +180,7 @@ if test_image_list_path is not None:
     df["is_train"] = df["image_path"].apply(lambda x: os.path.basename(x) not in test_images)
 else:
     # taking every 8th photo for test,
-    df["is_train"] = df["image_path"].apply(lambda x: int(os.path.basename(x)[0:6]) % 8 != 0)
+    df["is_train"] = df["image_path"].apply(lambda x: int(os.path.basename(x).split(".")[0]) % 8 != 0)
     
 # test_images = [f"00{idx}.png" for idx in range(175, 250)]
 # select training data and validation data, have a val every 3 frames
