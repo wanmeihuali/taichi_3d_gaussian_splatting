@@ -4,6 +4,10 @@ on:
  
   push:
     branches: [ main ]
+  
+  pull_request:
+    # branch starts with experiment
+    branches: [ experiment/* , enable_ci_docker_building ]
 
 jobs:
   
@@ -33,7 +37,8 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: taichi_3d_gaussian_splatting
-        IMAGE_TAG: test
+        # use the branch name for the Docker tag
+        IMAGE_TAG: ${{ github.ref }}
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.aws .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
