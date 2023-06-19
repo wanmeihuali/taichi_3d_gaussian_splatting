@@ -21,6 +21,10 @@ jobs:
 
     - name: Check out code
       uses: actions/checkout@v2
+      
+    - name: Get the branch name
+      id: get-branch-name
+      run: echo "::set-output name=BRANCH_NAME::$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}})"
     
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
@@ -38,7 +42,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: taichi_3d_gaussian_splatting
         # use the branch name for the Docker tag
-        IMAGE_TAG: ${{ github.ref }}
+        IMAGE_TAG: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.aws .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
