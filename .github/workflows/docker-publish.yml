@@ -52,8 +52,6 @@ jobs:
     - name: Run the experiment
       id: run-experiment
       env:
-        DOCKER_IMAGE_URI: ${{ steps.build-image.outputs.image_uri }}
-        # experiment name is the branch name + the commit SHA
         EXPERIMENT_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
         S3_OUTPUT_PATH: s3://kuangyuan-logs/${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
       run: |
@@ -64,13 +62,13 @@ jobs:
         # two trial components, truck and train
         aws sagemaker create-training-job --training-job-name truck \
           --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_truck.json | \
-          jq --arg image_uri ${{ DOCKER_IMAGE_URI }} \
+          jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} \
           --arg train_job_name ${{ EXPERIMENT_NAME }}-truck \
           --arg s3_output_path ${{ S3_OUTPUT_PATH }}/truck \
           '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
         aws sagemaker create-training-job --training-job-name train \
           --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_train.json | \
-          jq --arg image_uri ${{ DOCKER_IMAGE_URI }} \
+          jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} \
           --arg train_job_name ${{ EXPERIMENT_NAME }}-train \
           --arg s3_output_path ${{ S3_OUTPUT_PATH }}/train \
           '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
