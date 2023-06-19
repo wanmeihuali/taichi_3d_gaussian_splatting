@@ -6,13 +6,12 @@ on:
     branches: [ main ]
   
   pull_request:
-    # branch starts with experiment
-    branches: [ experiment/* , enable_ci_docker_building ]
+    types: [ labeled ]
 
 jobs:
   
   build:
-    
+    if: contains(github.event.pull_request.labels.*.name, 'need_experiment')
     name: Build Image
     runs-on: ubuntu-latest
 
