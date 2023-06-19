@@ -2,13 +2,15 @@
 An unofficial implementation of paper https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/3d_gaussian_splatting_high.pdf by taichi lang. 
 
 ## Current status
-Partially working. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
+Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
 
 | Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo |
 | --- | --- | --- | --- | --- |
 | Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 |
 
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
+ 
+ As a personal project, the parameters are not tuned well. And the code is not well organized yet. I will try to improve the code quality and performance in the future. Feel free to open an issue if you have any questions, and PRs are welcome, especially for any performance improvement.
 
 ## example result
 top left: [result from this repo(30k iteration)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/blob/cf7c1428e8d26495a236726adf9546e4f2a9adb7/config/tat_truck_every_8_test.yaml), top right: ground truth, bottom left: normalized depth, bottom right: normalized num of points per pixel

@@ -17,6 +17,7 @@ from tqdm import tqdm
 import taichi as ti
 import os
 import matplotlib.pyplot as plt
+from collections import deque
 
 def cycle(dataloader):
     while True:
@@ -115,7 +116,10 @@ class GaussianPointCloudTrainer:
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
             optimizer=position_optimizer, gamma=self.config.position_learning_rate_decay_rate)
         downsample_factor = self.config.initial_downsample_factor
+
+        recent_losses = deque(maxlen=100)
             
+        previous_problematic_iteration = -1000
         for iteration in tqdm(range(self.config.num_iterations)):
             if iteration % self.config.half_downsample_factor_interval == 0 and iteration > 0 and downsample_factor > 1:
                 downsample_factor = downsample_factor // 2
@@ -142,6 +146,8 @@ class GaussianPointCloudTrainer:
             )
             image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
+            # clip to [0, 1]
+            image_pred = torch.clamp(image_pred, min=0, max=1)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
             loss, l1_loss, ssim_loss = self.loss_function(
@@ -152,6 +158,10 @@ class GaussianPointCloudTrainer:
             loss.backward()
             optimizer.step()
             position_optimizer.step()
+
+            recent_losses.append(loss.item())
+            
+
             if iteration % self.config.position_learning_rate_decay_interval == 0:
                 scheduler.step()
             magnitude_grad_viewspace_on_image = None
@@ -191,7 +201,15 @@ class GaussianPointCloudTrainer:
                     "train/psnr", psnr_score.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim", ssim_score.item(), iteration)
-            if iteration % self.config.log_image_interval == 0:
+
+            is_problematic = False
+            if len(recent_losses) == recent_losses.maxlen and iteration - previous_problematic_iteration > recent_losses.maxlen:
+                avg_loss = sum(recent_losses) / len(recent_losses)
+                if loss.item() > avg_loss * 1.5:
+                    is_problematic = True
+                    previous_problematic_iteration = iteration
+
+            if iteration % self.config.log_image_interval == 0 or is_problematic:
                 # make image_depth to be 3 channels
                 image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / \
                     image_depth.max()
@@ -210,6 +228,10 @@ class GaussianPointCloudTrainer:
                 
                 self.writer.add_image(
                     "train/image", grid, iteration)
+                if is_problematic:
+                    self.writer.add_image(
+                        "train/image_problematic", grid, iteration)
+                
             del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if iteration % self.config.val_interval == 0 and iteration != 0:
                 self.validation(val_data_loader, iteration)
@@ -297,6 +319,7 @@ class GaussianPointCloudTrainer:
                 )
                 image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
+                image_pred = torch.clamp(image_pred, 0, 1)
                 image_pred = image_pred.permute(2, 0, 1)
                 image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / image_depth.max()
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
