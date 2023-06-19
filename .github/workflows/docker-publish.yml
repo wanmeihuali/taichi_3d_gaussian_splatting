@@ -60,18 +60,16 @@ jobs:
         aws sagemaker create-trial --trial-name truck --experiment-name $EXPERIMENT_NAME
         aws sagemaker create-trial --trial-name train --experiment-name $EXPERIMENT_NAME
         # two trial components, truck and train
+        (echo $(cat config/ci_sagemaker_tat_truck.json | \
+          jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} --arg train_job_name $EXPERIMENT_NAME-truck --arg s3_output_path $S3_OUTPUT_PATH/truck '.AlgorithmSpecification.TrainingImage=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path')) > truck.json
         aws sagemaker create-training-job --training-job-name truck \
-          --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_truck.json | \
-          jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} \
-          --arg train_job_name $EXPERIMENT_NAME-truck \
-          --arg s3_output_path $S3_OUTPUT_PATH/truck \
-          '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
+          --cli-input-json file://truck.json
+        rm truck.json
+        (echo $(cat config/ci_sagemaker_tat_train.json | \
+          jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} --arg train_job_name $EXPERIMENT_NAME-train --arg s3_output_path $S3_OUTPUT_PATH/train '.AlgorithmSpecification.TrainingImage=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path')) > train.json
         aws sagemaker create-training-job --training-job-name train \
-          --cli-input-json file://<(echo $(cat config/ci_sagemaker_tat_train.json | \
-          jq --arg image_uri ${{ steps.build-image.outputs.image_uri }} \
-          --arg train_job_name $EXPERIMENT_NAME-train \
-          --arg s3_output_path $S3_OUTPUT_PATH/train \
-          '.TrainingJobDefinition.ContainerDefinitions[0].Image=$image_uri | .TrainingJobName=$train_job_name | .OutputDataConfig.S3OutputPath=$s3_output_path'))
+          --cli-input-json file://train.json
+        rm train.json
         aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-truck --trial-name truck
         aws sagemaker associate-trial-component --trial-component-name $EXPERIMENT_NAME-train --trial-name train
         # wait for the training jobs to finish
