@@ -392,6 +392,7 @@ def gaussian_point_rasterisation(
     ti.loop_config(block_dim=256)
     for pixel_offset in ti.ndrange(camera_height * camera_width):
         tile_id = pixel_offset // 256
+        thread_id = pixel_offset % 256
         tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
         tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
         pixel_offset_in_tile = pixel_offset - tile_id * 256
@@ -409,55 +410,89 @@ def gaussian_point_rasterisation(
         offset_of_last_effective_point = start_offset
         
         valid_point_count: ti.i32 = 0
-        for idx_point_offset_with_sort_key in range(start_offset, end_offset):
-            point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
-            point_id = point_id_in_camera_list[point_offset]
-            uv = ti.math.vec2([point_uv[point_offset, 0],
-                              point_uv[point_offset, 1]])
-            xyz_in_camera = ti.math.vec3(
-                [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
-            depth = xyz_in_camera[2]
-            uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
-                                  point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
-            gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
-                pointcloud=pointcloud,
-                pointcloud_features=pointcloud_features,
-                point_id=point_id)
 
-            gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
-                xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
-                gaussian_mean=uv,
-                gaussian_covariance=uv_cov,
-            )
-            point_alpha_after_activation = 1. / \
-                (1. + ti.math.exp(-gaussian_point_3d.alpha))
-            alpha = gaussian_alpha * point_alpha_after_activation
-            # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
-            # 255 ) and also clamp 𝛼 with 0.99 from above.
-            # print(
-            #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
-            if alpha < 1. / 255.:
-                continue
-            alpha = ti.min(alpha, 0.99)
-            # from paper: before a Gaussian is included in the forward rasterization
-            # pass, we compute the accumulated opacity if we were to include it
-            # and stop front-to-back blending before it can exceed 0.9999.
-            if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
-                break
-            offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
-            
-            ray_direction = gaussian_point_3d.translation - ray_origin
-            color = gaussian_point_3d.get_color_by_ray(
-                ray_origin=ray_origin,
-                ray_direction=ray_direction,
-            )
-            # print(color)
-            accumulated_color += color * alpha * T_i
-            accumulated_depth += depth * alpha * T_i
-            depth_normalization_factor += alpha * T_i
-            T_i = T_i * (1 - alpha)
-            accumulated_alpha = 1. - T_i
-            valid_point_count += 1
+        tile_point_uv = ti.simt.block.SharedArray((256, 2), dtype=ti.f32)
+        tile_point_uv_cov = ti.simt.block.SharedArray((256, 2, 2), dtype=ti.f32)
+        tile_point_depth = ti.simt.block.SharedArray(256, dtype=ti.f32)
+        tile_point_alpha = ti.simt.block.SharedArray(256, dtype=ti.f32)
+        tile_point_color = ti.simt.block.SharedArray((256, 3), dtype=ti.f32)
+        
+        num_points_in_tile = end_offset - start_offset
+        num_point_groups = (num_points_in_tile + 255) // 256
+        # for idx_point_offset_with_sort_key in range(start_offset, end_offset):
+        for point_group_id in range(num_point_groups):
+            # load point data into shared memory
+            # [start_offset, end_offset)->[0, end_offset - start_offset)
+            to_load_point_offset_with_sort_key = start_offset + point_group_id * 256 + thread_id
+            if to_load_point_offset_with_sort_key < end_offset:
+                to_load_point_offset = point_offset_with_sort_key[to_load_point_offset_with_sort_key]
+                to_load_point_id = point_id_in_camera_list[to_load_point_offset]
+                to_load_gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
+                    pointcloud=pointcloud,
+                    pointcloud_features=pointcloud_features,
+                    point_id=to_load_point_id)
+                tile_point_uv[thread_id, 0] = point_uv[to_load_point_offset, 0]
+                tile_point_uv[thread_id, 1] = point_uv[to_load_point_offset, 1]
+                tile_point_uv_cov[thread_id, 0, 0] = point_uv_covariance[to_load_point_offset, 0, 0]
+                tile_point_uv_cov[thread_id, 0, 1] = point_uv_covariance[to_load_point_offset, 0, 1]
+                tile_point_uv_cov[thread_id, 1, 0] = point_uv_covariance[to_load_point_offset, 1, 0]
+                tile_point_uv_cov[thread_id, 1, 1] = point_uv_covariance[to_load_point_offset, 1, 1]
+                tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
+                tile_point_alpha[thread_id] = to_load_gaussian_point_3d.alpha
+                ray_direction = to_load_gaussian_point_3d.translation - ray_origin
+                to_load_color = to_load_gaussian_point_3d.get_color_by_ray(
+                    ray_origin=ray_origin,
+                    ray_direction=ray_direction,
+                )   
+                tile_point_color[thread_id, 0] = to_load_color[0]
+                tile_point_color[thread_id, 1] = to_load_color[1]
+                tile_point_color[thread_id, 2] = to_load_color[2]
+
+            ti.simt.block.sync()
+            for point_group_offset in range(256):
+                # forward rendering process                
+                idx_point_offset_with_sort_key = start_offset + point_group_id * 256 + point_group_offset
+                if idx_point_offset_with_sort_key >= end_offset:
+                    break
+                uv = ti.math.vec2([tile_point_uv[point_group_offset, 0], tile_point_uv[point_group_offset, 1]])
+                depth = tile_point_depth[point_group_offset]
+                uv_cov = ti.math.mat2(tile_point_uv_cov[point_group_offset, 0, 0], tile_point_uv_cov[point_group_offset, 0, 1],
+                                        tile_point_uv_cov[point_group_offset, 1, 0], tile_point_uv_cov[point_group_offset, 1, 1])
+                gaussian_point_3d_alpha = tile_point_alpha[point_group_offset]
+                color = ti.math.vec3([tile_point_color[point_group_offset, 0], tile_point_color[point_group_offset, 1], tile_point_color[point_group_offset, 2]])
+
+                gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
+                    xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
+                    gaussian_mean=uv,
+                    gaussian_covariance=uv_cov,
+                )
+                point_alpha_after_activation = 1. / \
+                    (1. + ti.math.exp(-gaussian_point_3d_alpha))
+                alpha = gaussian_alpha * point_alpha_after_activation
+                # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
+                # 255 ) and also clamp 𝛼 with 0.99 from above.
+                # print(
+                #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
+                if alpha < 1. / 255.:
+                    continue
+                alpha = ti.min(alpha, 0.99)
+                # from paper: before a Gaussian is included in the forward rasterization
+                # pass, we compute the accumulated opacity if we were to include it
+                # and stop front-to-back blending before it can exceed 0.9999.
+                if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
+                    break
+                offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
+                accumulated_color += color * alpha * T_i
+                accumulated_depth += depth * alpha * T_i
+                depth_normalization_factor += alpha * T_i
+                T_i = T_i * (1 - alpha)
+                accumulated_alpha = 1. - T_i
+                valid_point_count += 1
+            # end of point group loop
+            ti.simt.block.sync() # block the next update for shared memory until all threads finish the current update
+
+        # end of point group id loop
+
         rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
         rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
         rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
@@ -466,6 +501,7 @@ def gaussian_point_rasterisation(
         pixel_offset_of_last_effective_point[pixel_v,
                                              pixel_u] = offset_of_last_effective_point
         pixel_valid_point_count[pixel_v, pixel_u] = valid_point_count
+    # end of pixel loop
 
 
 @ti.func
