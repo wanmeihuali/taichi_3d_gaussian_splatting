@@ -628,6 +628,7 @@ def gaussian_point_rasterisation_backward(
                 
                 tile_point_alpha[thread_id] = to_load_gaussian_point_3d.alpha
                 tile_point_grad_alpha[thread_id] = 0.0
+                tile_point_num_affected_pixels[thread_id] = 0
                 
             ti.simt.block.sync()
             for inverse_point_offset_offset in range(256):
