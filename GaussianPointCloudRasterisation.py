@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import taichi as ti
 from dataclasses import dataclass
@@ -415,6 +414,7 @@ def gaussian_point_rasterisation(
         tile_point_alpha = ti.simt.block.SharedArray(256, dtype=ti.f32)
         tile_point_color = ti.simt.block.SharedArray((256, 3), dtype=ti.f32)
         tile_saturated_pixel_count = ti.simt.block.SharedArray((1,), dtype=ti.i32) 
+        tile_saturated_pixel_count[0] = 0
         
         num_points_in_tile = end_offset - start_offset
         num_point_groups = (num_points_in_tile + 255) // 256
