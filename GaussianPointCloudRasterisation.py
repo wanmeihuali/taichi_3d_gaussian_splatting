@@ -387,8 +387,6 @@ def gaussian_point_rasterisation(
     T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud_mat)
     ray_origin = ti.math.vec3(
         [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
-    # taichi does not support thread block, so we just have a single thread for each pixel
-    # hope the missing for shared block memory will not hurt the performance too much
     ti.loop_config(block_dim=256)
     for pixel_offset in ti.ndrange(camera_height * camera_width):
         tile_id = pixel_offset // 256
@@ -419,13 +417,14 @@ def gaussian_point_rasterisation(
         
         num_points_in_tile = end_offset - start_offset
         num_point_groups = (num_points_in_tile + 255) // 256
+        pixel_saturated = False
         # for idx_point_offset_with_sort_key in range(start_offset, end_offset):
         for point_group_id in range(num_point_groups):
             # load point data into shared memory
             # [start_offset, end_offset)->[0, end_offset - start_offset)
-            to_load_point_offset_with_sort_key = start_offset + point_group_id * 256 + thread_id
-            if to_load_point_offset_with_sort_key < end_offset:
-                to_load_point_offset = point_offset_with_sort_key[to_load_point_offset_with_sort_key]
+            to_load_idx_point_offset_with_sort_key = start_offset + point_group_id * 256 + thread_id
+            if to_load_idx_point_offset_with_sort_key < end_offset:
+                to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
                 to_load_point_id = point_id_in_camera_list[to_load_point_offset]
                 to_load_gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
                     pointcloud=pointcloud,
@@ -452,14 +451,39 @@ def gaussian_point_rasterisation(
             for point_group_offset in range(256):
                 # forward rendering process                
                 idx_point_offset_with_sort_key = start_offset + point_group_id * 256 + point_group_offset
-                if idx_point_offset_with_sort_key >= end_offset:
+                
+                if idx_point_offset_with_sort_key >= end_offset or pixel_saturated:
                     break
+
+                """
+                point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
+                point_id = point_id_in_camera_list[point_offset]
+                """
                 uv = ti.math.vec2([tile_point_uv[point_group_offset, 0], tile_point_uv[point_group_offset, 1]])
                 depth = tile_point_depth[point_group_offset]
                 uv_cov = ti.math.mat2(tile_point_uv_cov[point_group_offset, 0, 0], tile_point_uv_cov[point_group_offset, 0, 1],
                                         tile_point_uv_cov[point_group_offset, 1, 0], tile_point_uv_cov[point_group_offset, 1, 1])
                 gaussian_point_3d_alpha = tile_point_alpha[point_group_offset]
                 color = ti.math.vec3([tile_point_color[point_group_offset, 0], tile_point_color[point_group_offset, 1], tile_point_color[point_group_offset, 2]])
+                """
+                uv = ti.math.vec2([point_uv[point_offset, 0],
+                              point_uv[point_offset, 1]])
+                xyz_in_camera = ti.math.vec3(
+                    [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
+                depth = xyz_in_camera[2]
+                uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
+                                    point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
+                gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
+                    pointcloud=pointcloud,
+                    pointcloud_features=pointcloud_features,
+                    point_id=point_id)
+                gaussian_point_3d_alpha = gaussian_point_3d.alpha
+                ray_direction = gaussian_point_3d.translation - ray_origin
+                color = gaussian_point_3d.get_color_by_ray(
+                    ray_origin=ray_origin,
+                    ray_direction=ray_direction,
+                )
+                """
 
                 gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
                     xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
@@ -480,6 +504,7 @@ def gaussian_point_rasterisation(
                 # pass, we compute the accumulated opacity if we were to include it
                 # and stop front-to-back blending before it can exceed 0.9999.
                 if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
+                    pixel_saturated = True
                     break
                 offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
                 accumulated_color += color * alpha * T_i
