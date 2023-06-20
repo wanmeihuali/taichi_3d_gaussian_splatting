@@ -585,7 +585,11 @@ def gaussian_point_rasterisation_backward(
         total_magnitude_grad_viewspace_on_image = ti.math.vec2(0.0, 0.0)
        
         # for inverse_point_offset in range(effective_point_count):
-        for inverse_point_offset_base in range(0, tile_point_count, 256):
+        # taichi only supports range() with start and end
+        # for inverse_point_offset_base in range(0, tile_point_count, 256):
+        num_point_blocks = (tile_point_count + 255) // 256
+        for point_block_id in range(num_point_blocks):
+            inverse_point_offset_base = point_block_id * 256
             block_end_idx_point_offset_with_sort_key = end_offset - inverse_point_offset_base
             block_start_idx_point_offset_with_sort_key = ti.max(block_end_idx_point_offset_with_sort_key - 256, 0)
             # in the later loop, we will handle the points in [block_start_idx_point_offset_with_sort_key, block_end_idx_point_offset_with_sort_key)
@@ -604,6 +608,7 @@ def gaussian_point_rasterisation_backward(
                 for i in ti.static(range(2)):
                     tile_point_uv[block_offset, i] = to_load_uv[i]
                     tile_point_grad_uv[block_offset, i] = 0.0
+                    tile_point_abs_grad_uv[block_offset, i] = 0.0
                 to_load_uv_cov = to_load_gaussian_point_3d.project_to_camera_covariance(
                     T_camera_world=T_camera_pointcloud_mat,
                     projective_transform=camera_intrinsics_mat,
@@ -612,7 +617,6 @@ def gaussian_point_rasterisation_backward(
                     for j in ti.static(range(2)):
                         tile_point_uv_cov[block_offset, i, j] = to_load_uv_cov[i, j]
                         tile_point_grad_uv_cov[block_offset, i, j] = 0.0
-                        tile_point_abs_grad_uv[block_offset, i, j] = 0.0
                 to_load_ray_direction = to_load_gaussian_point_3d.translation - ray_origin
                 to_load_color = to_load_gaussian_point_3d.get_color_by_ray(
                     ray_origin=ray_origin,
@@ -690,8 +694,6 @@ def gaussian_point_rasterisation_backward(
                     point_viewspace_grad = gaussian_alpha_grad * \
                         d_p_d_mean  # (2,) as the paper said, view space gradient is used for detect candidates for densification
                     total_magnitude_grad_viewspace_on_image += ti.abs(point_viewspace_grad)
-
-
                     point_uv_cov_grad = gaussian_alpha_grad * d_p_d_cov # (2, 2)
                     
                     # atomic accumulate on block shared memory shall be faster
@@ -737,7 +739,7 @@ def gaussian_point_rasterisation_backward(
             pointcloud=pointcloud,
             pointcloud_features=pointcloud_features,
             point_id=point_id)
-        point_grad_uv = ti.math.vec2(point_viewspace_grad[point_id, 0], point_viewspace_grad[point_id, 1])
+        point_grad_uv = ti.math.vec2(grad_uv[point_id, 0], grad_uv[point_id, 1])
         point_grad_uv_cov_flat = ti.math.vec4(
             in_camera_grad_uv_cov_buffer[idx, 0, 0],
             in_camera_grad_uv_cov_buffer[idx, 0, 1],
@@ -775,9 +777,9 @@ def gaussian_point_rasterisation_backward(
             ray_origin=ray_origin,
             ray_direction=ray_direction,
         )
-        color_r_grad = point_grad_color * r_jacobian
-        color_g_grad = point_grad_color * g_jacobian
-        color_b_grad = point_grad_color * b_jacobian
+        color_r_grad = point_grad_color[0] * r_jacobian
+        color_g_grad = point_grad_color[1] * g_jacobian
+        color_b_grad = point_grad_color[2] * b_jacobian
         translation_grad = point_grad_uv @ d_uv_d_translation
 
         # cov is Sigma
@@ -1004,7 +1006,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_viewspace = torch.zeros(
                         size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     magnitude_grad_viewspace = torch.zeros(
-                        size=(pointcloud.shape[0],), dtype=torch.float32, device=pointcloud.device)
+                        size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     magnitude_grad_viewspace_on_image = torch.zeros_like(
                         grad_rasterized_image[:, :, :2])
                     
