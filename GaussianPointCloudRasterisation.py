@@ -9,6 +9,7 @@ from utils import (torch_type, data_type, ti2torch, torch2ti,
                    get_ray_origin_and_direction_by_uv,
                    get_point_probability_density_from_2d_gaussian_normalized,
                    grad_point_probability_density_2d_normalized,
+                   taichi_inverse_se3,
                    inverse_se3)
 from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
 from SphericalHarmonics import SphericalHarmonics, vec16f
@@ -383,6 +384,9 @@ def gaussian_point_rasterisation(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
+    T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud_mat)
+    ray_origin = ti.math.vec3(
+        [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
     # taichi does not support thread block, so we just have a single thread for each pixel
     # hope the missing for shared block memory will not hurt the performance too much
     ti.loop_config(block_dim=256)
@@ -441,12 +445,8 @@ def gaussian_point_rasterisation(
             if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
                 break
             offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
-            ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
-                pixel_u=pixel_u,
-                pixel_v=pixel_v,
-                camera_intrinsics=camera_intrinsics_mat,
-                T_camera_pointcloud=T_camera_pointcloud_mat,
-            )
+            
+            ray_direction = gaussian_point_3d.translation - ray_origin
             color = gaussian_point_3d.get_color_by_ray(
                 ray_origin=ray_origin,
                 ray_direction=ray_direction,
@@ -539,7 +539,9 @@ def gaussian_point_rasterisation_backward(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-
+    T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud_mat)
+    ray_origin = ti.math.vec3(
+        [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
     for idx in range(point_id_in_camera_list.shape[0]):
         point_id = point_id_in_camera_list[idx]
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
@@ -608,12 +610,6 @@ def gaussian_point_rasterisation_backward(
         
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
-        ray_origin, ray_direction = get_ray_origin_and_direction_by_uv(
-            pixel_u=pixel_u,
-            pixel_v=pixel_v,
-            camera_intrinsics=camera_intrinsics_mat,
-            T_camera_pointcloud=T_camera_pointcloud_mat,
-        )
         total_magnitude_grad_viewspace_on_image = ti.math.vec2(0.0, 0.0)
         for inverse_point_offset in range(effective_point_count):
             idx_point_offset_with_sort_key = last_effective_point - inverse_point_offset - 1
@@ -653,6 +649,7 @@ def gaussian_point_rasterisation_backward(
                     [[d_uv_d_translation_buffer[point_offset, row, col] for col in ti.static(range(3))] for row in ti.static(range(2))])
                 
                 alpha: ti.f32 = ti.min(prod_alpha, 0.99)
+                ray_direction = gaussian_point_3d.translation - ray_origin
                 color, r_jacobian, g_jacobian, b_jacobian = gaussian_point_3d.get_color_with_jacobian_by_ray(
                     ray_origin=ray_origin,
                     ray_direction=ray_direction,
