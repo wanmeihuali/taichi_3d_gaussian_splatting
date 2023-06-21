@@ -29,7 +29,7 @@
     "ResourceConfig": {
         "InstanceType": "ml.g4dn.xlarge",
         "InstanceCount": 1,
-        "VolumeSizeInGB": 50
+        "VolumeSizeInGB": 30
     },
     "StoppingCondition": {
         "MaxRuntimeInSeconds": 18000,
