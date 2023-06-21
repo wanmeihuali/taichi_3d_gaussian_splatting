@@ -45,8 +45,7 @@ jobs:
         GITHUB_OWNER: ${{ github.repository_owner }}
         GITHUB_REPO: ${{ github.repository }}
         GITHUB_SHA: ${{ github.sha }}
-        EXPERIMENT_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
-        S3_OUTPUT_PATH: s3://kuangyuan-logs/${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
+        BRANCH_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
         GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
       run: |

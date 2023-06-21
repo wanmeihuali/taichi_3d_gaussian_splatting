@@ -10,19 +10,20 @@ import json
 from github import Github
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("run experiment on sagemaker")
-    parser.add_argument("--experiment-name", type=str, default="sagemaker-experiment")
-    parser.add_argument("--s3-output-path", type=str, required=True)
-    args = parser.parse_args()
-    experiment_name = args.experiment_name.replace("_", "-") + "-" + str(int(time.time()))
-
-    args = parser.parse_args()
+    branch_name = os.environ["BRANCH_NAME"]
     github_access_token = os.environ["GITHUB_ACCESS_TOKEN"]
     pull_request_number = os.environ["PULL_REQUEST_NUMBER"]
     git_owner = os.environ["GITHUB_OWNER"]
     git_repo = os.environ["GITHUB_REPO"]
     repo_folder_name = git_repo.split("/")[-1]
     git_sha = os.environ["GITHUB_SHA"]
+
+    short_sha = git_sha[:7]
+
+    experiment_name = f"{branch_name}-{short_sha}-{time.strftime('%Y-%m-%d-%H-%M-%S', time.gmtime())}"
+    s3_output_dir = "s3://taichi-3d-gaussian-splatting-log"
+
+
     github_client = Github(github_access_token)
     print(f"Getting pull request {pull_request_number} from {git_repo}")
     github_repo = github_client.get_repo(f"{git_repo}")
@@ -65,7 +66,7 @@ if __name__ == "__main__":
 
         train_job_name = f"{experiment_name}-{dataset}"
         train_job_names.append(train_job_name)
-        full_s3_output_path = os.path.join(args.s3_output_path, dataset, train_job_name)
+        full_s3_output_path = os.path.join(s3_output_dir, dataset, train_job_name)
         train_job_name_to_output_path[train_job_name] = full_s3_output_path
         with open(config_path) as f:
             train_job_config = json.load(f)
