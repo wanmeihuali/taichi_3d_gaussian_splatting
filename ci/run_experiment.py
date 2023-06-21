@@ -66,7 +66,9 @@ if __name__ == "__main__":
             train_job_config = json.load(f)
         train_job_config["TrainingJobName"] = train_job_name
         train_job_config["AlgorithmSpecification"]["TrainingImage"] = image_uri
-        train_job_config["AlgorithmSpecification"]["ContainerEntrypoint"] = entrypoint
+        train_job_config["AlgorithmSpecification"]["ContainerEntrypoint"] = entrypoint + [
+            "--train-config", train_job_config["HyperParameters"]["train-config"],
+        ]
         train_job_config["OutputDataConfig"]["S3OutputPath"] = full_s3_output_path
         sagemaker_client.create_training_job(**train_job_config)
         pull_request.create_issue_comment(f"Training job {train_job_name} created")
