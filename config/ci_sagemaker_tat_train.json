@@ -1,7 +1,7 @@
 {
     "TrainingJobName": "",
     "HyperParameters": {
-        "train_config": "config/tat_truck_every_8_test_sagemaker.yaml"
+        "train_config": "config/test_sagemaker.yaml"
     },
     "AlgorithmSpecification": {
         "TrainingImage": "763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker",

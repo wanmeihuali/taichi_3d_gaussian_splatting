@@ -41,6 +41,6 @@ rasterisation-config:
   far-plane: 2000.0
   near-plane: 0.4
 summary-writer-log-dir: /opt/ml/output/tensorboard
-train-dataset-json-path: '/opt/ml/input/data/training/tat_truck_every_8_test/train.json'
-val-dataset-json-path: '/opt/ml/input/data/training/tat_truck_every_8_test/val.json'
+train-dataset-json-path: '/opt/ml/input/data/training/train.json'
+val-dataset-json-path: '/opt/ml/input/data/training/val.json'
 val-interval: 10000
