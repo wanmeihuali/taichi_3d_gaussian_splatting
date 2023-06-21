@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
         train_job_name = f"{experiment_name}-{dataset}"
         train_job_names.append(train_job_name)
-        full_s3_output_path = os.path.join(s3_output_dir, dataset, train_job_name)
+        full_s3_output_path = os.path.join(s3_output_dir, dataset)
         train_job_name_to_output_path[train_job_name] = full_s3_output_path
         with open(config_path) as f:
             train_job_config = json.load(f)
@@ -87,7 +87,10 @@ if __name__ == "__main__":
             if train_job_status in ["Failed", "Stopped"]:
                 pull_request.create_issue_comment(f"Training job {train_job_name} failed")
             elif train_job_status == "Completed":
-                pull_request.create_issue_comment(f"Training job {train_job_name} completed, output path {train_job_name_to_output_path[train_job_name]}")
+                model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
+                tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "tensorboard")
+                comment = f"Training job {train_job_name} completed. \nModel url: {model_url}, \ntensorboard output path: {tensorboard_output_path}"
+                pull_request.create_issue_comment(comment)
             else:
                 all_jobs_completed = False
         if all_jobs_completed:
