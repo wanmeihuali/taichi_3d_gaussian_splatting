@@ -52,6 +52,8 @@ class GaussianPointCloudTrainer:
 
     def __init__(self, config: TrainConfig):
         self.config = config
+        # create the log directory if it doesn't exist
+        os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
         self.writer = SummaryWriter(
             log_dir=self.config.summary_writer_log_dir)
 
