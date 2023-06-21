@@ -18,6 +18,7 @@ import taichi as ti
 import os
 import matplotlib.pyplot as plt
 from collections import deque
+from typing import Optional
 
 def cycle(dataloader):
     while True:
@@ -45,6 +46,7 @@ class GaussianPointCloudTrainer:
         initial_downsample_factor: int = 4
         half_downsample_factor_interval: int = 250
         summary_writer_log_dir: str = "logs"
+        output_model_dir: Optional[str] = None
         rasterisation_config: GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig()
         adaptive_controller_config: GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig()
         gaussian_point_cloud_scene_config: GaussianPointCloudScene.PointCloudSceneConfig = GaussianPointCloudScene.PointCloudSceneConfig()
@@ -54,6 +56,9 @@ class GaussianPointCloudTrainer:
         self.config = config
         # create the log directory if it doesn't exist
         os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
+        if self.config.output_model_dir is None:
+            self.config.output_model_dir = self.config.summary_writer_log_dir
+            os.makedirs(self.config.output_model_dir, exist_ok=True)
         self.writer = SummaryWriter(
             log_dir=self.config.summary_writer_log_dir)
 
@@ -78,6 +83,8 @@ class GaussianPointCloudTrainer:
         
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
+        
+        self.best_psnr_score = 0.
 
         # move scene to GPU
 
@@ -339,7 +346,11 @@ class GaussianPointCloudTrainer:
             self.writer.add_scalar(
                 "val/ssim", mean_ssim_score, iteration)
             self.scene.to_parquet(
-                os.path.join(self.config.summary_writer_log_dir, f"scene_{iteration}.parquet"))
+                os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
+            if mean_psnr_score > self.best_psnr_score:
+                self.best_psnr_score = mean_psnr_score
+                self.scene.to_parquet(
+                    os.path.join(self.config.output_model_dir, f"best_scene.parquet"))
 
 
 # %%
