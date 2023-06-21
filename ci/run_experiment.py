@@ -9,8 +9,6 @@ if __name__ == "__main__":
     parser.add_argument("--s3-output-path", type=str, required=True)
 
     args = parser.parse_args()
-    git_sha = args.git_sha
-    git_repo = args.git_repo
     github_access_token = os.environ["GITHUB_ACCESS_TOKEN"]
     pull_request_number = os.environ["PULL_REQUEST_NUMBER"]
     git_owner = os.environ["GITHUB_OWNER"]
