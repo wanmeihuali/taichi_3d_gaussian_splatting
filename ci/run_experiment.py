@@ -31,8 +31,8 @@ if __name__ == "__main__":
     pull_request.create_issue_comment(f"Running experiment on sagemaker with git sha {git_sha}")
     
     datasets = {
-        "tat_truck": "config/ci_sagemaker_tat_truck.json",
-        "tat_car": "config/ci_sagemaker_tat_car.json",
+        "tat-truck": "config/ci_sagemaker_tat_truck.json",
+        "tat-car": "config/ci_sagemaker_tat_car.json",
     }
 
     sagemaker_client = boto3.client("sagemaker", region_name="us-east-2")
