@@ -5,10 +5,10 @@ for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-ga
 ## Current status
 Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
 
-| Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo |
-| --- | --- | --- | --- | --- |
-| Truck(7k) | 23.51 | 22.84 | 0.840 | 0.798 |
-| Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 |
+| Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo | training time(RTX 3090) |
+| --- | --- | --- | --- | --- | --- |
+| Truck(7k) | 23.51 | 22.84 | 0.840 | 0.798 | 10min50s |
+| Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 | |
 
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
  
