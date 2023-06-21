@@ -9,7 +9,7 @@ jobs:
   
   build:
     if: contains(github.event.pull_request.labels.*.name, 'need_experiment') || github.ref == 'refs/heads/main'
-    name: Build Image
+    name: Run experiment
     runs-on: ubuntu-latest
 
    
@@ -34,7 +34,7 @@ jobs:
       with:
         python-version: '3.10'
         cache: 'pip'
-    - run: pip3 install sagemaker argparse github
+    - run: pip3 install sagemaker argparse PyGithub
 
     - name: Run the experiment
       id: run-experiment
