@@ -113,9 +113,9 @@ class GaussianPointCloudTrainer:
     def train(self):
         ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
+            self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=4)
         val_data_loader = torch.utils.data.DataLoader(
-            self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=2)
+            self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
         
         optimizer = torch.optim.AdamW(
