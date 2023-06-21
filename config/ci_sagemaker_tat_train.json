@@ -6,7 +6,41 @@
     "AlgorithmSpecification": {
         "TrainingImage": "763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker",
         "TrainingInputMode": "File",
-        "ContainerEntrypoint": []
+        "ContainerEntrypoint": [],
+        "MetricDefinitions": [
+            {
+                "Name": "train:loss",
+                "Regex": "train_loss=(.*?);"
+            },
+            {
+                "Name": "train:l1loss",
+                "Regex": "train_l1_loss=(.*?);"
+            },
+            {
+                "Name": "train:ssimloss",
+                "Regex": "train_ssim_loss=(.*?);"
+            },
+            {
+                "Name": "train:psnr",
+                "Regex": "train_psnr=(.*?);"
+            },
+            {
+                "Name": "train:ssim",
+                "Regex": "train_ssim=(.*?);"
+            },
+            {
+                "Name": "val:loss",
+                "Regex": "val_loss=(.*?);"
+            },
+            {
+                "Name": "val:psnr",
+                "Regex": "val_psnr=(.*?);"
+            },
+            {
+                "Name": "val:ssim",
+                "Regex": "val_ssim=(.*?);"
+            }
+        ]
     },
     "RoleArn": "arn:aws:iam::018306018935:role/service-role/AmazonSageMaker-ExecutionRole-20221120T152725",
     "InputDataConfig": [

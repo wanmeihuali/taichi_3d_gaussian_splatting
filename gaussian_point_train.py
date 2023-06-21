@@ -40,6 +40,7 @@ class GaussianPointCloudTrainer:
         increase_color_max_sh_band_interval: int = 1000.
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
+        print_metrics_to_console: bool = False
         log_image_interval: int = 1000
         enable_taichi_kernel_profiler: bool = False
         log_taichi_kernel_profile_interval: int = 1000
@@ -200,6 +201,10 @@ class GaussianPointCloudTrainer:
                     "train/l1 loss", l1_loss.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
+                if self.config.print_metrics_to_console:
+                    print(f"train_loss={loss.item()};")
+                    print(f"train_l1_loss={l1_loss.item()};")
+                    print(f"train_ssim_loss={ssim_loss.item()};")
             if self.config.enable_taichi_kernel_profiler and iteration % self.config.log_taichi_kernel_profile_interval == 0 and iteration > 0:
                 ti.profiler.print_kernel_profiler_info("count")
                 ti.profiler.clear_kernel_profiler_info()
@@ -210,6 +215,9 @@ class GaussianPointCloudTrainer:
                     "train/psnr", psnr_score.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim", ssim_score.item(), iteration)
+                if self.config.print_metrics_to_console:
+                    print(f"train_psnr={psnr_score.item()};")
+                    print(f"train_ssim={ssim_score.item()};")
 
             is_problematic = False
             if len(recent_losses) == recent_losses.maxlen and iteration - previous_problematic_iteration > recent_losses.maxlen:
@@ -345,6 +353,10 @@ class GaussianPointCloudTrainer:
                 "val/psnr", mean_psnr_score, iteration)
             self.writer.add_scalar(
                 "val/ssim", mean_ssim_score, iteration)
+            if self.config.print_metrics_to_console:
+                print(f"val_loss={mean_loss};")
+                print(f"val_psnr={mean_psnr_score};")
+                print(f"val_ssim={mean_ssim_score};")
             self.scene.to_parquet(
                 os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
             if mean_psnr_score > self.best_psnr_score:
