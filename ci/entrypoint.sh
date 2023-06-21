@@ -7,4 +7,6 @@ if [ -z "$TRAIN_CONFIG" ]; then
 fi
 ls /opt/ml/input/data
 ls /opt/ml/input/data/training
+ls /opt/ml/input/data/training/image
+ln -s /opt/ml/input/data/training/image image
 python3 gaussian_point_train.py --train_config $TRAIN_CONFIG
