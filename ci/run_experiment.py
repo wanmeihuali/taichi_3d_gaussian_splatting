@@ -81,16 +81,19 @@ if __name__ == "__main__":
     # wait for training jobs to finish
     while True:
         all_jobs_completed = True
+        finished_jobs = set()
         for train_job_name in train_job_names:
             train_job_description = sagemaker_client.describe_training_job(TrainingJobName=train_job_name)
             train_job_status = train_job_description["TrainingJobStatus"]
             if train_job_status in ["Failed", "Stopped"]:
                 pull_request.create_issue_comment(f"Training job {train_job_name} failed")
             elif train_job_status == "Completed":
-                model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
-                tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "tensorboard")
-                comment = f"Training job {train_job_name} completed. \nModel url: {model_url}, \ntensorboard output path: {tensorboard_output_path}"
-                pull_request.create_issue_comment(comment)
+                if train_job_name not in finished_jobs:
+                    model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
+                    tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "tensorboard")
+                    comment = f"Training job {train_job_name} completed. \nModel url: {model_url}, \ntensorboard output path: {tensorboard_output_path}"
+                    pull_request.create_issue_comment(comment)
+                    finished_jobs.add(train_job_name)
             else:
                 all_jobs_completed = False
         if all_jobs_completed:
