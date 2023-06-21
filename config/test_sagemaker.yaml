@@ -21,9 +21,10 @@ gaussian-point-cloud-scene-config:
   max_initial_covariance: 3000.0
   initial_covariance_ratio: 0.1
 increase-color-max-sh-band-interval: 1000.0
-log-image-interval: 200
+log-image-interval: 2000
 log-loss-interval: 10
 log-metrics-interval: 100
+print-metrics-to-console: True
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 3000
 feature_learning_rate: 0.005
@@ -35,13 +36,13 @@ loss-function-config:
   enable_regularization: False
   regularization_weight: 0.005
 num-iterations: 30001
-pointcloud-parquet-path: 'data/tat_truck/point_cloud.parquet'
+pointcloud-parquet-path: '/opt/ml/input/data/training/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_truck_every_8_experiment
-output-model-dir: logs/tat_truck_every_8_experiment
-train-dataset-json-path: 'data/tat_truck_every_8_test/train.json'
-val-dataset-json-path: 'data/tat_truck_every_8_test/val.json'
-val-interval: 1000
+summary-writer-log-dir: /opt/ml/output/data/tensorboard
+output-model-dir: /opt/ml/model
+train-dataset-json-path: '/opt/ml/input/data/training/train.json'
+val-dataset-json-path: '/opt/ml/input/data/training/val.json'
+val-interval: 3000
