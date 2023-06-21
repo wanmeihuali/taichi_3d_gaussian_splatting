@@ -37,7 +37,6 @@ if __name__ == "__main__":
     sagemaker_client = boto3.client("sagemaker", region_name="us-east-2")
     experiment = Experiment.create(
         experiment_name=experiment_name,
-        display_name=experiment_name,
         description=f"Experiment triggered by pull request https://github.com/{git_repo}/pull/{pull_request_number}",
         sagemaker_boto_client=sagemaker_client,
     )
