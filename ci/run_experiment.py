@@ -6,8 +6,6 @@ from github import Github
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("run experiment on sagemaker")
     parser.add_argument("--experiment-name", type=str, default="sagemaker-experiment")
-    parser.add_argument("--git-repo", type=str, default="https://github.com/wanmeihuali/taichi_3d_gaussian_splatting.git")
-    parser.add_argument("--git-sha", type=str, required=True)
     parser.add_argument("--s3-output-path", type=str, required=True)
 
     args = parser.parse_args()
