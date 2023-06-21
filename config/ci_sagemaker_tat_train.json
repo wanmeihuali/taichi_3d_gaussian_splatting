@@ -4,12 +4,9 @@
         "train_config": "config/tat_truck_every_8_test_sagemaker.yaml"
     },
     "AlgorithmSpecification": {
-        "TrainingImage": "",
+        "TrainingImage": "763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker",
         "TrainingInputMode": "File",
-        "ContainerEntrypoint": [
-            "python3",
-            "gaussian_point_train.py"
-        ]
+        "ContainerEntrypoint": []
     },
     "RoleArn": "arn:aws:iam::018306018935:role/service-role/AmazonSageMaker-ExecutionRole-20221120T152725",
     "InputDataConfig": [
