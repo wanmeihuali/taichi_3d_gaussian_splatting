@@ -77,7 +77,7 @@ if __name__ == "__main__":
         pull_request.create_issue_comment(f"Training job {train_job_name} created")
 
         trial_component_name = f"{train_job_name}-aws-training-job"
-        trial_component = TrialComponent.load(trail_component_name=trial_component_name)
+        trial_component = TrialComponent.load(trial_component_name=trial_component_name)
         trial.add_trial_component(trial_component)
 
     # wait for training jobs to finish
