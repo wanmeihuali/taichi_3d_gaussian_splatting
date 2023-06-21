@@ -39,9 +39,9 @@ jobs:
     - name: Run the experiment
       id: run-experiment
       env:
-        GIT_OWNER: ${{ github.repository_owner }}
-        GIT_REPO: ${{ github.repository }}
-        GIT_SHA: ${{ github.sha }}
+        GITHUB_OWNER: ${{ github.repository_owner }}
+        GITHUB_REPO: ${{ github.repository }}
+        GITHUB_SHA: ${{ github.sha }}
         EXPERIMENT_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
         S3_OUTPUT_PATH: s3://kuangyuan-logs/${{ steps.get-branch-name.outputs.BRANCH_NAME }}-${{ github.sha }}
         GITHUB_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
