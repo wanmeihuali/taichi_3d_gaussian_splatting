@@ -37,7 +37,7 @@ jobs:
       with:
         python-version: '3.10'
         cache: 'pip'
-    - run: pip3 install sagemaker argparse PyGithub boto3 smexperiments
+    - run: pip3 install sagemaker argparse PyGithub boto3 sagemaker-experiments
 
     - name: Run the experiment
       id: run-experiment
