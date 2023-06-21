@@ -11,7 +11,10 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'need_experiment') || github.ref == 'refs/heads/main'
     name: Run experiment
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
    
     steps:
 
