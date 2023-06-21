@@ -1,5 +1,5 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.000004
+  densification-view-space-position-gradients-threshold: 0.000008
   densification_overlap_tiles_threshold: 16
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
