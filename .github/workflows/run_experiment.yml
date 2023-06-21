@@ -31,6 +31,23 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: taichi_3d_gaussian_splatting
+        # use the branch name for the Docker tag
+        IMAGE_TAG: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
+      run: |
+        aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 763104351884.dkr.ecr.us-east-2.amazonaws.com
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.aws .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image_uri::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
     
     - name: Set up Python
       uses: actions/setup-python@v2
@@ -48,6 +65,7 @@ jobs:
         BRANCH_NAME: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
         GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
+        IMAGE_URI: ${{ steps.build-image.outputs.image_uri }}
       run: |
         python3 ci/run_experiment.py \
           --experiment-name $EXPERIMENT_NAME \
