@@ -1,7 +1,7 @@
 {
     "TrainingJobName": "",
     "HyperParameters": {
-        "config": "config/tat_truck_every_8_test_sagemaker.yaml"
+        "train_config": "config/tat_truck_every_8_test_sagemaker.yaml"
     },
     "AlgorithmSpecification": {
         "TrainingImage": "",
