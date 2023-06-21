@@ -1,5 +1,6 @@
 # taichi_3d_gaussian_splatting
-An unofficial implementation of paper https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/3d_gaussian_splatting_high.pdf by taichi lang. 
+An unofficial implementation of paper [3D Gaussian Splatting
+for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/) by taichi lang. 
 
 ## Current status
 Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.

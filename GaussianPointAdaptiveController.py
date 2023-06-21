@@ -181,7 +181,7 @@ class GaussianPointAdaptiveController:
         # point_features_in_camera = pointcloud_features[point_id_in_camera_list]
         will_be_remove_mask = floater_mask_in_camera | transparent_point_mask[point_id_in_camera_list]
         # shape: [num_points_in_camera, 2]
-        grad_viewspace = input_data.grad_viewspace
+        grad_viewspace = input_data.magnitude_grad_viewspace
         # shape: [num_points_in_camera, num_features]
         # all these three masks are on num_points_in_camera, not num_points
         to_densify_mask = (grad_viewspace.norm(
