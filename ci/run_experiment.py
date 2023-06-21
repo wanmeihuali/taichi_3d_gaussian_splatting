@@ -90,7 +90,7 @@ if __name__ == "__main__":
             elif train_job_status == "Completed":
                 if train_job_name not in finished_jobs:
                     model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
-                    tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "tensorboard")
+                    tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "output.tar.gz")
                     comment = f"Training job {train_job_name} completed. \nModel url: {model_url}, \ntensorboard output path: {tensorboard_output_path}"
                     pull_request.create_issue_comment(comment)
                     finished_jobs.add(train_job_name)
