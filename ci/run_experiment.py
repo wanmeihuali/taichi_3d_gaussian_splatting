@@ -43,6 +43,7 @@ if __name__ == "__main__":
     )
 
     # we use prebuilt docker image for training, so we need to clone the repo and install the dependencies at entrypoint
+    """
     entrypoint = [
         "git",
         "clone",
@@ -59,6 +60,8 @@ if __name__ == "__main__":
         "python3",
         "gaussian_point_train.py",
     ]
+    """
+    
     train_job_names = []
     train_job_name_to_output_path = {}
     for dataset, config_path in datasets.items():
@@ -75,6 +78,11 @@ if __name__ == "__main__":
         with open(config_path) as f:
             train_job_config = json.load(f)
         train_job_config["TrainingJobName"] = train_job_name
+        entrypoint = f"""git clone https://github.com/{git_repo}.git && \
+            cd {repo_folder_name} && \
+            pip3 install -r requirements.txt && \
+            python3 gaussian_point_train.py --train_config {train_job_config["HyperParameters"]["train_config"]}
+        """
         train_job_config["AlgorithmSpecification"]["ContainerEntrypoint"] = entrypoint
         train_job_config["OutputDataConfig"]["S3OutputPath"] = full_s3_output_path
         sagemaker_client.create_training_job(**train_job_config)
