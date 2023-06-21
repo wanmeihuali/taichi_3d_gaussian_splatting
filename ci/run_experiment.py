@@ -79,9 +79,9 @@ if __name__ == "__main__":
         trial.add_trial_component(trial_component)
 
     # wait for training jobs to finish
+    finished_jobs = set()
     while True:
         all_jobs_completed = True
-        finished_jobs = set()
         for train_job_name in train_job_names:
             train_job_description = sagemaker_client.describe_training_job(TrainingJobName=train_job_name)
             train_job_status = train_job_description["TrainingJobStatus"]
