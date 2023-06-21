@@ -117,11 +117,20 @@ def generate_num_overlap_tiles(
         
         center_tile_u = ti.cast(uv[0] // 16, ti.i32)
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
+
+        # eigen_values, eigen_vectors = ti.sym_eig(uv_cov)
+        large_eigen_values = (uv_cov[0, 0] + uv_cov[1, 1] + \
+            ti.sqrt((uv_cov[0, 0] - uv_cov[1, 1]) * (uv_cov[0, 0] - uv_cov[1, 1]) + 4.0 * uv_cov[0, 1] * uv_cov[1, 0])) / 2.0
+        search_size = ti.sqrt(large_eigen_values) * 3.0 # 3.0 is a value from experiment
+        tile_search_size = ti.cast(ti.ceil(search_size / 16.0), ti.i32)
+        tile_search_size = ti.max(tile_search_size, 1)
+
         overlap_tiles_count = 0
         # we define overlap as: the alpha at the center or four corners of the tile is larger than 1/255,
         # or the point is inside the 3x3 tile block
-        for tile_u_offset in range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1):
-            for tile_v_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
+        # TODO: move the if check outside the loop
+        for tile_u_offset in range(-tile_search_size, tile_search_size + 1):
+            for tile_v_offset in range(-tile_search_size, tile_search_size + 1):
                 tile_u = center_tile_u + tile_u_offset
                 tile_v = center_tile_v + tile_v_offset
                 if tile_u >= 0 and tile_u < camera_width // 16 and tile_v >= 0 and tile_v < camera_height // 16:
@@ -193,11 +202,18 @@ def generate_point_sort_key_by_num_overlap_tiles(
         center_tile_u = ti.cast(uv[0] // 16, ti.i32)
         center_tile_v = ti.cast(uv[1] // 16, ti.i32)
 
+        # eigen_values, eigen_vectors = ti.sym_eig(uv_cov)
+        large_eigen_values = (uv_cov[0, 0] + uv_cov[1, 1] + \
+            ti.sqrt((uv_cov[0, 0] - uv_cov[1, 1]) * (uv_cov[0, 0] - uv_cov[1, 1]) + 4.0 * uv_cov[0, 1] * uv_cov[1, 0])) / 2.0
+        search_size = ti.sqrt(large_eigen_values) * 3.0 # 3.0 is a value from experiment
+        tile_search_size = ti.cast(ti.ceil(search_size / 16.0), ti.i32)
+        tile_search_size = ti.max(tile_search_size, 1)
+
         overlap_tiles_count = 0
         # we define overlap as: the alpha at the center or four corners of the tile is larger than 1/255,
         # or the point is inside the 3x3 tile block
-        for tile_u_offset in range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1):
-            for tile_v_offset in ti.static(range(-HALF_NEIGHBOR_TILE_SIZE, HALF_NEIGHBOR_TILE_SIZE + 1)):
+        for tile_u_offset in range(-tile_search_size, tile_search_size + 1):
+            for tile_v_offset in range(-tile_search_size, tile_search_size + 1):
                 tile_u = center_tile_u + tile_u_offset
                 tile_v = center_tile_v + tile_v_offset
                 if tile_u >= 0 and tile_u < camera_width // 16 and tile_v >= 0 and tile_v < camera_height // 16:

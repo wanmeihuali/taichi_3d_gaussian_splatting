@@ -769,3 +769,65 @@ point_cloud_o3d.colors = o3d.utility.Vector3dVector(point_cloud_rgb[mask])
 point_cloud_o3d.normals = o3d.utility.Vector3dVector(normal[mask] * 3)
 o3d.visualization.draw_geometries([point_cloud_o3d])
 # %%
+
+import taichi as ti
+ti.init(arch=ti.cpu)
+@ti.kernel
+def test():
+    Cov = ti.Matrix([
+        [0.5, 0.2],
+        [0.2, 0.7]
+    ])
+    eig, V = ti.sym_eig(Cov)
+    print(eig)
+    print(V)
+test()
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import multivariate_normal
+
+# Define the mean and covariance matrix
+mean = np.array([0, 0])
+cov = np.array([[50, 30], [30, 50]])  # Replace with your covariance matrix
+alpha = 0.6
+
+eigen = np.linalg.eig(cov)
+eigen_values = eigen[0]
+eigen_vectors = eigen[1]
+
+# Define the threshold
+threshold = 1 / 255.
+
+# Create a grid of points
+x = np.linspace(-50, 50, 100)
+y = np.linspace(-50, 50, 100)
+X, Y = np.meshgrid(x, y)
+pos = np.dstack((X, Y))
+
+# Create a 2D Gaussian distribution
+rv = multivariate_normal(mean, cov)
+# Create a unnormalized 2D Gaussian distribution
+normalize_factor = 1 / (2 * np.pi * np.sqrt(np.linalg.det(cov)))
+
+# Evaluate the PDF at each point in the grid
+pdf_values = rv.pdf(pos) / normalize_factor * alpha
+
+# Create a binary mask where the PDF is greater than the threshold
+mask = pdf_values > threshold
+
+# Plot the area where the PDF is greater than the threshold
+plt.figure(figsize=(6, 6))
+plt.imshow(mask, extent=(-50, 50, -50, 50), origin='lower')
+
+# plt eigenvectors
+plt.quiver(mean[0], mean[1], eigen_vectors[0, 0], eigen_vectors[1, 0], color='r', scale=10 / np.sqrt(eigen_values[0]))
+plt.quiver(mean[0], mean[1], eigen_vectors[0, 1], eigen_vectors[1, 1], color='r', scale=10 / np.sqrt(eigen_values[1]))
+
+plt.colorbar()
+plt.show()
+# %%
+print(np.sqrt(eigen_values[0]) * 4)
+print(np.sqrt(eigen_values[1]) * 4)
+
+# %%
