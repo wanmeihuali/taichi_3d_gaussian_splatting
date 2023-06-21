@@ -32,7 +32,7 @@ if __name__ == "__main__":
     
     datasets = {
         "tat-truck": "config/ci_sagemaker_tat_truck.json",
-        "tat-car": "config/ci_sagemaker_tat_car.json",
+        "tat-train": "config/ci_sagemaker_tat_train.json",
     }
 
     sagemaker_client = boto3.client("sagemaker", region_name="us-east-2")
