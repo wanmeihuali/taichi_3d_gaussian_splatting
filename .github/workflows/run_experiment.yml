@@ -3,7 +3,7 @@ name: Running experiment
 on:
  
   pull_request:
-    types: [ labeled , synchronize ]
+    types: [ labeled ]
 
 jobs:
   
@@ -67,7 +67,5 @@ jobs:
         PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
         IMAGE_URI: ${{ steps.build-image.outputs.image_uri }}
       run: |
-        python3 ci/run_experiment.py \
-          --experiment-name $EXPERIMENT_NAME \
-          --s3-output-path $S3_OUTPUT_PATH
+        python3 ci/run_experiment.py
         

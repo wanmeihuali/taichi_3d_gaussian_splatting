@@ -202,6 +202,7 @@ class GaussianPointCloudTrainer:
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
                 if self.config.print_metrics_to_console:
+                    print(f"train_iteration={iteration};")
                     print(f"train_loss={loss.item()};")
                     print(f"train_l1_loss={l1_loss.item()};")
                     print(f"train_ssim_loss={ssim_loss.item()};")
@@ -250,7 +251,7 @@ class GaussianPointCloudTrainer:
                         "train/image_problematic", grid, iteration)
                 
             del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
-            if iteration % self.config.val_interval == 0 and iteration != 0:
+            if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000: # they use 7000 in paper, it's hard to set a interval so hard code it here
                 self.validation(val_data_loader, iteration)
 
     @staticmethod
@@ -300,6 +301,7 @@ class GaussianPointCloudTrainer:
             g = valid_point_cloud_features[:, 24:40]
             b = valid_point_cloud_features[:, 40:56]
             writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
+            print(f"num_valid_points={num_valid_points};")
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)
