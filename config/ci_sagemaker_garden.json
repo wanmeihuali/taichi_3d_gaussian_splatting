@@ -117,8 +117,8 @@
         "VolumeSizeInGB": 30
     },
     "StoppingCondition": {
-        "MaxRuntimeInSeconds": 18000,
-        "MaxWaitTimeInSeconds": 36000
+        "MaxRuntimeInSeconds": 180000,
+        "MaxWaitTimeInSeconds": 360000
     },
     "EnableManagedSpotTraining": true 
 }
