@@ -42,9 +42,17 @@ tensorboard
 All dependencies can be installed by pip. pytorch/tochvision can be installed by conda. The code is tested on Ubuntu 20.04.2 LTS with python 3.10.10. The hardware is RTX 3090 and CUDA 12.1. The code is not tested on other platforms, but it should work on other platforms with minor modifications.
 
 ## Prepare dataset
-The algorithm requires point cloud for whole scene, camera parameters, and ground truth image. The point cloud is stored in parquet format. The camera parameters and ground truth image are stored in json format. The running config is stored in yaml format.
+The algorithm requires point cloud for whole scene, camera parameters, and ground truth image. The point cloud is stored in parquet format. The camera parameters and ground truth image are stored in json format. The running config is stored in yaml format. A script to build dataset from colmap output is provided. It is also possible to build dataset from raw data.
 
-### Point cloud
+### Build dataset from colmap
+- Reconstruct using colmap: See https://colmap.github.io/tutorial.html. The image should be undistorted. Sparse reconstruction is usually enough.
+- save as txt: the standard colmap txt output contains three files, cameras.txt, images.txt, points3D.txt
+- transform the txt into json and parquet: see [this file](prepare_colmap.py) about how to prepare it.
+- prepare config yaml: see [this file](config/tat_train.yaml) as an example
+- run with the config.
+
+### Build dataset from raw data
+#### Point cloud
 The input point cloud is stored in parquet format. The parquet file should have the following columns:
 ```
 x: float32
@@ -59,7 +67,7 @@ point_cloud_df.to_parquet(os.path.join(
     output_dir, "point_cloud.parquet"))
 ```
 
-### Camera parameters
+#### Camera parameters
 Two json file(for train and validation) is required.
 ```json
 [
@@ -135,7 +143,7 @@ in which $u$ is the column index, $v$ is the row index, $x, y, z$ is the point d
 
 So the camera system in the json is with x-axis pointing right, y-axis pointing down, z-axis pointing forward. The image coordinate system is the standard pytorch image coordinate system, with origin at top left corner, x-axis pointing right, y-axis pointing down.
 
-### Ground truth image
+#### Ground truth image
 The ground truth image is stored in png format. The image should be in RGB format. The image should be the same size as the camera height and width in the json file.
 
 ### Running config
@@ -147,12 +155,6 @@ python gaussian_point_train.py --train_config {path to config file}
 ```
 The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file.
 
-### From colmap
-- Reconstruct using colmap: See https://colmap.github.io/tutorial.html. The image should be undistorted. Sparse reconstruction is usually enough.
-- save as txt: the standard colmap txt output contains three files, cameras.txt, images.txt, points3D.txt
-- transform the txt into json and parquet: see [this file](prepare_colmap.py) about how to prepare it.
-- prepare config yaml: see [this file](config/tat_train.yaml) as an example
-- run with the config.
 
 ## TODO
 ### Algorithm part
