@@ -17,7 +17,9 @@ from tqdm import tqdm
 import taichi as ti
 import os
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from collections import deque
+import numpy as np
 
 def cycle(dataloader):
     while True:
@@ -211,8 +213,7 @@ class GaussianPointCloudTrainer:
 
             if iteration % self.config.log_image_interval == 0 or is_problematic:
                 # make image_depth to be 3 channels
-                image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / \
-                    image_depth.max()
+                image_depth = self._easy_cmap(image_depth)
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / \
                     pixel_valid_point_count.max()
                 image_list = [image_pred, image_gt, image_depth, pixel_valid_point_count]
@@ -222,8 +223,10 @@ class GaussianPointCloudTrainer:
                     magnitude_grad_v_viewspace_on_image = magnitude_grad_viewspace_on_image[1]
                     magnitude_grad_u_viewspace_on_image /= magnitude_grad_u_viewspace_on_image.max()
                     magnitude_grad_v_viewspace_on_image /= magnitude_grad_v_viewspace_on_image.max()
+                    image_diff = torch.abs(image_pred - image_gt)
                     image_list.append(magnitude_grad_u_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
                     image_list.append(magnitude_grad_v_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
+                    image_list.append(image_diff)
                 grid = make_grid(image_list, nrow=2)
                 
                 self.writer.add_image(
@@ -235,6 +238,15 @@ class GaussianPointCloudTrainer:
             del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if iteration % self.config.val_interval == 0 and iteration != 0:
                 self.validation(val_data_loader, iteration)
+    
+    @staticmethod
+    def _easy_cmap(x: torch.Tensor):
+        x_rgb = torch.zeros((3, x.shape[0], x.shape[1]), dtype=torch.float32, device=x.device)
+        x_rgb[0] = torch.clamp(x, 0, 10) / 10.
+        x_rgb[1] = torch.clamp(x - 10, 0, 50) / 50.
+        x_rgb[2] = torch.clamp(x - 60, 0, 200) / 200.
+        return 1. - x_rgb
+        
 
     @staticmethod
     def _compute_pnsr_and_ssim(image_pred, image_gt):
@@ -315,15 +327,16 @@ class GaussianPointCloudTrainer:
                     gaussian_point_cloud_rasterisation_input)
                 image_pred = torch.clamp(image_pred, 0, 1)
                 image_pred = image_pred.permute(2, 0, 1)
-                image_depth = image_depth.unsqueeze(0).repeat(3, 1, 1) / image_depth.max()
+                image_depth = self._easy_cmap(image_depth)
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
                 loss, _, _ = self.loss_function(image_pred, image_gt)
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
                     image_pred=image_pred, image_gt=image_gt)
+                image_diff = torch.abs(image_pred - image_gt)
                 total_loss += loss.item()
                 total_psnr_score += psnr_score.item()
                 total_ssim_score += ssim_score.item()
-                grid = make_grid([image_pred, image_gt, image_depth, pixel_valid_point_count], nrow=2)
+                grid = make_grid([image_pred, image_gt, image_depth, pixel_valid_point_count, image_diff], nrow=2)
                 self.writer.add_image(
                     f"val/image {idx}", grid, iteration)
 
