@@ -169,7 +169,7 @@ if __name__ == "__main__":
     last_comment_metric_time = time.time()
     
     # each train job has a dict of metrics, each metric has a dict of (timestamp, value) pair
-    train_job_metrics = {train_job_name: defaultdict(defaultdict(dict)) for train_job_name in train_job_names}
+    train_job_metrics = {train_job_name: defaultdict(lambda:defaultdict(dict)) for train_job_name in train_job_names}
     while True:
         all_jobs_completed = True
         for train_job_name in train_job_names:
