@@ -177,7 +177,7 @@ if __name__ == "__main__":
         train_job_config["TrainingJobName"] = train_job_name
         train_job_config["AlgorithmSpecification"]["TrainingImage"] = image_uri
         train_job_config["AlgorithmSpecification"]["ContainerEntrypoint"] = entrypoint
-        train_job_config["InputDataConfig"]["DataSource"]["S3DataSource"]["S3Uri"] = config_to_fill.get("S3Uri", "")
+        train_job_config["InputDataConfig"][0]["DataSource"]["S3DataSource"]["S3Uri"] = config_to_fill.get("S3Uri", "")
         train_job_config["StoppingCondition"]["MaxRuntimeInSeconds"] = config_to_fill.get("MaxRuntimeInSeconds", 4*3600)
         train_job_config["StoppingCondition"]["MaxWaitTimeInSeconds"] = config_to_fill.get("MaxRuntimeInSeconds", 4*3600) * 2
         
