@@ -137,7 +137,7 @@ if __name__ == "__main__":
     datasets = {
         "tat-truck": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/truck/", "MaxRuntimeInSeconds": 4*3600},
         "tat-train": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/train/", "MaxRuntimeInSeconds": 4*3600},
-        "garden": {"S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/garden/", "MaxRuntimeInSeconds": 30*3600},
+        "garden": {"S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/garden_4/", "MaxRuntimeInSeconds": 4*3600},
     }
     if "need-experiment" not in labels:
         # if the pull request does not have "need-experiment" label, it must have "need-experiment-<dataset>" label
