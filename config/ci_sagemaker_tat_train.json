@@ -45,6 +45,46 @@
                 "Regex": "val_ssim=(.*?);"
             },
             {
+                "Name": "train:7kpsnr",
+                "Regex": "train_psnr_7000=(.*?);"
+            },
+            {
+                "Name": "train:7kssim",
+                "Regex": "train_ssim_7000=(.*?);"
+            },
+            {
+                "Name": "val:7kloss",
+                "Regex": "val_loss_7000=(.*?);"
+            },
+            {
+                "Name": "val:7kpsnr",
+                "Regex": "val_psnr_7000=(.*?);"
+            },
+            {
+                "Name": "val:7kssim",
+                "Regex": "val_ssim_7000=(.*?);"
+            },
+            {
+                "Name": "train:5kpsnr",
+                "Regex": "train_psnr_5000=(.*?);"
+            },
+            {
+                "Name": "train:5kssim",
+                "Regex": "train_ssim_5000=(.*?);"
+            },
+            {
+                "Name": "val:5kloss",
+                "Regex": "val_loss_5000=(.*?);"
+            },
+            {
+                "Name": "val:5kpsnr",
+                "Regex": "val_psnr_5000=(.*?);"
+            },
+            {
+                "Name": "val:5kssim",
+                "Regex": "val_ssim_5000=(.*?);"
+            },
+            {
                 "Name": "train:num_valid_points",
                 "Regex": "num_valid_points=(.*?);"
             }

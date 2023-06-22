@@ -218,7 +218,9 @@ class GaussianPointCloudTrainer:
                     "train/ssim", ssim_score.item(), iteration)
                 if self.config.print_metrics_to_console:
                     print(f"train_psnr={psnr_score.item()};")
+                    print(f"train_psnr_{iteration}={psnr_score.item()};")
                     print(f"train_ssim={ssim_score.item()};")
+                    print(f"train_ssim_{iteration}={ssim_score.item()};")
 
             is_problematic = False
             if len(recent_losses) == recent_losses.maxlen and iteration - previous_problematic_iteration > recent_losses.maxlen:
@@ -358,7 +360,9 @@ class GaussianPointCloudTrainer:
             if self.config.print_metrics_to_console:
                 print(f"val_loss={mean_loss};")
                 print(f"val_psnr={mean_psnr_score};")
+                print(f"val_psnr_{iteration}={mean_psnr_score};")
                 print(f"val_ssim={mean_ssim_score};")
+                print(f"val_ssim_{iteration}={mean_ssim_score};")
             self.scene.to_parquet(
                 os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
             if mean_psnr_score > self.best_psnr_score:
