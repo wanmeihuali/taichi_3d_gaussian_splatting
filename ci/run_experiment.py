@@ -204,19 +204,23 @@ if __name__ == "__main__":
                 all_jobs_completed = False
             # get metrics
             for metric in train_job_description.get("FinalMetricDataList", []):
-                print(metric)
                 metric_name = metric["MetricName"]
                 metric_timestamp = metric["Timestamp"]
                 metric_value = metric["Value"]
                 train_job_metrics[train_job_name][metric_name][metric_timestamp] = metric_value
             # try comment on metrics every 10 minutes
             if time.time() - last_comment_metric_time > 600:
+                # the following code is commented out because it is not working
+                # Final metric data is not available until the training job is completed
+                # TODO: find a way to get the real-time metrics, may be by using CloudWatch API
+                """
                 comment = f"Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) metrics every 10 minutes: \n"
                 comment += comment_all_metrics(
                     train_job_metrics=train_job_metrics,
                     train_job_name=train_job_name,
                 )
                 pull_request.create_issue_comment(comment)
+                """
                 reset_last_comment_metric_time = True
         if reset_last_comment_metric_time:
             last_comment_metric_time = time.time()
