@@ -74,7 +74,9 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         kv_pairs[concern_latest_metric_name] = train_job_metrics[train_job_name][concern_latest_metric_name][latest_ts]
     # comment is markdown table
     if len(kv_pairs) > 0:
+        comment += "## Latest Metrics\n"
         comment += kv_pairs_to_markdown(kv_pairs)
+        comment += "\n"
     kv_pairs = {}
     for concern_max_metric_name in concern_max_metric_names:
         if concern_max_metric_name not in train_job_metrics[train_job_name] \
@@ -83,7 +85,9 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         max_value = max(train_job_metrics[train_job_name][concern_max_metric_name].values())
         kv_pairs[concern_max_metric_name] = max_value
     if len(kv_pairs) > 0:
+        comment += "## Max Metrics\n"
         comment += kv_pairs_to_markdown(kv_pairs) 
+        comment += "\n"
 
     for concern_iteration in concern_iterations:
         if concern_iteration not in train_job_metrics[train_job_name]["train:iteration"]:
@@ -96,7 +100,9 @@ def comment_all_metrics(train_job_name, train_job_metrics):
                 continue
             kv_pairs[concern_iteration_metric_name] = train_job_metrics[train_job_name][concern_iteration_metric_name][nearest_ts]
         if len(kv_pairs) > 0:
+            comment += f"## Iteration {concern_iteration}\n"
             comment += kv_pairs_to_markdown(kv_pairs)
+            comment += "\n"
     return comment
         
     
