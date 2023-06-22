@@ -45,6 +45,14 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         "train:ssim",
         "val:psnr",
         "val:ssim",
+        "train:7kpsnr",
+        "train:7kssim",
+        "val:7kpsnr",
+        "val:7kssim",
+        "train:5kpsnr",
+        "train:5kssim",
+        "val:5kpsnr",
+        "val:5kssim",
     }
     concern_iterations = {5000, 7000, 30000}
     concern_iteration_metric_names = {
