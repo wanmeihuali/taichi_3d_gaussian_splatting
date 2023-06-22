@@ -10,6 +10,9 @@ import json
 from github import Github
 from collections import defaultdict
 
+JOB_URL_FORMAT = "https://us-east-2.console.aws.amazon.com/sagemaker/home?region=us-east-2#/jobs/{}"
+
+
 def kv_pairs_to_markdown(kv_pairs):
     comment = "|"
     for key, value in kv_pairs.items():
@@ -158,7 +161,7 @@ if __name__ == "__main__":
         }
         train_job_config["OutputDataConfig"]["S3OutputPath"] = full_s3_output_path
         sagemaker_client.create_training_job(**train_job_config)
-        pull_request.create_issue_comment(f"Training job {train_job_name} created")
+        pull_request.create_issue_comment(f"Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) created")
 
         trial_component_name = f"{train_job_name}-aws-training-job"
         trial_component = TrialComponent.load(trial_component_name=trial_component_name)
@@ -181,7 +184,7 @@ if __name__ == "__main__":
                 if train_job_name not in finished_jobs:
                     model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
                     tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "output.tar.gz")
-                    comment = f"# Training job {train_job_name} completed. \n## Model url: {model_url}, \n## tensorboard output path: {tensorboard_output_path}\n"
+                    comment = f"# Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) completed. \n## Model url: {model_url}, \n## tensorboard output path: {tensorboard_output_path}\n"
                     comment += comment_all_metrics(
                         train_job_metrics=train_job_metrics,
                         train_job_name=train_job_name,
@@ -198,7 +201,7 @@ if __name__ == "__main__":
                 train_job_metrics[train_job_name][metric_name][metric_timestamp] = metric_value
             # try comment on metrics every 10 minutes
             if time.time() - last_comment_metric_time > 600:
-                comment = f"Training job {train_job_name} metrics every 10 minutes: \n"
+                comment = f"Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) metrics every 10 minutes: \n"
                 comment += comment_all_metrics(
                     train_job_metrics=train_job_metrics,
                     train_job_name=train_job_name,
@@ -212,7 +215,7 @@ if __name__ == "__main__":
         time.sleep(60)
 
     for train_job_name in train_job_names:
-        comment = f"Training job {train_job_name} final metrics: \n"
+        comment = f"Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) final metrics: \n"
         comment += comment_all_metrics(
             train_job_metrics=train_job_metrics,
             train_job_name=train_job_name,
