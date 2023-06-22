@@ -19,7 +19,7 @@ gaussian-point-cloud-scene-config:
   add_sphere: True
   initial_alpha: -0.0
   max_initial_covariance: 3000.0
-  initial_covariance_ratio: 1.0
+  initial_covariance_ratio: 0.1
 increase-color-max-sh-band-interval: 1000.0
 log-image-interval: 2000
 log-loss-interval: 10
