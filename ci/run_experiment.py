@@ -8,6 +8,22 @@ from smexperiments.trial_component import TrialComponent
 import argparse
 import json
 from github import Github
+from collections import defaultdict
+
+def kv_pairs_to_markdown(kv_pairs):
+    comment = "|"
+    for key, value in kv_pairs.items():
+        comment += f" {key} |"
+    comment += "\n|"
+    for key, value in kv_pairs.items():
+        comment += " --- |"
+    comment += "\n|"
+    for key, value in kv_pairs.items():
+        comment += f" {value} |"
+    comment += "\n"
+    return comment
+        
+    
 
 if __name__ == "__main__":
     branch_name = os.environ["BRANCH_NAME"]
@@ -22,8 +38,9 @@ if __name__ == "__main__":
     short_sha = git_sha[:7]
 
     experiment_name = f"{branch_name}-{short_sha}-{time.strftime('%y%m%d-%H%M%S', time.gmtime())}"
-    # limit length of experiment name to 63 characters
-    experiment_name = experiment_name[:63]
+    # limit length of experiment name to 63 characters by truncating the branch name
+    if len(experiment_name) > 63:
+        experiment_name = experiment_name[63 - len(experiment_name):]
     s3_output_dir = "s3://taichi-3d-gaussian-splatting-log"
 
 
@@ -61,6 +78,8 @@ if __name__ == "__main__":
         )
 
         train_job_name = f"{experiment_name}-{dataset}"
+        if len(train_job_name) > 63:
+            train_job_name = train_job_name[63 - len(train_job_name):]
         train_job_names.append(train_job_name)
         full_s3_output_path = os.path.join(s3_output_dir, dataset)
         train_job_name_to_output_path[train_job_name] = full_s3_output_path
@@ -82,6 +101,27 @@ if __name__ == "__main__":
 
     # wait for training jobs to finish
     finished_jobs = set()
+    last_comment_metric_time = time.time()
+    concern_latest_metric_names = set(
+        "train:iteration", 
+        "train:loss", 
+        "train:l1loss", 
+        "train:ssimloss",
+        "train:psnr",
+        "train:ssim",
+        "val:loss",
+        "val:psnr",
+        "val:ssim",
+        "train:num_valid_points"
+    )
+    concern_max_metric_names = set(
+        "train:psnr",
+        "train:ssim",
+        "val:psnr",
+        "val:ssim",
+    )
+    # each train job has a dict of metrics, each metric has a dict of (timestamp, value) pair
+    train_job_metrics = {train_job_name: defaultdict(defaultdict(dict)) for train_job_name in train_job_names}
     while True:
         all_jobs_completed = True
         for train_job_name in train_job_names:
@@ -98,6 +138,35 @@ if __name__ == "__main__":
                     finished_jobs.add(train_job_name)
             else:
                 all_jobs_completed = False
+            # get metrics
+            for metric in train_job_description["FinalMetricDataList"]:
+                metric_name = metric["MetricName"]
+                metric_timestamp = metric["Timestamp"]
+                metric_value = metric["Value"]
+                train_job_metrics[train_job_name][metric_name][metric_timestamp] = metric_value
+            # try comment on metrics every 10 minutes
+            if time.time() - last_comment_metric_time > 600:
+                comment = f"Training job {train_job_name} metrics: \n"
+
+                kv_pairs = {}
+                for concern_latest_metric_name in concern_latest_metric_names:
+                    if concern_latest_metric_name not in train_job_metrics[train_job_name] \
+                        or len(train_job_metrics[train_job_name][concern_latest_metric_name]) == 0:
+                        continue
+                    latest_ts = max(train_job_metrics[train_job_name][concern_latest_metric_name].keys())
+                    kv_pairs[concern_latest_metric_name] = train_job_metrics[train_job_name][concern_latest_metric_name][latest_ts]
+                # comment is markdown table
+                if len(kv_pairs) > 0:
+                    comment += kv_pairs_to_markdown(kv_pairs)
+                kv_pairs = {}
+                for concern_max_metric_name in concern_max_metric_names:
+                    if concern_max_metric_name not in train_job_metrics[train_job_name] \
+                        or len(train_job_metrics[train_job_name][concern_max_metric_name]) == 0:
+                        continue
+                    max_value = max(train_job_metrics[train_job_name][concern_max_metric_name].values())
+                if len(kv_pairs) > 0:
+                    comment += kv_pairs_to_markdown(kv_pairs) 
+                
         if all_jobs_completed:
             break
         print("Waiting for training jobs to finish")
