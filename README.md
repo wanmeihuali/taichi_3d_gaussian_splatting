@@ -9,7 +9,7 @@ Working but not reaching the metric from paper. Now the repo can generate result
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Truck(7k) | 23.51 | 22.84 | 0.840 | 0.798 | 10min50s | - | 350k |
 | Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 | 1h14min | - |682k |
-| Truck(30k) less point | 25.187 | 24.15 | 0.879 | 0.824 | - | 1h40min |313k |
+| [Truck(30k) less point](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/36#issuecomment-1603107339) | 25.187 | 24.15 | 0.879 | 0.824 | - | 1h40min |313k |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Train(30k) less point | 21.8 | 20.097 | 0.802 | 0.758 | - | 1h55min | 445k |
 
