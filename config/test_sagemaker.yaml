@@ -7,8 +7,8 @@ adaptive-controller-config:
   num-iterations-warm-up: 500
   reset-alpha-value: -1.9
   transparent-alpha-threshold: -2.0
-  floater_num_pixels_threshold: 40000
-  floater_near_camrea_num_pixels_threshold: 30000
+  floater_num_pixels_threshold: 400000
+  floater_near_camrea_num_pixels_threshold: 300000
   iteration_start_remove_floater: 2000
   under_reconstructed_num_pixels_threshold: 32
   enable_sample_from_point: True
