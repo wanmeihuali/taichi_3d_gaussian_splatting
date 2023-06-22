@@ -192,6 +192,7 @@ if __name__ == "__main__":
     # wait for training jobs to finish
     finished_jobs = set()
     last_comment_metric_time = time.time()
+    any_job_failed = False
     
     # each train job has a dict of metrics, each metric has a dict of (timestamp, value) pair
     train_job_metrics = {train_job_name: defaultdict(lambda:defaultdict(dict)) for train_job_name in train_job_names}
@@ -203,6 +204,7 @@ if __name__ == "__main__":
             train_job_status = train_job_description["TrainingJobStatus"]
             if train_job_status in ["Failed", "Stopped"]:
                 pull_request.create_issue_comment(f"Training job {train_job_name} failed")
+                any_job_failed = True
             elif train_job_status == "Completed":
                 if train_job_name not in finished_jobs:
                     model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
@@ -251,5 +253,7 @@ if __name__ == "__main__":
             train_job_name=train_job_name,
         )
         pull_request.create_issue_comment(comment)
+    if any_job_failed:
+        exit(1)
 
         
