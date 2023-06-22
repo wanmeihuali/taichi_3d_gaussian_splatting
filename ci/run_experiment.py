@@ -194,7 +194,7 @@ if __name__ == "__main__":
             else:
                 all_jobs_completed = False
             # get metrics
-            for metric in train_job_description["FinalMetricDataList"]:
+            for metric in train_job_description.get("FinalMetricDataList", []):
                 metric_name = metric["MetricName"]
                 metric_timestamp = metric["Timestamp"]
                 metric_value = metric["Value"]
