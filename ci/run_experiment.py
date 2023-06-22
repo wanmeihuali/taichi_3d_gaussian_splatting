@@ -104,7 +104,6 @@ def comment_all_metrics(train_job_name, train_job_metrics):
             comment += kv_pairs_to_markdown(kv_pairs)
             comment += "\n"
     return comment
-        
     
 
 if __name__ == "__main__":
@@ -136,9 +135,9 @@ if __name__ == "__main__":
     pull_request.create_issue_comment(f"Running experiment on sagemaker with git sha {git_sha}")
     
     datasets = {
-        "tat-truck": "config/ci_sagemaker_tat_truck.json",
-        "tat-train": "config/ci_sagemaker_tat_train.json",
-        "garden": "config/ci_sagemaker_garden.json",
+        "tat-truck": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/truck/", "MaxRuntimeInSeconds": 4*3600},
+        "tat-train": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/train/", "MaxRuntimeInSeconds": 4*3600},
+        "garden": {"S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/garden/", "MaxRuntimeInSeconds": 30*3600},
     }
     if "need-experiment" not in labels:
         # if the pull request does not have "need-experiment" label, it must have "need-experiment-<dataset>" label
@@ -160,7 +159,7 @@ if __name__ == "__main__":
     
     train_job_names = []
     train_job_name_to_output_path = {}
-    for dataset, config_path in datasets.items():
+    for dataset, config_to_fill in datasets.items():
         trial = Trial.create(
             trial_name=f"{experiment_name}-{dataset}",
             experiment_name=experiment_name,
@@ -173,11 +172,15 @@ if __name__ == "__main__":
         train_job_names.append(train_job_name)
         full_s3_output_path = os.path.join(s3_output_dir, dataset)
         train_job_name_to_output_path[train_job_name] = full_s3_output_path
-        with open(config_path) as f:
+        with open("config/ci_sagemaker_template.json") as f:
             train_job_config = json.load(f)
         train_job_config["TrainingJobName"] = train_job_name
         train_job_config["AlgorithmSpecification"]["TrainingImage"] = image_uri
         train_job_config["AlgorithmSpecification"]["ContainerEntrypoint"] = entrypoint
+        train_job_config["InputDataConfig"]["DataSource"]["S3DataSource"]["S3Uri"] = config_to_fill.get("S3Uri", "")
+        train_job_config["StoppingCondition"]["MaxRuntimeInSeconds"] = config_to_fill.get("MaxRuntimeInSeconds", 4*3600)
+        train_job_config["StoppingCondition"]["MaxWaitTimeInSeconds"] = config_to_fill.get("MaxRuntimeInSeconds", 4*3600) * 2
+        
         train_job_config["Environment"] = {
             "TRAIN_CONFIG": train_job_config["HyperParameters"]["train_config"],
         }
@@ -191,6 +194,7 @@ if __name__ == "__main__":
 
     # wait for training jobs to finish
     finished_jobs = set()
+    final_metrics_commented_jobs = set()
     last_comment_metric_time = time.time()
     any_job_failed = False
     
@@ -210,12 +214,18 @@ if __name__ == "__main__":
                     model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
                     tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "output.tar.gz")
                     comment = f"# Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) completed. \n## Model url: {model_url}, \n## tensorboard output path: {tensorboard_output_path}\n"
-                    comment += comment_all_metrics(
+                    pull_request.create_issue_comment(comment)
+                    finished_jobs.add(train_job_name)
+                if train_job_name not in final_metrics_commented_jobs:
+                    comment = comment_all_metrics(
                         train_job_metrics=train_job_metrics,
                         train_job_name=train_job_name,
                     )
-                    pull_request.create_issue_comment(comment)
-                    finished_jobs.add(train_job_name)
+                    if comment != "":
+                        final_metrics_commented_jobs.add(train_job_name)
+                        comment = f"Training job [{train_job_name}]({JOB_URL_FORMAT.format(train_job_name)}) final metrics: \n" + comment
+                        pull_request.create_issue_comment(comment)
+                
             else:
                 all_jobs_completed = False
             # get metrics
