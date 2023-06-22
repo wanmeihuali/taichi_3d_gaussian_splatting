@@ -130,12 +130,20 @@ if __name__ == "__main__":
     print(f"Getting pull request {pull_request_number} from {git_repo}")
     github_repo = github_client.get_repo(f"{git_repo}")
     pull_request = github_repo.get_pull(int(pull_request_number))
+    labels = [label.name for label in pull_request.labels]
+    # replace "_" with "-" in labels
+    labels = [label.replace("_", "-") for label in labels]
     pull_request.create_issue_comment(f"Running experiment on sagemaker with git sha {git_sha}")
     
     datasets = {
         "tat-truck": "config/ci_sagemaker_tat_truck.json",
         "tat-train": "config/ci_sagemaker_tat_train.json",
+        "garden": "config/ci_sagemaker_garden.json",
     }
+    if "need-experiment" not in labels:
+        # if the pull request does not have "need-experiment" label, it must have "need-experiment-<dataset>" label
+        selected_datasets = [label[len("need-experiment-"):] for label in labels if label.startswith("need-experiment-")]
+        datasets = {dataset: datasets[dataset] for dataset in selected_datasets}
 
     sagemaker_client = boto3.client("sagemaker", region_name="us-east-2")
     experiment = Experiment.create(

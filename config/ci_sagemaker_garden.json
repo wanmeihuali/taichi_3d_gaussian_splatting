@@ -1,0 +1,124 @@
+{
+    "TrainingJobName": "",
+    "HyperParameters": {
+        "train_config": "config/test_sagemaker.yaml"
+    },
+    "AlgorithmSpecification": {
+        "TrainingImage": "763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker",
+        "TrainingInputMode": "File",
+        "ContainerEntrypoint": [
+            "python3",
+            "gaussian_point_train.py"
+        ],
+        "MetricDefinitions": [
+            {
+                "Name": "train:iteration",
+                "Regex": "train_iteration=(.*?);"
+            },
+            {
+                "Name": "train:loss",
+                "Regex": "train_loss=(.*?);"
+            },
+            {
+                "Name": "train:l1loss",
+                "Regex": "train_l1_loss=(.*?);"
+            },
+            {
+                "Name": "train:ssimloss",
+                "Regex": "train_ssim_loss=(.*?);"
+            },
+            {
+                "Name": "train:psnr",
+                "Regex": "train_psnr=(.*?);"
+            },
+            {
+                "Name": "train:ssim",
+                "Regex": "train_ssim=(.*?);"
+            },
+            {
+                "Name": "val:loss",
+                "Regex": "val_loss=(.*?);"
+            },
+            {
+                "Name": "val:psnr",
+                "Regex": "val_psnr=(.*?);"
+            },
+            {
+                "Name": "val:ssim",
+                "Regex": "val_ssim=(.*?);"
+            },
+            {
+                "Name": "train:7kpsnr",
+                "Regex": "train_psnr_7000=(.*?);"
+            },
+            {
+                "Name": "train:7kssim",
+                "Regex": "train_ssim_7000=(.*?);"
+            },
+            {
+                "Name": "val:7kloss",
+                "Regex": "val_loss_7000=(.*?);"
+            },
+            {
+                "Name": "val:7kpsnr",
+                "Regex": "val_psnr_7000=(.*?);"
+            },
+            {
+                "Name": "val:7kssim",
+                "Regex": "val_ssim_7000=(.*?);"
+            },
+            {
+                "Name": "train:5kpsnr",
+                "Regex": "train_psnr_5000=(.*?);"
+            },
+            {
+                "Name": "train:5kssim",
+                "Regex": "train_ssim_5000=(.*?);"
+            },
+            {
+                "Name": "val:5kloss",
+                "Regex": "val_loss_5000=(.*?);"
+            },
+            {
+                "Name": "val:5kpsnr",
+                "Regex": "val_psnr_5000=(.*?);"
+            },
+            {
+                "Name": "val:5kssim",
+                "Regex": "val_ssim_5000=(.*?);"
+            },
+            {
+                "Name": "train:num_valid_points",
+                "Regex": "num_valid_points=(.*?);"
+            }
+        ]
+    },
+    "RoleArn": "arn:aws:iam::018306018935:role/service-role/AmazonSageMaker-ExecutionRole-20221120T152725",
+    "InputDataConfig": [
+        {
+            "ChannelName": "training",
+            "DataSource": {
+                "S3DataSource": {
+                    "S3DataType": "S3Prefix",
+                    "S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/garden/",
+                    "S3DataDistributionType": "FullyReplicated"
+                }
+            },
+            "ContentType": "application/x-recordio",
+            "CompressionType": "None"
+        }
+    ],
+    "OutputDataConfig": {
+        "S3OutputPath": ""
+    },
+    "ResourceConfig": {
+        "InstanceType": "ml.g4dn.xlarge",
+        "InstanceCount": 1,
+        "VolumeSizeInGB": 30
+    },
+    "StoppingCondition": {
+        "MaxRuntimeInSeconds": 18000,
+        "MaxWaitTimeInSeconds": 36000
+    },
+    "EnableManagedSpotTraining": true 
+}
