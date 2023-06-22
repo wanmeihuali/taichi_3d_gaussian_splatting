@@ -5,11 +5,15 @@ for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-ga
 ## Current status
 Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
 
-| Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo |
-| --- | --- | --- | --- | --- |
-| Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 |
+| Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo | training time(RTX 3090) |  training time(T4) | #points |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Truck(7k) | 23.51 | 22.84 | 0.840 | 0.798 | 10min50s | - | 350k |
+| Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 | 1h14min | - |682k |
+| Truck(30k) less point | 25.187 | 24.15 | 0.879 | 0.824 | - | 1h40min |313k |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Train(30k) less point | 21.8 | 20.097 | 0.802 | 0.758 | - | 1h55min | 445k |
 
- The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
+ The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I also notice that the current threshold led to more points than expected(300k to 500k at 30k iteration). So if the controller can densify points more correctly, we shall reach the training speed claimed in the paper. I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
  
  As a personal project, the parameters are not tuned well. And the code is not well organized yet. I will try to improve the code quality and performance in the future. Feel free to open an issue if you have any questions, and PRs are welcome, especially for any performance improvement.
 
@@ -38,9 +42,17 @@ tensorboard
 All dependencies can be installed by pip. pytorch/tochvision can be installed by conda. The code is tested on Ubuntu 20.04.2 LTS with python 3.10.10. The hardware is RTX 3090 and CUDA 12.1. The code is not tested on other platforms, but it should work on other platforms with minor modifications.
 
 ## Prepare dataset
-The algorithm requires point cloud for whole scene, camera parameters, and ground truth image. The point cloud is stored in parquet format. The camera parameters and ground truth image are stored in json format. The running config is stored in yaml format.
+The algorithm requires point cloud for whole scene, camera parameters, and ground truth image. The point cloud is stored in parquet format. The camera parameters and ground truth image are stored in json format. The running config is stored in yaml format. A script to build dataset from colmap output is provided. It is also possible to build dataset from raw data.
 
-### Point cloud
+### Build dataset from colmap
+- Reconstruct using colmap: See https://colmap.github.io/tutorial.html. The image should be undistorted. Sparse reconstruction is usually enough.
+- save as txt: the standard colmap txt output contains three files, cameras.txt, images.txt, points3D.txt
+- transform the txt into json and parquet: see [this file](prepare_colmap.py) about how to prepare it.
+- prepare config yaml: see [this file](config/tat_train.yaml) as an example
+- run with the config.
+
+### Build dataset from raw data
+#### Point cloud
 The input point cloud is stored in parquet format. The parquet file should have the following columns:
 ```
 x: float32
@@ -55,7 +67,7 @@ point_cloud_df.to_parquet(os.path.join(
     output_dir, "point_cloud.parquet"))
 ```
 
-### Camera parameters
+#### Camera parameters
 Two json file(for train and validation) is required.
 ```json
 [
@@ -131,7 +143,7 @@ in which $u$ is the column index, $v$ is the row index, $x, y, z$ is the point d
 
 So the camera system in the json is with x-axis pointing right, y-axis pointing down, z-axis pointing forward. The image coordinate system is the standard pytorch image coordinate system, with origin at top left corner, x-axis pointing right, y-axis pointing down.
 
-### Ground truth image
+#### Ground truth image
 The ground truth image is stored in png format. The image should be in RGB format. The image should be the same size as the camera height and width in the json file.
 
 ### Running config
@@ -143,12 +155,6 @@ python gaussian_point_train.py --train_config {path to config file}
 ```
 The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file.
 
-### From colmap
-- Reconstruct using colmap: See https://colmap.github.io/tutorial.html. The image should be undistorted. Sparse reconstruction is usually enough.
-- save as txt: the standard colmap txt output contains three files, cameras.txt, images.txt, points3D.txt
-- transform the txt into json and parquet: see [this file](prepare_colmap.py) about how to prepare it.
-- prepare config yaml: see [this file](config/tat_train.yaml) as an example
-- run with the config.
 
 ## TODO
 ### Algorithm part

@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from collections import deque
 import numpy as np
+from typing import Optional
+
 
 def cycle(dataloader):
     while True:
@@ -41,12 +43,14 @@ class GaussianPointCloudTrainer:
         increase_color_max_sh_band_interval: int = 1000.
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
+        print_metrics_to_console: bool = False
         log_image_interval: int = 1000
         enable_taichi_kernel_profiler: bool = False
         log_taichi_kernel_profile_interval: int = 1000
         initial_downsample_factor: int = 4
         half_downsample_factor_interval: int = 250
         summary_writer_log_dir: str = "logs"
+        output_model_dir: Optional[str] = None
         rasterisation_config: GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig()
         adaptive_controller_config: GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig()
         gaussian_point_cloud_scene_config: GaussianPointCloudScene.PointCloudSceneConfig = GaussianPointCloudScene.PointCloudSceneConfig()
@@ -54,6 +58,11 @@ class GaussianPointCloudTrainer:
 
     def __init__(self, config: TrainConfig):
         self.config = config
+        # create the log directory if it doesn't exist
+        os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
+        if self.config.output_model_dir is None:
+            self.config.output_model_dir = self.config.summary_writer_log_dir
+            os.makedirs(self.config.output_model_dir, exist_ok=True)
         self.writer = SummaryWriter(
             log_dir=self.config.summary_writer_log_dir)
 
@@ -78,6 +87,8 @@ class GaussianPointCloudTrainer:
         
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
+        
+        self.best_psnr_score = 0.
 
         # move scene to GPU
 
@@ -105,9 +116,9 @@ class GaussianPointCloudTrainer:
     def train(self):
         ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=2)
+            self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=4)
         val_data_loader = torch.utils.data.DataLoader(
-            self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=2)
+            self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
         
         optimizer = torch.optim.AdamW(
@@ -193,6 +204,11 @@ class GaussianPointCloudTrainer:
                     "train/l1 loss", l1_loss.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
+                if self.config.print_metrics_to_console:
+                    print(f"train_iteration={iteration};")
+                    print(f"train_loss={loss.item()};")
+                    print(f"train_l1_loss={l1_loss.item()};")
+                    print(f"train_ssim_loss={ssim_loss.item()};")
             if self.config.enable_taichi_kernel_profiler and iteration % self.config.log_taichi_kernel_profile_interval == 0 and iteration > 0:
                 ti.profiler.print_kernel_profiler_info("count")
                 ti.profiler.clear_kernel_profiler_info()
@@ -203,6 +219,11 @@ class GaussianPointCloudTrainer:
                     "train/psnr", psnr_score.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim", ssim_score.item(), iteration)
+                if self.config.print_metrics_to_console:
+                    print(f"train_psnr={psnr_score.item()};")
+                    print(f"train_psnr_{iteration}={psnr_score.item()};")
+                    print(f"train_ssim={ssim_score.item()};")
+                    print(f"train_ssim_{iteration}={ssim_score.item()};")
 
             is_problematic = False
             if len(recent_losses) == recent_losses.maxlen and iteration - previous_problematic_iteration > recent_losses.maxlen:
@@ -236,7 +257,7 @@ class GaussianPointCloudTrainer:
                         "train/image_problematic", grid, iteration)
                 
             del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
-            if iteration % self.config.val_interval == 0 and iteration != 0:
+            if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000: # they use 7000 in paper, it's hard to set a interval so hard code it here
                 self.validation(val_data_loader, iteration)
     
     @staticmethod
@@ -295,6 +316,7 @@ class GaussianPointCloudTrainer:
             g = valid_point_cloud_features[:, 24:40]
             b = valid_point_cloud_features[:, 40:56]
             writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
+            print(f"num_valid_points={num_valid_points};")
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)
@@ -349,8 +371,18 @@ class GaussianPointCloudTrainer:
                 "val/psnr", mean_psnr_score, iteration)
             self.writer.add_scalar(
                 "val/ssim", mean_ssim_score, iteration)
+            if self.config.print_metrics_to_console:
+                print(f"val_loss={mean_loss};")
+                print(f"val_psnr={mean_psnr_score};")
+                print(f"val_psnr_{iteration}={mean_psnr_score};")
+                print(f"val_ssim={mean_ssim_score};")
+                print(f"val_ssim_{iteration}={mean_ssim_score};")
             self.scene.to_parquet(
-                os.path.join(self.config.summary_writer_log_dir, f"scene_{iteration}.parquet"))
+                os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
+            if mean_psnr_score > self.best_psnr_score:
+                self.best_psnr_score = mean_psnr_score
+                self.scene.to_parquet(
+                    os.path.join(self.config.output_model_dir, f"best_scene.parquet"))
 
 
 # %%
