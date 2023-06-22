@@ -23,6 +23,71 @@ def kv_pairs_to_markdown(kv_pairs):
     comment += "\n"
     return comment
         
+def comment_all_metrics(train_job_name, train_job_metrics):
+    comment = ""
+    concern_latest_metric_names = set(
+        "train:iteration", 
+        "train:loss", 
+        "train:l1loss", 
+        "train:ssimloss",
+        "train:psnr",
+        "train:ssim",
+        "val:loss",
+        "val:psnr",
+        "val:ssim",
+        "train:num_valid_points"
+    )
+    concern_max_metric_names = set(
+        "train:psnr",
+        "train:ssim",
+        "val:psnr",
+        "val:ssim",
+    )
+    concern_iterations = set(5000, 7000, 30000)
+    concern_iteration_metric_names = set(
+        "train:loss"
+        "train:l1loss", 
+        "train:ssimloss",
+        "train:psnr",
+        "train:ssim",
+        "val:psnr",
+        "val:ssim",
+        "train:num_valid_points"
+    )
+    kv_pairs = {}
+    for concern_latest_metric_name in concern_latest_metric_names:
+        if concern_latest_metric_name not in train_job_metrics[train_job_name] \
+            or len(train_job_metrics[train_job_name][concern_latest_metric_name]) == 0:
+            continue
+        latest_ts = max(train_job_metrics[train_job_name][concern_latest_metric_name].keys())
+        kv_pairs[concern_latest_metric_name] = train_job_metrics[train_job_name][concern_latest_metric_name][latest_ts]
+    # comment is markdown table
+    if len(kv_pairs) > 0:
+        comment += kv_pairs_to_markdown(kv_pairs)
+    kv_pairs = {}
+    for concern_max_metric_name in concern_max_metric_names:
+        if concern_max_metric_name not in train_job_metrics[train_job_name] \
+            or len(train_job_metrics[train_job_name][concern_max_metric_name]) == 0:
+            continue
+        max_value = max(train_job_metrics[train_job_name][concern_max_metric_name].values())
+        kv_pairs[concern_max_metric_name] = max_value
+    if len(kv_pairs) > 0:
+        comment += kv_pairs_to_markdown(kv_pairs) 
+
+    for concern_iteration in concern_iterations:
+        if concern_iteration not in train_job_metrics[train_job_name]["train:iteration"]:
+            continue
+        iteration_ts = train_job_metrics[train_job_name]["train:iteration"][concern_iteration]
+        kv_pairs = {}
+        for concern_iteration_metric_name in concern_iteration_metric_names:
+            nearest_ts = min(train_job_metrics[train_job_name][concern_iteration_metric_name].keys(), key=lambda x:abs(x-iteration_ts))
+            if abs(nearest_ts - iteration_ts) > 60:
+                continue
+            kv_pairs[concern_iteration_metric_name] = train_job_metrics[train_job_name][concern_iteration_metric_name][nearest_ts]
+        if len(kv_pairs) > 0:
+            comment += kv_pairs_to_markdown(kv_pairs)
+    return comment
+        
     
 
 if __name__ == "__main__":
@@ -102,24 +167,7 @@ if __name__ == "__main__":
     # wait for training jobs to finish
     finished_jobs = set()
     last_comment_metric_time = time.time()
-    concern_latest_metric_names = set(
-        "train:iteration", 
-        "train:loss", 
-        "train:l1loss", 
-        "train:ssimloss",
-        "train:psnr",
-        "train:ssim",
-        "val:loss",
-        "val:psnr",
-        "val:ssim",
-        "train:num_valid_points"
-    )
-    concern_max_metric_names = set(
-        "train:psnr",
-        "train:ssim",
-        "val:psnr",
-        "val:ssim",
-    )
+    
     # each train job has a dict of metrics, each metric has a dict of (timestamp, value) pair
     train_job_metrics = {train_job_name: defaultdict(defaultdict(dict)) for train_job_name in train_job_names}
     while True:
@@ -133,7 +181,11 @@ if __name__ == "__main__":
                 if train_job_name not in finished_jobs:
                     model_url = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "model.tar.gz")
                     tensorboard_output_path = os.path.join(train_job_name_to_output_path[train_job_name], train_job_name, "output", "output.tar.gz")
-                    comment = f"Training job {train_job_name} completed. \nModel url: {model_url}, \ntensorboard output path: {tensorboard_output_path}"
+                    comment = f"# Training job {train_job_name} completed. \n## Model url: {model_url}, \n## tensorboard output path: {tensorboard_output_path}\n"
+                    comment += comment_all_metrics(
+                        train_job_metrics=train_job_metrics,
+                        train_job_name=train_job_name,
+                    )
                     pull_request.create_issue_comment(comment)
                     finished_jobs.add(train_job_name)
             else:
@@ -146,31 +198,25 @@ if __name__ == "__main__":
                 train_job_metrics[train_job_name][metric_name][metric_timestamp] = metric_value
             # try comment on metrics every 10 minutes
             if time.time() - last_comment_metric_time > 600:
-                comment = f"Training job {train_job_name} metrics: \n"
-
-                kv_pairs = {}
-                for concern_latest_metric_name in concern_latest_metric_names:
-                    if concern_latest_metric_name not in train_job_metrics[train_job_name] \
-                        or len(train_job_metrics[train_job_name][concern_latest_metric_name]) == 0:
-                        continue
-                    latest_ts = max(train_job_metrics[train_job_name][concern_latest_metric_name].keys())
-                    kv_pairs[concern_latest_metric_name] = train_job_metrics[train_job_name][concern_latest_metric_name][latest_ts]
-                # comment is markdown table
-                if len(kv_pairs) > 0:
-                    comment += kv_pairs_to_markdown(kv_pairs)
-                kv_pairs = {}
-                for concern_max_metric_name in concern_max_metric_names:
-                    if concern_max_metric_name not in train_job_metrics[train_job_name] \
-                        or len(train_job_metrics[train_job_name][concern_max_metric_name]) == 0:
-                        continue
-                    max_value = max(train_job_metrics[train_job_name][concern_max_metric_name].values())
-                if len(kv_pairs) > 0:
-                    comment += kv_pairs_to_markdown(kv_pairs) 
+                comment = f"Training job {train_job_name} metrics every 10 minutes: \n"
+                comment += comment_all_metrics(
+                    train_job_metrics=train_job_metrics,
+                    train_job_name=train_job_name,
+                )
+                pull_request.create_issue_comment(comment)
+                last_comment_metric_time = time.time()
                 
         if all_jobs_completed:
             break
         print("Waiting for training jobs to finish")
         time.sleep(60)
 
+    for train_job_name in train_job_names:
+        comment = f"Training job {train_job_name} final metrics: \n"
+        comment += comment_all_metrics(
+            train_job_metrics=train_job_metrics,
+            train_job_name=train_job_name,
+        )
+        pull_request.create_issue_comment(comment)
 
         
