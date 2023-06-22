@@ -13,20 +13,19 @@ from collections import defaultdict
 JOB_URL_FORMAT = "https://us-east-2.console.aws.amazon.com/sagemaker/home?region=us-east-2#/jobs/{}"
 
 
-def kv_pairs_to_markdown(kv_pairs, add_title=True):
+def kv_pairs_to_markdown(kv_pairs):
     comment = "|"
-    if add_title:
-        for key, value in kv_pairs.items():
-            comment += f" {key} |"
-        comment += "\n|"
-        for key, value in kv_pairs.items():
-            comment += " --- |"
-        comment += "\n|"
+    for key, value in kv_pairs.items():
+        comment += f" {key} |"
+    comment += "\n|"
+    for key, value in kv_pairs.items():
+        comment += " --- |"
+    comment += "\n|"
     for key, value in kv_pairs.items():
         comment += f" {value} |"
     comment += "\n"
     return comment
-
+        
 def comment_all_metrics(train_job_name, train_job_metrics):
     comment = ""
     concern_latest_metric_names = {
@@ -67,9 +66,7 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         kv_pairs[concern_latest_metric_name] = train_job_metrics[train_job_name][concern_latest_metric_name][latest_ts]
     # comment is markdown table
     if len(kv_pairs) > 0:
-        comment += "## Latest metrics\n"
         comment += kv_pairs_to_markdown(kv_pairs)
-
     kv_pairs = {}
     for concern_max_metric_name in concern_max_metric_names:
         if concern_max_metric_name not in train_job_metrics[train_job_name] \
@@ -78,25 +75,20 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         max_value = max(train_job_metrics[train_job_name][concern_max_metric_name].values())
         kv_pairs[concern_max_metric_name] = max_value
     if len(kv_pairs) > 0:
-        comment += "## Max metrics\n"
         comment += kv_pairs_to_markdown(kv_pairs) 
 
-    comment += "## Iteration metrics\n"
     for concern_iteration in concern_iterations:
         if concern_iteration not in train_job_metrics[train_job_name]["train:iteration"]:
             continue
         iteration_ts = train_job_metrics[train_job_name]["train:iteration"][concern_iteration]
         kv_pairs = {}
         for concern_iteration_metric_name in concern_iteration_metric_names:
-            if concern_iteration_metric_name not in train_job_metrics[train_job_name]:
-                continue
             nearest_ts = min(train_job_metrics[train_job_name][concern_iteration_metric_name].keys(), key=lambda x:abs(x-iteration_ts))
             if abs(nearest_ts - iteration_ts) > 60:
                 continue
             kv_pairs[concern_iteration_metric_name] = train_job_metrics[train_job_name][concern_iteration_metric_name][nearest_ts]
-            if len(kv_pairs) > 0:
-                comment += f"### Iteration {concern_iteration}\n"
-                comment += kv_pairs_to_markdown(kv_pairs)
+        if len(kv_pairs) > 0:
+            comment += kv_pairs_to_markdown(kv_pairs)
     return comment
         
     
@@ -183,6 +175,7 @@ if __name__ == "__main__":
     train_job_metrics = {train_job_name: defaultdict(lambda:defaultdict(dict)) for train_job_name in train_job_names}
     while True:
         all_jobs_completed = True
+        reset_last_comment_metric_time = False
         for train_job_name in train_job_names:
             train_job_description = sagemaker_client.describe_training_job(TrainingJobName=train_job_name)
             train_job_status = train_job_description["TrainingJobStatus"]
@@ -203,6 +196,7 @@ if __name__ == "__main__":
                 all_jobs_completed = False
             # get metrics
             for metric in train_job_description.get("FinalMetricDataList", []):
+                print(metric)
                 metric_name = metric["MetricName"]
                 metric_timestamp = metric["Timestamp"]
                 metric_value = metric["Value"]
@@ -215,7 +209,9 @@ if __name__ == "__main__":
                     train_job_name=train_job_name,
                 )
                 pull_request.create_issue_comment(comment)
-                last_comment_metric_time = time.time()
+                reset_last_comment_metric_time = True
+        if reset_last_comment_metric_time:
+            last_comment_metric_time = time.time()
                 
         if all_jobs_completed:
             break
