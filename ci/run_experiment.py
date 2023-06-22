@@ -21,7 +21,9 @@ if __name__ == "__main__":
 
     short_sha = git_sha[:7]
 
-    experiment_name = f"{branch_name}-{short_sha}-{time.strftime('%Y-%m-%d-%H-%M-%S', time.gmtime())}"
+    experiment_name = f"{branch_name}-{short_sha}-{time.strftime('%y%m%d-%H%M%S', time.gmtime())}"
+    # limit length of experiment name to 63 characters
+    experiment_name = experiment_name[:63]
     s3_output_dir = "s3://taichi-3d-gaussian-splatting-log"
 
 
