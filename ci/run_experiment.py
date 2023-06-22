@@ -13,22 +13,23 @@ from collections import defaultdict
 JOB_URL_FORMAT = "https://us-east-2.console.aws.amazon.com/sagemaker/home?region=us-east-2#/jobs/{}"
 
 
-def kv_pairs_to_markdown(kv_pairs):
+def kv_pairs_to_markdown(kv_pairs, add_title=True):
     comment = "|"
-    for key, value in kv_pairs.items():
-        comment += f" {key} |"
-    comment += "\n|"
-    for key, value in kv_pairs.items():
-        comment += " --- |"
-    comment += "\n|"
+    if add_title:
+        for key, value in kv_pairs.items():
+            comment += f" {key} |"
+        comment += "\n|"
+        for key, value in kv_pairs.items():
+            comment += " --- |"
+        comment += "\n|"
     for key, value in kv_pairs.items():
         comment += f" {value} |"
     comment += "\n"
     return comment
-        
+
 def comment_all_metrics(train_job_name, train_job_metrics):
     comment = ""
-    concern_latest_metric_names = set(
+    concern_latest_metric_names = {
         "train:iteration", 
         "train:loss", 
         "train:l1loss", 
@@ -39,15 +40,15 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         "val:psnr",
         "val:ssim",
         "train:num_valid_points"
-    )
-    concern_max_metric_names = set(
+    }
+    concern_max_metric_names = {
         "train:psnr",
         "train:ssim",
         "val:psnr",
         "val:ssim",
-    )
-    concern_iterations = set(5000, 7000, 30000)
-    concern_iteration_metric_names = set(
+    }
+    concern_iterations = {5000, 7000, 30000}
+    concern_iteration_metric_names = {
         "train:loss"
         "train:l1loss", 
         "train:ssimloss",
@@ -56,7 +57,7 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         "val:psnr",
         "val:ssim",
         "train:num_valid_points"
-    )
+    }
     kv_pairs = {}
     for concern_latest_metric_name in concern_latest_metric_names:
         if concern_latest_metric_name not in train_job_metrics[train_job_name] \
@@ -66,7 +67,9 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         kv_pairs[concern_latest_metric_name] = train_job_metrics[train_job_name][concern_latest_metric_name][latest_ts]
     # comment is markdown table
     if len(kv_pairs) > 0:
+        comment += "## Latest metrics\n"
         comment += kv_pairs_to_markdown(kv_pairs)
+
     kv_pairs = {}
     for concern_max_metric_name in concern_max_metric_names:
         if concern_max_metric_name not in train_job_metrics[train_job_name] \
@@ -75,20 +78,25 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         max_value = max(train_job_metrics[train_job_name][concern_max_metric_name].values())
         kv_pairs[concern_max_metric_name] = max_value
     if len(kv_pairs) > 0:
+        comment += "## Max metrics\n"
         comment += kv_pairs_to_markdown(kv_pairs) 
 
+    comment += "## Iteration metrics\n"
     for concern_iteration in concern_iterations:
         if concern_iteration not in train_job_metrics[train_job_name]["train:iteration"]:
             continue
         iteration_ts = train_job_metrics[train_job_name]["train:iteration"][concern_iteration]
         kv_pairs = {}
         for concern_iteration_metric_name in concern_iteration_metric_names:
+            if concern_iteration_metric_name not in train_job_metrics[train_job_name]:
+                continue
             nearest_ts = min(train_job_metrics[train_job_name][concern_iteration_metric_name].keys(), key=lambda x:abs(x-iteration_ts))
             if abs(nearest_ts - iteration_ts) > 60:
                 continue
             kv_pairs[concern_iteration_metric_name] = train_job_metrics[train_job_name][concern_iteration_metric_name][nearest_ts]
-        if len(kv_pairs) > 0:
-            comment += kv_pairs_to_markdown(kv_pairs)
+            if len(kv_pairs) > 0:
+                comment += f"### Iteration {concern_iteration}\n"
+                comment += kv_pairs_to_markdown(kv_pairs)
     return comment
         
     
