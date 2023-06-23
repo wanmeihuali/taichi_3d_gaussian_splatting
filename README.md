@@ -32,7 +32,7 @@ Other results:
 
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I also notice that the current threshold led to more points than expected(300k to 500k at 30k iteration). So if the controller can densify points more correctly, we shall reach the training speed claimed in the paper. I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
  
- As a personal project, the parameters are not tuned well. And the code is not well organized yet. I will try to improve the code quality and performance in the future. Feel free to open an issue if you have any questions, and PRs are welcome, especially for any performance improvement.
+ As a personal project, the parameters are not tuned well. I will try to improve performance in the future. Feel free to open an issue if you have any questions, and PRs are welcome, especially for any performance improvement.
 
 ## example result
 top left: [result from this repo(30k iteration)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/blob/cf7c1428e8d26495a236726adf9546e4f2a9adb7/config/tat_truck_every_8_test.yaml), top right: ground truth, bottom left: normalized depth, bottom right: normalized num of points per pixel
@@ -64,7 +64,7 @@ The algorithm requires point cloud for whole scene, camera parameters, and groun
 ### Build dataset from colmap
 - Reconstruct using colmap: See https://colmap.github.io/tutorial.html. The image should be undistorted. Sparse reconstruction is usually enough.
 - save as txt: the standard colmap txt output contains three files, cameras.txt, images.txt, points3D.txt
-- transform the txt into json and parquet: see [this file](prepare_colmap.py) about how to prepare it.
+- transform the txt into json and parquet: see [this file](tools/prepare_colmap.py) about how to prepare it.
 - prepare config yaml: see [this file](config/tat_train.yaml) as an example
 - run with the config.
 
