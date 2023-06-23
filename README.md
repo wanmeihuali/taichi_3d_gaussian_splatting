@@ -3,6 +3,16 @@ An unofficial implementation of paper [3D Gaussian Splatting
 for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/) by taichi lang. 
 
 ## Current status
+### Update 2023-06-22
+
+I've enabled CI and cloud-based training now. The function is not very stable yet. It enables anyone to contribute to this repo even if you don't have a GPU.
+Generally, the workflow is:
+1. For any algorithm improvement, please create a new branch and make a pull request.
+2. Please @wanmeihuali in the pull request, and I will check the code and add a label `need_experiment` or `need_experiment_garden` or `need_experiment_tat_truck` to the pull request.
+3. The CI will automatically build the docker image and upload it to AWS ECR. Then the cloud-based training will be triggered. The training result will be uploaded to the pull request as a comment.
+4. Now the best training result in README.md is manually updated. I will try to automate this process in the future.
+
+------------------------------
 Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
 
 | Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo | training time(RTX 3090) |  training time(T4) | #points |
