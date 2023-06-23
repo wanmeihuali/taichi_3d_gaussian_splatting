@@ -1,17 +1,17 @@
 import torch
 import taichi as ti
 from dataclasses import dataclass
-from Camera import CameraInfo, CameraView
+from .Camera import CameraInfo, CameraView
 from torch.cuda.amp import custom_bwd, custom_fwd
-from utils import (torch_type, data_type, ti2torch, torch2ti,
+from .utils import (torch_type, data_type, ti2torch, torch2ti,
                    ti2torch_grad, torch2ti_grad,
                    get_ray_origin_and_direction_by_uv,
                    get_point_probability_density_from_2d_gaussian_normalized,
                    grad_point_probability_density_2d_normalized,
                    taichi_inverse_se3,
                    inverse_se3)
-from GaussianPoint3D import GaussianPoint3D, project_point_to_camera
-from SphericalHarmonics import SphericalHarmonics, vec16f
+from .GaussianPoint3D import GaussianPoint3D, project_point_to_camera
+from .SphericalHarmonics import SphericalHarmonics, vec16f
 from typing import List, Tuple, Optional, Callable, Union
 from dataclass_wizard import YAMLWizard
 

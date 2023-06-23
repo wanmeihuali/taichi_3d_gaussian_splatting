@@ -2,12 +2,12 @@ import numpy as np
 import unittest
 import taichi as ti
 import torch
-from GaussianPointCloudRasterisation import (
+from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import (
     find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d, GaussianPointCloudRasterisation)
-from GaussianPoint3D import GaussianPoint3D, mat2x3f
-from SphericalHarmonics import SphericalHarmonics
-from utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized
-from Camera import CameraInfo
+from taichi_3d_gaussian_splatting.GaussianPoint3D import GaussianPoint3D, mat2x3f
+from taichi_3d_gaussian_splatting.SphericalHarmonics import SphericalHarmonics
+from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized
+from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from tqdm import tqdm
 
 

@@ -2,7 +2,7 @@ import numpy as np
 import taichi as ti
 import taichi.math as tm
 import torch
-from Camera import CameraInfo
+from .Camera import CameraInfo
 from typing import Tuple
 
 data_type = ti.f32

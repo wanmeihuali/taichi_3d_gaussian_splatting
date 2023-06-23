@@ -118,6 +118,7 @@ if __name__ == "__main__":
 
     short_sha = git_sha[:7]
 
+    branch_name = branch_name.replace("/", "-").replace("_", "-")
     experiment_name = f"{branch_name}-{short_sha}-{time.strftime('%y%m%d-%H%M%S', time.gmtime())}"
     # limit length of experiment name to 63 characters by truncating the branch name
     if len(experiment_name) > 63:

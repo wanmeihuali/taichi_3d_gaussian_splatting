@@ -1,8 +1,8 @@
 # %%
 import taichi as ti
 import taichi.math
-from SphericalHarmonics import SphericalHarmonics, vec16f
-from utils import ti_sigmoid, ti_sigmoid_with_jacobian
+from .SphericalHarmonics import SphericalHarmonics, vec16f
+from .utils import ti_sigmoid, ti_sigmoid_with_jacobian
 
 mat2x3f = ti.types.matrix(n=2, m=3, dtype=ti.f32)
 mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
