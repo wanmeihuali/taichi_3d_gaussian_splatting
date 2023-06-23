@@ -101,7 +101,7 @@ def generate_point_sort_key(
 HALF_NEIGHBOR_TILE_SIZE = 7 # in paper it is 8
 @ti.kernel
 def generate_num_overlap_tiles(
-    num_overlap_tiles: ti.types.ndarray(ti.i64, ndim=1),  # (M)
+    num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
@@ -180,7 +180,7 @@ def generate_point_sort_key_by_num_overlap_tiles(
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
-    accumulated_num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    accumulated_num_overlap_tiles: ti.types.ndarray(ti.i64, ndim=1),  # (M)
     point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),  # (K), K = sum(num_overlap_tiles)
     point_in_camera_sort_key: ti.types.ndarray(ti.i64, ndim=1),  # (K), K = sum(num_overlap_tiles)
     camera_width: ti.i32,  # required to be multiple of 16

@@ -264,11 +264,18 @@ class GaussianPointAdaptiveController:
                 self.maintained_parameters.pointcloud[invalid_point_id_to_fill] += point_offset
                 self.maintained_parameters.pointcloud[densify_point_id] -= point_offset
             if self.config.enable_sample_from_point:
+                over_reconstructed_point_id = densify_point_id[over_reconstructed_mask]
                 over_reconstructed_point_id_to_fill = invalid_point_id_to_fill[over_reconstructed_mask]
+                assert over_reconstructed_point_id.shape[0] == over_reconstructed_point_id_to_fill.shape[0]
                 point_position = self._sample_from_point(
-                    point_to_split=self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill],
-                    point_feature_to_split=self.maintained_parameters.pointcloud_features[over_reconstructed_point_id_to_fill])
+                    point_to_split=self.maintained_parameters.pointcloud[over_reconstructed_point_id],
+                    point_feature_to_split=self.maintained_parameters.pointcloud_features[over_reconstructed_point_id])
                 self.maintained_parameters.pointcloud[over_reconstructed_point_id_to_fill] = point_position
+                # rerun same function to also sample position for original points
+                point_position = self._sample_from_point(
+                    point_to_split=self.maintained_parameters.pointcloud[over_reconstructed_point_id],
+                    point_feature_to_split=self.maintained_parameters.pointcloud_features[over_reconstructed_point_id])
+                self.maintained_parameters.pointcloud[over_reconstructed_point_id] = point_position
                 under_reconstructed_point_id_to_fill = invalid_point_id_to_fill[under_reconstructed_mask]
                 under_reconstructed_point_grad_position = self.densify_point_info.densify_point_grad_position[:num_fillable_densify_points][under_reconstructed_mask]
                 self.maintained_parameters.pointcloud[under_reconstructed_point_id_to_fill] += under_reconstructed_point_grad_position * \
