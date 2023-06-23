@@ -13,6 +13,13 @@ Working but not reaching the metric from paper. Now the repo can generate result
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Train(30k) less point | 21.8 | 20.097 | 0.802 | 0.758 | - | 1h55min | 445k |
 
+Other results:
+| Dataset | val:psnr | train:7kpsnr | val:7kpsnr | train:psnr | train:ssim | val:7kssim | val:ssim | train:7kssim |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [garden(1927x840)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/36#issuecomment-1603361144) | 25.48147964477539 | 24.10309600830078 | 24.40102195739746 | 26.464576721191406 | 0.7829338312149048 | 0.6915150880813599 | 0.7492223978042603 | 0.6865361928939819 |
+
+
+
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I also notice that the current threshold led to more points than expected(300k to 500k at 30k iteration). So if the controller can densify points more correctly, we shall reach the training speed claimed in the paper. I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
  
  As a personal project, the parameters are not tuned well. And the code is not well organized yet. I will try to improve the code quality and performance in the future. Feel free to open an issue if you have any questions, and PRs are welcome, especially for any performance improvement.
