@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from dataclasses import dataclass
-from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation, load_point_cloud_row_into_gaussian_point_3d
+from .GaussianPointCloudRasterisation import GaussianPointCloudRasterisation, load_point_cloud_row_into_gaussian_point_3d
 from dataclass_wizard import YAMLWizard
 from typing import Optional
 import taichi as ti

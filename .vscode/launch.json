@@ -15,7 +15,8 @@
                 "--train_config",
                 "config/config_template.yaml",
                 "--gen_template_only",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "kitti train",
@@ -27,7 +28,8 @@
             "args": [
                 "--train_config",
                 "config/kitti_config.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "kitti train super sparse",
@@ -39,7 +41,8 @@
             "args": [
                 "--train_config",
                 "config/kitti_config_super_sparse.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "tat train training",
@@ -51,7 +54,8 @@
             "args": [
                 "--train_config",
                 "config/tat_train.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "tat truck training",
@@ -63,7 +67,8 @@
             "args": [
                 "--train_config",
                 "config/tat_truck.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "tat truck training every 8 test",
@@ -75,7 +80,8 @@
             "args": [
                 "--train_config",
                 "config/tat_truck_every_8_test.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "tat m60 training",
@@ -87,7 +93,8 @@
             "args": [
                 "--train_config",
                 "config/tat_m60.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "tat playground training",
@@ -99,7 +106,8 @@
             "args": [
                 "--train_config",
                 "config/tat_playground.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "boots train",
@@ -111,7 +119,8 @@
             "args": [
                 "--train_config",
                 "config/boots_config.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "boots sparse train",
@@ -123,7 +132,8 @@
             "args": [
                 "--train_config",
                 "config/boots_sparse_config.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         },
         {
             "name": "boots super sparse train",
@@ -135,7 +145,8 @@
             "args": [
                 "--train_config",
                 "config/boots_super_sparse_config.yaml",
-            ]
+            ],
+            "preLaunchTask": "install"
         }
     ]
 }

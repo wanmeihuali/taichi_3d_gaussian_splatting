@@ -5,7 +5,7 @@ import torch
 import torch.utils.data
 import torchvision
 import torchvision.transforms as transforms
-from Camera import CameraInfo
+from .Camera import CameraInfo
 from typing import Any
 
 
