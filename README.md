@@ -41,21 +41,14 @@ top left: [result from this repo(30k iteration)](https://github.com/wanmeihuali/
 ![image](images/tat_truck_image14_val.png)
 
 ## Installation
-Right now a install script/docker image is still not ready. User needs to install dependencies manually. The dependencies are:
+1. Prepare an environment contains pytorch and torchvision
+2. clone the repo and cd into the directory.
+3. run the following command
 ```
-taichi>=1.5.0
-pytorch==2.0.0  # earlier version may also work
-torchvision
-numpy
-pytorch_msssim
-dataclass-wizard
-pillow
-pyyaml
-pandas[parquet]>=2.0.0
-scipy
-argparse
-tensorboard
+pip install -r requirements.txt
+pip install -e .
 ```
+
 All dependencies can be installed by pip. pytorch/tochvision can be installed by conda. The code is tested on Ubuntu 20.04.2 LTS with python 3.10.10. The hardware is RTX 3090 and CUDA 12.1. The code is not tested on other platforms, but it should work on other platforms with minor modifications.
 
 ## Prepare dataset
