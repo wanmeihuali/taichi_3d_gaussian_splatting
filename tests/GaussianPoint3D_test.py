@@ -2,7 +2,7 @@ import unittest
 import taichi as ti
 import numpy as np
 import scipy.spatial.transform as transform
-from GaussianPoint3D import GaussianPoint3D, rotation_matrix_from_quaternion
+from taichi_3d_gaussian_splatting.GaussianPoint3D import GaussianPoint3D, rotation_matrix_from_quaternion
 
 
 class GaussianPoint3d_test(unittest.TestCase):

@@ -1,7 +1,7 @@
 import unittest
-from GaussianPointAdaptiveController import GaussianPointAdaptiveController
-from GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
-from Camera import CameraInfo
+from taichi_3d_gaussian_splatting.GaussianPointAdaptiveController import GaussianPointAdaptiveController
+from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
+from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from tqdm import tqdm
 import torch
 import taichi as ti

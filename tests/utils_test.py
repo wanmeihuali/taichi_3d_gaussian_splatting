@@ -1,10 +1,10 @@
 import taichi as ti
 import taichi.math as tm
 import unittest
-from utils import (intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera,
+from taichi_3d_gaussian_splatting.utils import (intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera,
                    get_point_probability_density_from_2d_gaussian, grad_point_probability_density_2d,
                    get_ray_origin_and_direction_by_uv)
-from Camera import CameraInfo
+from taichi_3d_gaussian_splatting.Camera import CameraInfo
 import torch
 import numpy as np
 from scipy.stats import multivariate_normal
