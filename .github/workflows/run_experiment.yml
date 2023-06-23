@@ -8,7 +8,7 @@ on:
 jobs:
   
   build:
-    if: contains(github.event.pull_request.labels.*.name, 'need_experiment') || github.ref == 'refs/heads/main'
+    if: contains(github.event.pull_request.labels.*.name, 'need_experiment') || contains(github.event.pull_request.labels.*.name, 'need_experiment_garden') || contains(github.event.pull_request.labels.*.name, 'need_experiment_tat_truck')
     name: Run experiment
     runs-on: ubuntu-latest
     permissions:
