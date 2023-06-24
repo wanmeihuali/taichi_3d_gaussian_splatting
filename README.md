@@ -28,11 +28,10 @@ Other results:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [garden(1927x840)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/36#issuecomment-1603361144) | 25.48147964477539 | 24.10309600830078 | 24.40102195739746 | 26.464576721191406 | 0.7829338312149048 | 0.6915150880813599 | 0.7492223978042603 | 0.6865361928939819 |
 
-[Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/42#issuecomment-1605292419):
-| val:psnr | val:5kpsnr | val:7kpsnr | train:7kpsnr | train:7kssim | val:5kssim | val:ssim | train:psnr | val:7kssim | train:5kpsnr | train:ssim | train:5kssim |
+[Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/46#issuecomment-1605327586):
+| train:7kssim | train:ssim | train:7kpsnr | train:5kpsnr | val:5kpsnr | val:ssim | val:psnr | train:psnr | train:5kssim | val:7kpsnr | val:7kssim | val:5kssim |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 24.29306411743164 | 22.102846145629883 | 22.841331481933594 | 13.405233383178711 | 0.6843254566192627 | 0.7677777409553528 | 0.8289492726325989 | 26.586523056030273 | 0.7936804890632629 | 20.605876922607422 | 0.8507121801376343 | 0.7067896723747253 |
-
+| 0.7917863726615906 | 0.8485643863677979 | 23.351966857910156 | 23.38703155517578 | 22.038293838500977 | 0.8339448571205139 | 24.35417938232422 | 25.426223754882812 | 0.7877378463745117 | 22.88064193725586 | 0.7960190773010254 | 0.7685391306877136 |
 
 
  The Rasterization part working well. For the Adaptive controller part, I'm pretty sure the implementation has some difference with the paper. The paper does not provide enough details about the Adaptive controller part. e.g. The view-space position gradient threshold is 0.0002 from the paper, but the current implementation only works with a much smaller value(4e-6). I also notice that the current threshold led to more points than expected(300k to 500k at 30k iteration). So if the controller can densify points more correctly, we shall reach the training speed claimed in the paper. I'm still trying to figure out the details. The current implementation is based on my understanding of the paper.
