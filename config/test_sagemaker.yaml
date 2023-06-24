@@ -28,7 +28,7 @@ print-metrics-to-console: True
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 3000
 feature_learning_rate: 0.005
-position_learning_rateo: 0.00005
+position_learning_rate: 0.005
 position_learning_rate_decay_rate: 0.9847
 position_learning_rate_decay_interval: 100
 loss-function-config:
