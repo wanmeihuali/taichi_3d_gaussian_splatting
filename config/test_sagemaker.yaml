@@ -3,7 +3,7 @@ adaptive-controller-config:
   densification_overlap_tiles_threshold: 16
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
-  num-iterations-reset-alpha: 4000
+  num-iterations-reset-alpha: 8000
   num-iterations-warm-up: 500
   reset-alpha-value: -1.9
   transparent-alpha-threshold: -2.0
