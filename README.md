@@ -13,7 +13,7 @@ Generally, the workflow is:
 4. Now the best training result in README.md is manually updated. I will try to automate this process in the future.
 
 ------------------------------
-Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still not a bit worse than the paper.
+Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still a bit worse than the paper.
 
 | Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo | training time(RTX 3090) |  training time(T4) | #points |
 | --- | --- | --- | --- | --- | --- | --- | --- |
