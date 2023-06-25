@@ -115,6 +115,18 @@ class GaussianPoint3D:
         return project_point_to_camera(self.translation, T_camera_world, projective_transform)
 
     @ti.func
+    def project_to_camera_position_with_extra_translation_and_scale(
+        self,
+        T_camera_world: ti.math.mat4,
+        projective_transform: ti.math.mat3,
+        extra_translation: ti.math.vec3,
+        extra_scale: ti.math.vec3,
+    ):
+        translation = self.translation * extra_scale + extra_translation
+        return project_point_to_camera(translation, T_camera_world, projective_transform)
+
+
+    @ti.func
     def project_to_camera_position_jacobian(
         self,
         T_camera_world: ti.math.mat4,
@@ -165,6 +177,50 @@ class GaussianPoint3D:
         ])
         # covariance matrix, 3x3, equation (6) in the paper
         Sigma = R @ S @ S.transpose() @ R.transpose()
+
+        W = ti.math.mat3([
+            [T[0, 0], T[0, 1], T[0, 2]],
+            [T[1, 0], T[1, 1], T[1, 2]],
+            [T[2, 0], T[2, 1], T[2, 2]]
+        ])
+
+        cov_uv = J @ W @ Sigma @ W.transpose() @ J.transpose()  # equation (5) in the paper
+        return cov_uv
+
+    @ti.func
+    def project_to_camera_covariance_with_extra_rotation_and_scale(
+        self,
+        T_camera_world: ti.math.mat4,
+        projective_transform: ti.math.mat3,
+        translation_camera: ti.math.vec3,
+        extra_rotation_quaternion: ti.math.vec4, 
+        extra_scale: ti.math.vec3,
+    ):
+        """
+        Project the Gaussian point to camera space, without jacobian.
+        """
+        J = get_projective_transform_jacobian(
+            projective_transform, translation_camera)
+        T = T_camera_world
+        R = rotation_matrix_from_quaternion(self.cov_rotation)
+        exp_cov_scale = ti.math.exp(self.cov_scale)
+        S = ti.math.mat3([
+            [exp_cov_scale.x, 0, 0],
+            [0, exp_cov_scale.y, 0],
+            [0, 0, exp_cov_scale.z]
+        ])
+        # covariance matrix, 3x3, equation (6) in the paper
+        Sigma = R @ S @ S.transpose() @ R.transpose()
+        
+        # for inference, we can add extra rotation and scale to the covariance matrix
+        # e.g. when we want to rotate or resize point cloud for an object in the scene
+        R_extra = rotation_matrix_from_quaternion(extra_rotation_quaternion)
+        S_extra = ti.math.mat3([
+            [extra_scale.x, 0, 0],
+            [0, extra_scale.y, 0],
+            [0, 0, extra_scale.z]
+        ])
+        Sigma = R_extra @ S_extra @ Sigma @ S_extra.transpose() @ R_extra.transpose()
 
         W = ti.math.mat3([
             [T[0, 0], T[0, 1], T[0, 2]],

@@ -339,6 +339,10 @@ def generate_point_attributes_in_camera_plane(
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
+    has_extra_rotation_and_scale: ti.template(), # only true for inference only
+    point_extra_translation: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3) or (empty)
+    point_extra_rotation: ti.types.ndarray(ti.f32, ndim=2),  # (N, 4) or (empty)
+    point_extra_scale: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3) or (empty)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
@@ -362,6 +366,27 @@ def generate_point_attributes_in_camera_plane(
             projective_transform=camera_intrinsics_mat,
             translation_camera=xyz_in_camera,
         )
+        if has_extra_rotation_and_scale:
+            extra_translation = ti.math.vec3(
+                point_extra_translation[point_id, 0], point_extra_translation[point_id, 1], point_extra_translation[point_id, 2])
+            extra_rotation = ti.math.vec4(
+                point_extra_rotation[point_id, 0], point_extra_rotation[point_id, 1], point_extra_rotation[point_id, 2], point_extra_rotation[point_id, 3])
+            extra_scale = ti.math.vec3(
+                point_extra_scale[point_id, 0], point_extra_scale[point_id, 1], point_extra_scale[point_id, 2])
+            uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position_with_extra_translation_and_scale(
+                T_camera_world=T_camera_pointcloud_mat,
+                projective_transform=camera_intrinsics_mat,
+                extra_translation=extra_translation,
+                extra_scale=extra_scale,
+            )
+            uv_cov = gaussian_point_3d.project_to_camera_covariance_with_extra_rotation_and_scale(
+                T_camera_world=T_camera_pointcloud_mat,
+                projective_transform=camera_intrinsics_mat,
+                translation_camera=xyz_in_camera,
+                extra_rotation_quaternion=extra_rotation,
+                extra_scale=extra_scale,
+            )
+                
         point_uv[idx, 0], point_uv[idx, 1] = uv[0], uv[1]
         point_in_camera[idx, 0], point_in_camera[idx, 1], point_in_camera[idx,
                                                                           2] = xyz_in_camera[0], xyz_in_camera[1], xyz_in_camera[2]
@@ -947,6 +972,13 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_in_camera=point_in_camera,
                     point_uv_covariance=point_uv_covariance,
                     point_alpha_after_activation=point_alpha_after_activation,
+                    has_extra_rotation_and_scale=False,
+                    point_extra_translation=torch.empty(
+                        size=(0, 3), dtype=torch.float32, device=pointcloud.device),
+                    point_extra_rotation=torch.empty(
+                        size=(0, 4), dtype=torch.float32, device=pointcloud.device),
+                    point_extra_scale=torch.empty(
+                        size=(0, 3), dtype=torch.float32, device=pointcloud.device),
                 )
 
                 num_overlap_tiles = torch.zeros_like(point_id_in_camera_list)
