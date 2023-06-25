@@ -47,6 +47,7 @@ class GaussianPointCloudTrainer:
         log_image_interval: int = 1000
         enable_taichi_kernel_profiler: bool = False
         log_taichi_kernel_profile_interval: int = 1000
+        log_validation_image: bool = True
         initial_downsample_factor: int = 4
         half_downsample_factor_interval: int = 250
         summary_writer_log_dir: str = "logs"
@@ -329,7 +330,12 @@ class GaussianPointCloudTrainer:
             total_loss = 0.0
             total_psnr_score = 0.0
             total_ssim_score = 0.0
+            if self.config.enable_taichi_kernel_profiler:
+                ti.profiler.print_kernel_profiler_info("count")
+                ti.profiler.clear_kernel_profiler_info()
+            total_inference_time = 0.0
             for idx, val_data in enumerate(tqdm(val_data_loader)):
+                start_event = torch.cuda.Event(enable_timing=True)
                 image_gt, T_pointcloud_camera, camera_info = val_data
                 image_gt = image_gt.cuda()
                 T_pointcloud_camera = T_pointcloud_camera.cuda()
@@ -347,6 +353,10 @@ class GaussianPointCloudTrainer:
                 )
                 image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
+                end_event = torch.cuda.Event(enable_timing=True)
+                torch.cuda.synchronize()
+                time_taken = start_event.elapsed_time(end_event)
+                total_inference_time += time_taken
                 image_pred = torch.clamp(image_pred, 0, 1)
                 image_pred = image_pred.permute(2, 0, 1)
                 image_depth = self._easy_cmap(image_depth)
@@ -359,8 +369,14 @@ class GaussianPointCloudTrainer:
                 total_psnr_score += psnr_score.item()
                 total_ssim_score += ssim_score.item()
                 grid = make_grid([image_pred, image_gt, image_depth, pixel_valid_point_count, image_diff], nrow=2)
-                self.writer.add_image(
-                    f"val/image {idx}", grid, iteration)
+                if self.config.log_validation_image:
+                    self.writer.add_image(
+                        f"val/image {idx}", grid, iteration)
+
+            if self.config.enable_taichi_kernel_profiler:
+                ti.profiler.print_kernel_profiler_info("count")
+                ti.profiler.clear_kernel_profiler_info()
+            average_inference_time = total_inference_time / len(val_data_loader)
 
             mean_loss = total_loss / len(val_data_loader)
             mean_psnr_score = total_psnr_score / len(val_data_loader)
@@ -371,12 +387,15 @@ class GaussianPointCloudTrainer:
                 "val/psnr", mean_psnr_score, iteration)
             self.writer.add_scalar(
                 "val/ssim", mean_ssim_score, iteration)
+            self.writer.add_scalar(
+                "val/inference_time", average_inference_time, iteration)
             if self.config.print_metrics_to_console:
                 print(f"val_loss={mean_loss};")
                 print(f"val_psnr={mean_psnr_score};")
                 print(f"val_psnr_{iteration}={mean_psnr_score};")
                 print(f"val_ssim={mean_ssim_score};")
                 print(f"val_ssim_{iteration}={mean_ssim_score};")
+                print(f"val_inference_time={average_inference_time};")
             self.scene.to_parquet(
                 os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
             if mean_psnr_score > self.best_psnr_score:
