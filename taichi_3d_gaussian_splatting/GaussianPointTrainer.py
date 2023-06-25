@@ -336,6 +336,7 @@ class GaussianPointCloudTrainer:
             total_inference_time = 0.0
             for idx, val_data in enumerate(tqdm(val_data_loader)):
                 start_event = torch.cuda.Event(enable_timing=True)
+                end_event = torch.cuda.Event(enable_timing=True)
                 image_gt, T_pointcloud_camera, camera_info = val_data
                 image_gt = image_gt.cuda()
                 T_pointcloud_camera = T_pointcloud_camera.cuda()
@@ -351,9 +352,10 @@ class GaussianPointCloudTrainer:
                     T_pointcloud_camera=T_pointcloud_camera,
                     color_max_sh_band=3
                 )
+                start_event.record()
                 image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
-                end_event = torch.cuda.Event(enable_timing=True)
+                end_event.record()
                 torch.cuda.synchronize()
                 time_taken = start_event.elapsed_time(end_event)
                 total_inference_time += time_taken
