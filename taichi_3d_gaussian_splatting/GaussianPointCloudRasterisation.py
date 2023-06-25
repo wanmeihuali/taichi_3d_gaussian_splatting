@@ -904,7 +904,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             @staticmethod
             @custom_fwd(cast_inputs=torch_type)
             def forward(ctx, pointcloud, pointcloud_features, point_invalid_mask, T_pointcloud_camera, camera_info, color_max_sh_band):
-                point_in_camera_mask = torch.zeros(
+                point_in_camera_mask = torch.empty(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
                     pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
@@ -928,13 +928,13 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
                 num_points_in_camera = point_id_in_camera_list.shape[0]
 
-                point_uv = torch.zeros(
+                point_uv = torch.empty(
                     size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
-                point_alpha_after_activation = torch.zeros(
+                point_alpha_after_activation = torch.empty(
                     size=(num_points_in_camera,), dtype=torch.float32, device=pointcloud.device)
-                point_in_camera = torch.zeros(
+                point_in_camera = torch.empty(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
-                point_uv_covariance = torch.zeros(
+                point_uv_covariance = torch.empty(
                     size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
 
                 generate_point_attributes_in_camera_plane(
@@ -949,7 +949,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_alpha_after_activation=point_alpha_after_activation,
                 )
 
-                num_overlap_tiles = torch.zeros_like(point_id_in_camera_list)
+                num_overlap_tiles = torch.empty_like(point_id_in_camera_list)
                 generate_num_overlap_tiles(
                     num_overlap_tiles=num_overlap_tiles,
                     point_uv=point_uv,
@@ -965,9 +965,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     (torch.zeros(size=(1,), dtype=torch.int32, device=pointcloud.device), 
                      accumulated_num_overlap_tiles[:-1]))
                 # del num_overlap_tiles
-                point_in_camera_sort_key = torch.zeros(
+                point_in_camera_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
-                point_offset_with_sort_key = torch.zeros(
+                point_offset_with_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int32, device=pointcloud.device)
                 generate_point_sort_key_by_num_overlap_tiles(
                     point_uv=point_uv,
@@ -1000,15 +1000,15 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
                 
 
-                rasterized_image = torch.zeros(
+                rasterized_image = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
-                rasterized_depth = torch.zeros(
+                rasterized_depth = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
-                pixel_accumulated_alpha = torch.zeros(
+                pixel_accumulated_alpha = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
-                pixel_offset_of_last_effective_point = torch.zeros(
+                pixel_offset_of_last_effective_point = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.int32, device=pointcloud.device)
-                pixel_valid_point_count = torch.zeros(
+                pixel_valid_point_count = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.int32, device=pointcloud.device)
                 
 
@@ -1066,16 +1066,16 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     magnitude_grad_viewspace = torch.zeros(
                         size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
-                    magnitude_grad_viewspace_on_image = torch.zeros_like(
+                    magnitude_grad_viewspace_on_image = torch.empty_like(
                         grad_rasterized_image[:, :, :2])
                     
                     in_camera_grad_uv_cov_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 2, 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_grad_color_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_depth = torch.zeros(
+                    in_camera_depth = torch.empty(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_uv = torch.zeros(
+                    in_camera_uv = torch.empty(
                         size=(point_id_in_camera_list.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_num_affected_pixels = torch.zeros(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.int32, device=pointcloud.device)
