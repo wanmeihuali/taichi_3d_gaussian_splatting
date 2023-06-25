@@ -904,7 +904,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             @staticmethod
             @custom_fwd(cast_inputs=torch_type)
             def forward(ctx, pointcloud, pointcloud_features, point_invalid_mask, T_pointcloud_camera, camera_info, color_max_sh_band):
-                point_in_camera_mask = torch.empty(
+                point_in_camera_mask = torch.zeros(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
                     pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
