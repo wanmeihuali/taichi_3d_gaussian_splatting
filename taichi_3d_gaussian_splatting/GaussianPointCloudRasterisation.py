@@ -327,32 +327,40 @@ def load_point_cloud_row_into_gaussian_point_3d(
     )
     return gaussian_point_3d
 
-
 @ti.kernel
-def generate_point_attributes_in_camera_plane(
-    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
-    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
-    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4)
+def normalize_cov_rotation(
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, 56)
     point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
-    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
-    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
-    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
-    point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
 ):
-    T_camera_pointcloud_mat = ti.Matrix(
-        [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
-    camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-    T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud_mat)
-    ray_origin = ti.math.vec3(
-        [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
     for idx in range(point_id_list.shape[0]):
         point_id = point_id_list[idx]
         normalize_cov_rotation_in_pointcloud_features(
             pointcloud_features=pointcloud_features,
             point_id=point_id)
+
+@ti.kernel
+def generate_point_attributes_in_camera_plane(
+    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3), input
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, 56), input
+    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3), input
+    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (4, 4), input
+    point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M), input
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2), output
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3), output
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2), output
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M), output
+    point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3), output
+):
+    
+    for idx in range(point_id_list.shape[0]):
+        T_camera_pointcloud_mat = ti.Matrix(
+            [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
+        camera_intrinsics_mat = ti.Matrix(
+            [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
+        T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud_mat)
+        ray_origin = ti.math.vec3(
+            [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
+        point_id = point_id_list[idx]
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
             pointcloud=pointcloud,
             pointcloud_features=pointcloud_features,
@@ -579,15 +587,12 @@ def gaussian_point_rasterisation_backward(
     pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     # (H, W)
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
-    grad_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    grad_pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
-    grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
     magnitude_grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
     magnitude_grad_viewspace_on_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 2)
+    in_camera_grad_uv_buffer: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     in_camera_grad_uv_cov_buffer: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     in_camera_grad_color_buffer: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    in_camera_depth: ti.types.ndarray(ti.f32, ndim=1),  # (M)
-    in_camera_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    in_camera_grad_alpha_after_activation_buffer: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     in_camera_num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
@@ -743,9 +748,6 @@ def gaussian_point_rasterisation_backward(
                     alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
                         alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
-                    gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
-                        (1. - point_alpha_after_activation) * \
-                        point_alpha_after_activation
                     gaussian_alpha_grad = alpha_grad * point_alpha_after_activation
                     # gaussian_alpha_grad is dp
                     point_viewspace_grad = gaussian_alpha_grad * \
@@ -762,7 +764,7 @@ def gaussian_point_rasterisation_backward(
                             ti.atomic_add(tile_point_grad_uv_cov[idx_point_offset_with_sort_key_in_block, i, j], point_uv_cov_grad[i, j])
                     for i in ti.static(range(3)):
                         ti.atomic_add(tile_point_grad_color[idx_point_offset_with_sort_key_in_block, i], point_grad_color[i])
-                    ti.atomic_add(tile_point_grad_alpha[idx_point_offset_with_sort_key_in_block], gaussian_point_3d_alpha_grad)
+                    ti.atomic_add(tile_point_grad_alpha[idx_point_offset_with_sort_key_in_block], point_alpha_after_activation_grad)
                     ti.atomic_add(tile_point_num_affected_pixels[idx_point_offset_with_sort_key_in_block], 1)
             # end of the 256 block loop
             ti.simt.block.sync()
@@ -772,15 +774,14 @@ def gaussian_point_rasterisation_backward(
                 to_save_point_id = point_id_in_camera_list[to_save_point_offset]
                 for i in ti.static(range(2)):
                     # no further process needed for abs grad, so directly save to global memory
-                    ti.atomic_add(grad_uv[to_save_point_id, i], tile_point_grad_uv[thread_id, i])
+                    ti.atomic_add(in_camera_grad_uv_buffer[to_save_point_offset, i], tile_point_grad_uv[thread_id, i])
                     ti.atomic_add(magnitude_grad_uv[to_save_point_id, i], tile_point_abs_grad_uv[thread_id, i])
                 for i in ti.static(range(2)):
                     for j in ti.static(range(2)):
                         ti.atomic_add(in_camera_grad_uv_cov_buffer[to_save_point_offset, i, j], tile_point_grad_uv_cov[thread_id, i, j])
                 for i in ti.static(range(3)):
                     ti.atomic_add(in_camera_grad_color_buffer[to_save_point_offset, i], tile_point_grad_color[thread_id, i])
-                # no further process needed for alpha grad, so directly save to global memory
-                ti.atomic_add(grad_pointcloud_features[to_save_point_id, 7], tile_point_grad_alpha[thread_id])
+                ti.atomic_add(in_camera_grad_alpha_after_activation_buffer[to_save_point_offset], tile_point_grad_alpha[thread_id])
                 # no further process needed for num_affected_pixels, so directly save to global memory
                 ti.atomic_add(in_camera_num_affected_pixels[to_save_point_offset], tile_point_num_affected_pixels[thread_id])
             ti.simt.block.sync() # sync the block, so that the next block can read the data into shared memory without issue
@@ -790,6 +791,7 @@ def gaussian_point_rasterisation_backward(
     # end of per pixel loop
 
     # one more loop to compute the gradient from viewspace to 3D point
+    """
     for idx in range(point_id_in_camera_list.shape[0]):
         point_id = point_id_in_camera_list[idx]
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
@@ -853,6 +855,7 @@ def gaussian_point_rasterisation_backward(
             grad_pointcloud_features[point_id, i + 8] = color_r_grad[i]
             grad_pointcloud_features[point_id, i + 24] = color_g_grad[i]
             grad_pointcloud_features[point_id, i + 40] = color_b_grad[i]
+    """
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
@@ -936,6 +939,11 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
                 point_color = torch.zeros(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
+
+                normalize_cov_rotation(
+                    pointcloud_features=pointcloud_features,
+                    point_id_list=point_id_in_camera_list,
+                )
 
                 generate_point_attributes_in_camera_plane(
                     pointcloud=pointcloud,
@@ -1042,7 +1050,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     pixel_offset_of_last_effective_point,
                     T_pointcloud_camera,
                     T_camera_pointcloud,
-                    num_overlap_tiles
+                    num_overlap_tiles,
+                    point_uv,
+                    point_in_camera,
+                    point_uv_covariance,
+                    point_color,
+                    point_alpha_after_activation,
                 )
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
@@ -1054,7 +1067,13 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             def backward(ctx, grad_rasterized_image, grad_rasterized_depth, grad_pixel_valid_point_count):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
-                    pointcloud, pointcloud_features, point_offset_with_sort_key, point_id_in_camera_list, tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point, T_pointcloud_camera, T_camera_pointcloud, num_overlap_tiles = ctx.saved_tensors
+                    pointcloud, pointcloud_features, \
+                        point_offset_with_sort_key, point_id_in_camera_list, \
+                        tile_points_start, tile_points_end, pixel_accumulated_alpha, \
+                        pixel_offset_of_last_effective_point, T_pointcloud_camera, \
+                        T_camera_pointcloud, num_overlap_tiles, \
+                        in_camera_uv, in_camera_xyz, \
+                        in_camera_uv_cov, in_camera_color, in_camera_alpha_after_activation = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     color_max_sh_band = ctx.color_max_sh_band
                     grad_rasterized_image = grad_rasterized_image.contiguous()
@@ -1069,14 +1088,14 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     magnitude_grad_viewspace_on_image = torch.zeros_like(
                         grad_rasterized_image[:, :, :2])
                     
+                    in_camera_grad_uv_buffer = torch.zeros(
+                        size=(point_id_in_camera_list.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_grad_uv_cov_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 2, 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_grad_color_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_depth = torch.zeros(
+                    in_camera_grad_alpha_after_activation_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_uv = torch.zeros(
-                        size=(point_id_in_camera_list.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_num_affected_pixels = torch.zeros(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.int32, device=pointcloud.device)
                     
@@ -1094,17 +1113,42 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         rasterized_image_grad=grad_rasterized_image,
                         pixel_accumulated_alpha=pixel_accumulated_alpha,
                         pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
-                        grad_pointcloud=grad_pointcloud,
-                        grad_pointcloud_features=grad_pointcloud_features,
-                        grad_uv=grad_viewspace,
                         magnitude_grad_uv=magnitude_grad_viewspace,
                         magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
+                        in_camera_grad_uv_buffer=in_camera_grad_uv_buffer,
                         in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer,
                         in_camera_grad_color_buffer=in_camera_grad_color_buffer,
-                        in_camera_depth=in_camera_depth,
-                        in_camera_uv=in_camera_uv,
+                        in_camera_grad_alpha_after_activation_buffer=in_camera_grad_alpha_after_activation_buffer,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
                     )
+
+                    pointcloud.grad = torch.zeros_like(pointcloud)
+                    pointcloud_features.grad = torch.zeros_like(pointcloud_features)
+                    camera_info.camera_intrinsics.grad = torch.zeros_like(camera_info.camera_intrinsics)
+                    T_camera_pointcloud.grad = torch.zeros_like(T_camera_pointcloud)
+                    point_id_in_camera_list.grad = torch.zeros_like(point_id_in_camera_list)
+
+                    in_camera_uv.grad = in_camera_grad_uv_buffer
+                    in_camera_uv_cov.grad = in_camera_grad_uv_cov_buffer
+                    in_camera_color.grad = in_camera_grad_color_buffer
+                    in_camera_alpha_after_activation.grad = in_camera_grad_alpha_after_activation_buffer
+                    in_camera_xyz.grad = torch.zeros_like(in_camera_xyz)
+                    
+                    generate_point_attributes_in_camera_plane.grad(
+                        pointcloud=pointcloud,
+                        pointcloud_features=pointcloud_features,
+                        camera_intrinsics=camera_info.camera_intrinsics,
+                        T_camera_pointcloud=T_camera_pointcloud,
+                        point_id_list=point_id_in_camera_list,
+                        point_uv=in_camera_uv,
+                        point_in_camera=in_camera_xyz,
+                        point_uv_covariance=in_camera_uv_cov,
+                        point_alpha_after_activation=in_camera_alpha_after_activation,
+                        point_color=in_camera_color,
+                    )
+                    grad_pointcloud = pointcloud.grad
+                    grad_pointcloud_features = pointcloud_features.grad
+                    
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
                         grad_pointcloud_features=grad_pointcloud_features,
@@ -1113,24 +1157,30 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_pointcloud_features[:, 4:7] *= self.config.grad_s_factor
                     grad_pointcloud_features[:, 7] *= self.config.grad_alpha_factor
                     grad_pointcloud_features[:, 8:] *= self.config.grad_color_factor
+                    # print(pointcloud.grad.shape, pointcloud_features.grad.shape, camera_info.camera_intrinsics.grad.shape, T_camera_pointcloud.grad.shape)
+                
                     
                     if backward_valid_point_hook is not None:
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
                             point_id_in_camera_list=point_id_in_camera_list,
+                            # grad_point_in_camera=pointcloud.grad[point_id_in_camera_list],
                             grad_point_in_camera=grad_pointcloud[point_id_in_camera_list],
+                            # grad_pointfeatures_in_camera=pointcloud_features.grad[point_id_in_camera_list],
                             grad_pointfeatures_in_camera=grad_pointcloud_features[point_id_in_camera_list],
-                            grad_viewspace=grad_viewspace[point_id_in_camera_list],
+                            # grad_viewspace=in_camera_uv.grad[point_id_in_camera_list],
+                            grad_viewspace=in_camera_grad_uv_buffer,
                             magnitude_grad_viewspace=magnitude_grad_viewspace[point_id_in_camera_list],
                             magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                             num_overlap_tiles=num_overlap_tiles,
                             num_affected_pixels=in_camera_num_affected_pixels,
                             point_uv_in_camera=in_camera_uv,
-                            point_depth=in_camera_depth,
+                            point_depth=in_camera_xyz[:, 2],
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
                     
                     
+                # return pointcloud.grad, pointcloud_features.grad, None, grad_T_pointcloud_camera, None, None
                 return grad_pointcloud, grad_pointcloud_features, None, grad_T_pointcloud_camera, None, None
 
         self._module_function = _module_function
