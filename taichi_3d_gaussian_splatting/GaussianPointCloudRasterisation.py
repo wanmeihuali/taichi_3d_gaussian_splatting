@@ -10,7 +10,7 @@ from .utils import (torch_type, data_type, ti2torch, torch2ti,
                    grad_point_probability_density_2d_normalized,
                    taichi_inverse_se3,
                    inverse_se3)
-from .GaussianPoint3D import GaussianPoint3D, project_point_to_camera
+from .GaussianPoint3D import GaussianPoint3D, project_point_to_camera, rotation_matrix_from_quaternion
 from .SphericalHarmonics import SphericalHarmonics, vec16f
 from typing import List, Tuple, Optional, Callable, Union
 from dataclass_wizard import YAMLWizard
@@ -341,9 +341,9 @@ def generate_point_attributes_in_camera_plane(
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     has_extra_rotation_and_scale: ti.template(), # only true for inference only
-    point_extra_translation: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3) or (empty)
-    point_extra_rotation: ti.types.ndarray(ti.f32, ndim=2),  # (N, 4) or (empty)
-    point_extra_scale: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3) or (empty)
+    point_extra_translation: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3) or (empty) actually translation part of SE3 T_inference_train(from train coord to inference coord)
+    point_extra_rotation: ti.types.ndarray(ti.f32, ndim=2),  # (N, 4) or (empty) actually rotation part of SE3 T_inference_train(from train coord to inference coord)
+    point_extra_scale: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3) or (empty) actually scale matrix S_inference_train(from train coord to inference coord)
 ):
     T_camera_pointcloud_mat = ti.Matrix(
         [[T_camera_pointcloud[row, col] for col in ti.static(range(4))] for row in ti.static(range(4))])
@@ -361,15 +361,12 @@ def generate_point_attributes_in_camera_plane(
             pointcloud=pointcloud,
             pointcloud_features=pointcloud_features,
             point_id=point_id)
-        uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-        )
-        uv_cov = gaussian_point_3d.project_to_camera_covariance(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-            translation_camera=xyz_in_camera,
-        )
+        
+        # taichi has a more strict scope than python, so we need to declare variables here
+        uv = ti.math.vec2([0., 0.])
+        xyz_in_camera = ti.math.vec3([0., 0., 0.])
+        uv_cov = ti.Matrix([[0., 0.], [0., 0.]])
+        
         if has_extra_rotation_and_scale:
             extra_translation = ti.math.vec3(
                 point_extra_translation[point_id, 0], point_extra_translation[point_id, 1], point_extra_translation[point_id, 2])
@@ -390,6 +387,16 @@ def generate_point_attributes_in_camera_plane(
                 extra_rotation_quaternion=extra_rotation,
                 extra_scale=extra_scale,
             )
+        else:
+            uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position(
+                T_camera_world=T_camera_pointcloud_mat,
+                projective_transform=camera_intrinsics_mat,
+            )
+            uv_cov = gaussian_point_3d.project_to_camera_covariance(
+                T_camera_world=T_camera_pointcloud_mat,
+                projective_transform=camera_intrinsics_mat,
+                translation_camera=xyz_in_camera,
+            )   
                 
         point_uv[idx, 0], point_uv[idx, 1] = uv[0], uv[1]
         point_in_camera[idx, 0], point_in_camera[idx, 1], point_in_camera[idx,
@@ -398,7 +405,37 @@ def generate_point_attributes_in_camera_plane(
                                                                                             0], point_uv_covariance[idx, 1, 1] = uv_cov[0, 0], uv_cov[0, 1], uv_cov[1, 0], uv_cov[1, 1]
         point_alpha_after_activation[idx] = 1. / \
                 (1. + ti.math.exp(-gaussian_point_3d.alpha))
-        ray_direction = gaussian_point_3d.translation - ray_origin
+        
+        # declare variables here, decide implementation based on template
+        ray_direction = ti.math.vec3([0., 0., 0.])
+        if has_extra_rotation_and_scale:
+            t_inference_train = ti.math.vec3([
+                point_extra_translation[point_id, 0], point_extra_translation[point_id, 1], point_extra_translation[point_id, 2]])
+            q_inference_train = ti.math.vec4([
+                point_extra_rotation[point_id, 0], point_extra_rotation[point_id, 1], point_extra_rotation[point_id, 2], point_extra_rotation[point_id, 3]])
+            s_inference_train = ti.math.vec3([
+                point_extra_scale[point_id, 0], point_extra_scale[point_id, 1], point_extra_scale[point_id, 2]])
+            R_inference_train = rotation_matrix_from_quaternion(q_inference_train)
+            T_inference_train = ti.math.mat4([
+                [R_inference_train[0, 0], R_inference_train[0, 1], R_inference_train[0, 2], t_inference_train[0]],
+                [R_inference_train[1, 0], R_inference_train[1, 1], R_inference_train[1, 2], t_inference_train[1]],
+                [R_inference_train[2, 0], R_inference_train[2, 1], R_inference_train[2, 2], t_inference_train[2]],
+                [0., 0., 0., 1.]
+            ])
+            T_train_inference = taichi_inverse_se3(T_inference_train)
+            S_train_inference = ti.math.mat3([
+                [1. / s_inference_train[0], 0., 0.],
+                [0., 1. / s_inference_train[1], 0.],
+                [0., 0., 1. / s_inference_train[2]]
+            ])
+            ray_origin_tmp = T_train_inference @ ti.math.vec4([ray_origin[0], ray_origin[1], ray_origin[2], 1.])
+            ray_origin_train = S_train_inference @ ti.math.vec3([ray_origin_tmp[0], ray_origin_tmp[1], ray_origin_tmp[2]])
+            
+            ray_direction = gaussian_point_3d.translation - ray_origin_train
+        else:
+            ray_direction = gaussian_point_3d.translation - ray_origin
+        
+        # get color by ray actually only cares about the direction of the ray, ray origin is not used
         color = gaussian_point_3d.get_color_by_ray(
             ray_origin=ray_origin,
             ray_direction=ray_direction,
@@ -926,7 +963,17 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
 
             @staticmethod
             @custom_fwd(cast_inputs=torch_type)
-            def forward(ctx, pointcloud, pointcloud_features, point_invalid_mask, T_pointcloud_camera, camera_info, color_max_sh_band):
+            def forward(ctx, 
+                        pointcloud, 
+                        pointcloud_features, 
+                        point_invalid_mask, 
+                        T_pointcloud_camera, 
+                        camera_info, 
+                        color_max_sh_band,
+                        point_extra_translation=None,
+                        point_extra_rotation=None,
+                        point_extra_scale=None,
+            ):
                 point_in_camera_mask = torch.zeros(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
@@ -962,6 +1009,13 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_color = torch.zeros(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
 
+                point_extra_rotation = torch.empty(
+                    size=(0, 4), dtype=torch.float32, device=pointcloud.device) if point_extra_rotation is None else point_extra_rotation
+                point_extra_translation = torch.empty(
+                    size=(0, 3), dtype=torch.float32, device=pointcloud.device) if point_extra_translation is None else point_extra_translation
+                point_extra_scale = torch.empty(
+                    size=(0, 3), dtype=torch.float32, device=pointcloud.device) if point_extra_scale is None else point_extra_scale
+
                 generate_point_attributes_in_camera_plane(
                     pointcloud=pointcloud,
                     pointcloud_features=pointcloud_features,
@@ -974,12 +1028,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_alpha_after_activation=point_alpha_after_activation,
                     point_color=point_color,
                     has_extra_rotation_and_scale=False,
-                    point_extra_translation=torch.empty(
-                        size=(0, 3), dtype=torch.float32, device=pointcloud.device),
-                    point_extra_rotation=torch.empty(
-                        size=(0, 4), dtype=torch.float32, device=pointcloud.device),
-                    point_extra_scale=torch.empty(
-                        size=(0, 3), dtype=torch.float32, device=pointcloud.device),
+                    point_extra_translation=point_extra_translation,
+                    point_extra_rotation=point_extra_rotation,
+                    point_extra_scale=point_extra_scale,
                 )
 
                 num_overlap_tiles = torch.empty_like(point_id_in_camera_list)
@@ -1163,7 +1214,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             backward_valid_point_hook_input)
                     
                     
-                return grad_pointcloud, grad_pointcloud_features, None, grad_T_pointcloud_camera, None, None
+                return grad_pointcloud, grad_pointcloud_features, None, grad_T_pointcloud_camera, None, None, None, None, None
 
         self._module_function = _module_function
 

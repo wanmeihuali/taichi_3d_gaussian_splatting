@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "visualize",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/visualizer.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "name": "gen config template",
             "type": "python",
             "request": "launch",
