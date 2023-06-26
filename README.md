@@ -23,10 +23,11 @@ Working but not reaching the metric from paper. Now the repo can generate result
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Train(30k) less point | 21.8 | 20.097 | 0.802 | 0.758 | - | 1h55min | 445k |
 
-Other results:
-| Dataset | val:psnr | train:7kpsnr | val:7kpsnr | train:psnr | train:ssim | val:7kssim | val:ssim | train:7kssim |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [garden(1927x840)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/36#issuecomment-1603361144) | 25.48147964477539 | 24.10309600830078 | 24.40102195739746 | 26.464576721191406 | 0.7829338312149048 | 0.6915150880813599 | 0.7492223978042603 | 0.6865361928939819 |
+garden(1927x840)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/49#issuecomment-1605892361)
+| train:ssim | val:psnr | train:psnr | val:5kpsnr | val:7kssim | val:7kpsnr | train:5kpsnr | val:5kssim | train:5kssim | train:7kssim | val:ssim | train:7kpsnr |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.8359270095825195 | 26.33028221130371 | 26.563976287841797 | 24.334638595581055 | 0.7433000802993774 | 25.014371871948242 | 23.131235122680664 | 0.7052685618400574 | 0.6888041496276855 | 0.7371317744255066 | 0.8041130304336548 | 25.55982208251953 |
+
 
 [Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/49#issuecomment-1605699569):
 | val:5kpsnr | val:7kssim | train:7kpsnr | train:7kssim | val:7kpsnr | val:ssim | train:psnr | val:psnr | train:5kssim | train:ssim | train:5kpsnr | val:5kssim |
