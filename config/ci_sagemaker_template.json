@@ -90,6 +90,10 @@
             {
                 "Name": "train:num_valid_points",
                 "Regex": "num_valid_points=(.*?);"
+            },
+            {
+                "Name": "val_inference_time",
+                "Regex": "val_inference_time=(.*?);"
             }
         ]
     },

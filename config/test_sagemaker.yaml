@@ -27,6 +27,7 @@ log-metrics-interval: 100
 print-metrics-to-console: True
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 3000
+log_validation_image: True
 feature_learning_rate: 0.005
 position_learning_rate: 0.00005
 position_learning_rate_decay_rate: 0.9947
