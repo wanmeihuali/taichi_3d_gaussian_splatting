@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from dataclasses import dataclass
 from scipy.spatial.ckdtree import cKDTree
-from typing import Optional
+from typing import Optional, Union
 from dataclass_wizard import YAMLWizard
 
 
@@ -23,29 +23,37 @@ class GaussianPointCloudScene(torch.nn.Module):
 
     def __init__(
         self,
-        point_cloud: np.ndarray,
+        point_cloud: Union[np.ndarray, torch.Tensor],
         config: PointCloudSceneConfig,
+        point_cloud_features: Optional[torch.Tensor] = None,
     ):
         super().__init__()
         assert len(point_cloud.shape) == 2, "point_cloud must be a 2D array"
         assert point_cloud.shape[1] == 3, "point_cloud must have 3 columns(x,y,z)"
         # convert point_cloud to float32
-        point_cloud = point_cloud.astype(np.float32)
+        if isinstance(point_cloud, np.ndarray):
+            point_cloud = torch.tensor(point_cloud, dtype=torch.float32)
         # remove duplicated points
-        point_cloud = np.unique(point_cloud, axis=0)
+        if point_cloud_features is None:
+            point_cloud = torch.unique(point_cloud, dim=0)
 
         if config.max_num_points_ratio is not None:
             num_points = point_cloud.shape[0]
             max_num_points = int(num_points * config.max_num_points_ratio)
             assert max_num_points > num_points, "max_num_points_ratio should be greater than 1.0"
-            point_cloud = np.concatenate(
-                [point_cloud, np.zeros((max_num_points - num_points, 3))], axis=0)
-        self.point_cloud = nn.Parameter(
-            torch.tensor(point_cloud, dtype=torch.float32))
+            point_cloud = torch.cat(
+                [point_cloud, torch.zeros((max_num_points - num_points, 3))], dim=0)
+            if point_cloud_features is not None:
+                point_cloud_features = torch.cat(
+                    [point_cloud_features, torch.zeros((max_num_points - num_points, config.num_of_features))], dim=0)
+        self.point_cloud = nn.Parameter(point_cloud)
         self.config = config
-        self.point_cloud_features = nn.Parameter(
-            torch.zeros(self.point_cloud.shape[0], self.config.num_of_features)
-        )
+        if point_cloud_features is not None:
+            self.point_cloud_features = nn.Parameter(point_cloud_features)
+        else:
+            self.point_cloud_features = nn.Parameter(
+                torch.zeros(self.point_cloud.shape[0], self.config.num_of_features)
+            )
         self.register_buffer(
             "point_invalid_mask",
             torch.zeros(self.point_cloud.shape[0], dtype=torch.int8)
@@ -127,15 +135,16 @@ class GaussianPointCloudScene(torch.nn.Module):
                 scene_df, config.sphere_radius_factor, config.num_points_sphere)
 
         point_cloud = scene_df[["x", "y", "z"]].to_numpy()
-        scene = GaussianPointCloudScene(
-            point_cloud, config)
+        
         if not set(feature_columns).issubset(set(scene_df.columns)):
+            scene = GaussianPointCloudScene(
+                point_cloud, config)
             scene.initialize()
         else:
             valid_point_cloud_features = torch.from_numpy(
                 scene_df[feature_columns].to_numpy())
-            scene.point_cloud_features[~(
-                scene.point_invalid_mask)] = valid_point_cloud_features
+            scene = GaussianPointCloudScene(
+                point_cloud, config, point_cloud_features=valid_point_cloud_features)
         return scene
     
     @staticmethod

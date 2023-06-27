@@ -4,3 +4,4 @@ data/
 Data/
 *.egg
 *.egg-info
+imgui.ini
