@@ -2,7 +2,6 @@ import torch
 import taichi as ti
 from dataclasses import dataclass
 from .Camera import CameraInfo, CameraView
-from torch.cuda.amp import custom_bwd, custom_fwd
 from .utils import (torch_type, data_type, ti2torch, torch2ti,
                    ti2torch_grad, torch2ti_grad,
                    get_ray_origin_and_direction_by_uv,
@@ -966,7 +965,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         class _module_function(torch.autograd.Function):
 
             @staticmethod
-            @custom_fwd(cast_inputs=torch_type)
             def forward(ctx, 
                         pointcloud, 
                         pointcloud_features, 
@@ -1143,7 +1141,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 return rasterized_image, rasterized_depth, pixel_valid_point_count
 
             @staticmethod
-            @custom_bwd
             def backward(ctx, grad_rasterized_image, grad_rasterized_depth, grad_pixel_valid_point_count):
                 grad_pointcloud = grad_pointcloud_features = grad_T_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:

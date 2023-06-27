@@ -23,11 +23,9 @@ class GaussianPointVisualizer:
         image_height: int = 546
         image_width: int = 980
         camera_intrinsics: torch.Tensor = torch.tensor(
-            [[581.743,0.0,490.0],[0.0,581.743,273.0],[0.0,0.0,1.0]],
-            device="cuda")
+            [[581.743,0.0,490.0],[0.0,581.743,273.0],[0.0,0.0,1.0]])
         initial_T_pointcloud_camera: torch.Tensor = torch.tensor(
-            [[0.9992602094,-0.0041446825,0.0382342376,0.8111615373],[0.0047891027,0.9998477637,-0.0167783848,0.4972433596],[-0.0381588759,0.0169490798,0.999127935,-3.8378280443],[0.0,0.0,0.0,1.0]],
-            device="cuda")
+            [[0.9992602094,-0.0041446825,0.0382342376,0.8111615373],[0.0047891027,0.9998477637,-0.0167783848,0.4972433596],[-0.0381588759,0.0169490798,0.999127935,-3.8378280443],[0.0,0.0,0.0,1.0]]) 
         parquet_path_list: list[str] = None
         step_size: float = 0.1
         mouse_sensitivity: float = 1
@@ -251,7 +249,7 @@ if __name__ == "__main__":
     parser.add_argument("--parquet_path_list", type=str, nargs="+", required=True)
     args = parser.parse_args()
     parquet_path_list = args.parquet_path_list
-    ti.init(arch=ti.cuda, device_memory_GB=4, kernel_profiler=True)
+    ti.init(arch=ti.gpu, device_memory_GB=4, kernel_profiler=True)
     visualizer = GaussianPointVisualizer(config=GaussianPointVisualizer.GaussianPointVisualizerConfig(
         parquet_path_list=parquet_path_list,
     ))
