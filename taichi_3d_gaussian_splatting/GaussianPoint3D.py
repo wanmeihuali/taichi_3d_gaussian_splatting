@@ -2,7 +2,7 @@
 import taichi as ti
 import taichi.math
 from .SphericalHarmonics import SphericalHarmonics, vec16f
-from .utils import ti_sigmoid, ti_sigmoid_with_jacobian
+from .utils import ti_sigmoid, ti_sigmoid_with_jacobian, quaternion_rotate
 
 mat2x3f = ti.types.matrix(n=2, m=3, dtype=ti.f32)
 mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
@@ -115,14 +115,17 @@ class GaussianPoint3D:
         return project_point_to_camera(self.translation, T_camera_world, projective_transform)
 
     @ti.func
-    def project_to_camera_position_with_extra_translation_and_scale(
+    def project_to_camera_position_with_extra_translation_and_rotation_and_scale(
         self,
         T_camera_world: ti.math.mat4,
         projective_transform: ti.math.mat3,
         extra_translation: ti.math.vec3,
+        extra_rotation: ti.math.vec4,
         extra_scale: ti.math.vec3,
     ):
         translation = self.translation * extra_scale + extra_translation
+        # extra_rotation is xyzw quaternion
+        translation = quaternion_rotate(extra_rotation, translation)
         return project_point_to_camera(translation, T_camera_world, projective_transform)
 
 

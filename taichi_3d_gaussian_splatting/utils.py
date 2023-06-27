@@ -196,6 +196,24 @@ def get_ray_origin_and_direction_by_uv(
     ray_direction = ti.math.normalize(ray_direction)
     return ray_origin, ray_direction
 
+@ti.func
+def quaternion_multiply(q1: ti.math.vec4, q2: ti.math.vec4) -> ti.math.vec4:
+    return ti.math.vec4([
+        q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
+        q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x,
+        q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w,
+        q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z,
+    ])
+
+@ti.func
+def quaternion_conjugate(q: ti.math.vec4) -> ti.math.vec4:
+    return ti.math.vec4([-q.x, -q.y, -q.z, q.w])
+
+@ti.func
+def quaternion_rotate(q: ti.math.vec4, v: ti.math.vec3) -> ti.math.vec3:
+    qv = ti.math.vec4([v.x, v.y, v.z, 0.0])
+    ret4 = quaternion_multiply(q, quaternion_multiply(qv, quaternion_conjugate(q)))
+    return ti.math.vec3([ret4.x, ret4.y, ret4.z])
 
 @ti.func
 def get_point_probability_density_from_2d_gaussian(
@@ -480,3 +498,4 @@ def get_spherical_harmonic_from_xyz_torch(
     l3p3 = 0.59004358992664352 * x * (-x * x + 3.0 * y * y)
     return torch.tensor([
         l0m0, l1m1, l1m0, l1p1, l2m2, l2m1, l2m0, l2p1, l2p2, l3m3, l3m2, l3m1, l3m0, l3p1, l3p2, l3p3])
+

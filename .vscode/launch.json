@@ -10,7 +10,12 @@
             "request": "launch",
             "program": "${workspaceFolder}/visualizer.py",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "args": [
+                "--parquet_path_list",
+                "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_experiment/scene_29000.parquet",
+                "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/logs/boots_super_sparse_experiment/scene_19000.parquet"
+            ]
         },
         {
             "name": "gen config template",

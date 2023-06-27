@@ -374,10 +374,11 @@ def generate_point_attributes_in_camera_plane(
                 point_extra_rotation[point_id, 0], point_extra_rotation[point_id, 1], point_extra_rotation[point_id, 2], point_extra_rotation[point_id, 3])
             extra_scale = ti.math.vec3(
                 point_extra_scale[point_id, 0], point_extra_scale[point_id, 1], point_extra_scale[point_id, 2])
-            uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position_with_extra_translation_and_scale(
+            uv, xyz_in_camera = gaussian_point_3d.project_to_camera_position_with_extra_translation_and_rotation_and_scale(
                 T_camera_world=T_camera_pointcloud_mat,
                 projective_transform=camera_intrinsics_mat,
                 extra_translation=extra_translation,
+                extra_rotation=extra_rotation,
                 extra_scale=extra_scale,
             )
             uv_cov = gaussian_point_3d.project_to_camera_covariance_with_extra_rotation_and_scale(
@@ -936,6 +937,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         camera_info: CameraInfo
         T_pointcloud_camera: torch.Tensor  # 4x4 x to the right, y down, z forward
         color_max_sh_band: int = 2
+        point_extra_translation: Optional[torch.Tensor] = None  # Nx3
+        point_extra_rotation: Optional[torch.Tensor] = None  # Nx4
+        point_extra_scale: Optional[torch.Tensor] = None  # Nx3
 
     @dataclass
     class BackwardValidPointHookInput:
@@ -991,8 +995,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_width=camera_info.camera_width,
                 )
                 point_in_camera_mask = point_in_camera_mask.bool()
-                point_id_in_camera_list = point_id[point_in_camera_mask].contiguous(
-                )
+                point_id_in_camera_list = point_id[point_in_camera_mask].contiguous()
                 del point_id
                 del point_in_camera_mask
 
@@ -1009,6 +1012,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_color = torch.zeros(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
 
+                has_extra_rotation_and_scale = (point_extra_rotation is not None) and (
+                    point_extra_scale is not None) and (point_extra_translation is not None)
                 point_extra_rotation = torch.empty(
                     size=(0, 4), dtype=torch.float32, device=pointcloud.device) if point_extra_rotation is None else point_extra_rotation
                 point_extra_translation = torch.empty(
@@ -1027,7 +1032,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_uv_covariance=point_uv_covariance,
                     point_alpha_after_activation=point_alpha_after_activation,
                     point_color=point_color,
-                    has_extra_rotation_and_scale=False,
+                    has_extra_rotation_and_scale=has_extra_rotation_and_scale,
                     point_extra_translation=point_extra_translation,
                     point_extra_rotation=point_extra_rotation,
                     point_extra_scale=point_extra_scale,
@@ -1044,7 +1049,10 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 )
                 accumulated_num_overlap_tiles = torch.cumsum(
                     num_overlap_tiles, dim=0)
-                total_num_overlap_tiles = accumulated_num_overlap_tiles[-1]
+                if len(accumulated_num_overlap_tiles) > 0:
+                    total_num_overlap_tiles = accumulated_num_overlap_tiles[-1]
+                else:
+                    total_num_overlap_tiles = 0
                 accumulated_num_overlap_tiles = torch.cat(
                     (torch.zeros(size=(1,), dtype=torch.int32, device=pointcloud.device), 
                      accumulated_num_overlap_tiles[:-1]))
@@ -1053,18 +1061,19 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
                 point_offset_with_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int32, device=pointcloud.device)
-                generate_point_sort_key_by_num_overlap_tiles(
-                    point_uv=point_uv,
-                    point_in_camera=point_in_camera,
-                    point_uv_covariance=point_uv_covariance,
-                    point_alpha_after_activation=point_alpha_after_activation,
-                    accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
-                    point_offset_with_sort_key=point_offset_with_sort_key,
-                    point_in_camera_sort_key=point_in_camera_sort_key,
-                    camera_width=camera_info.camera_width,
-                    camera_height=camera_info.camera_height,
-                    depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
-                )
+                if point_in_camera_sort_key.shape[0] > 0:
+                    generate_point_sort_key_by_num_overlap_tiles(
+                        point_uv=point_uv,
+                        point_in_camera=point_in_camera,
+                        point_uv_covariance=point_uv_covariance,
+                        point_alpha_after_activation=point_alpha_after_activation,
+                        accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
+                        point_offset_with_sort_key=point_offset_with_sort_key,
+                        point_in_camera_sort_key=point_in_camera_sort_key,
+                        camera_width=camera_info.camera_width,
+                        camera_height=camera_info.camera_height,
+                        depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
+                    )
 
                 point_in_camera_sort_key, permutation = point_in_camera_sort_key.sort()
                 point_offset_with_sort_key = point_offset_with_sort_key[permutation].contiguous(
@@ -1076,13 +1085,13 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
                 tile_points_end = torch.zeros(size=(
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
-                find_tile_start_and_end(
-                    point_in_camera_sort_key=point_in_camera_sort_key,
-                    tile_points_start=tile_points_start,
-                    tile_points_end=tile_points_end,
-                )
 
-                
+                if point_in_camera_sort_key.shape[0] > 0:
+                    find_tile_start_and_end(
+                        point_in_camera_sort_key=point_in_camera_sort_key,
+                        tile_points_start=tile_points_start,
+                        tile_points_end=tile_points_end,
+                    )
 
                 rasterized_image = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
@@ -1096,24 +1105,25 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.int32, device=pointcloud.device)
                 
 
-                gaussian_point_rasterisation(
-                    camera_height=camera_info.camera_height,
-                    camera_width=camera_info.camera_width,
-                    pointcloud=pointcloud,
-                    pointcloud_features=pointcloud_features,
-                    tile_points_start=tile_points_start,
-                    tile_points_end=tile_points_end,
-                    point_id_in_camera_list=point_id_in_camera_list,
-                    point_offset_with_sort_key=point_offset_with_sort_key,
-                    point_uv=point_uv,
-                    point_in_camera=point_in_camera,
-                    point_uv_covariance=point_uv_covariance,
-                    point_color=point_color,
-                    rasterized_image=rasterized_image,
-                    rasterized_depth=rasterized_depth,
-                    pixel_accumulated_alpha=pixel_accumulated_alpha,
-                    pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
-                    pixel_valid_point_count=pixel_valid_point_count)
+                if point_in_camera_sort_key.shape[0] > 0:
+                    gaussian_point_rasterisation(
+                        camera_height=camera_info.camera_height,
+                        camera_width=camera_info.camera_width,
+                        pointcloud=pointcloud,
+                        pointcloud_features=pointcloud_features,
+                        tile_points_start=tile_points_start,
+                        tile_points_end=tile_points_end,
+                        point_id_in_camera_list=point_id_in_camera_list,
+                        point_offset_with_sort_key=point_offset_with_sort_key,
+                        point_uv=point_uv,
+                        point_in_camera=point_in_camera,
+                        point_uv_covariance=point_uv_covariance,
+                        point_color=point_color,
+                        rasterized_image=rasterized_image,
+                        rasterized_depth=rasterized_depth,
+                        pixel_accumulated_alpha=pixel_accumulated_alpha,
+                        pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
+                        pixel_valid_point_count=pixel_valid_point_count)
                 ctx.save_for_backward(
                     pointcloud,
                     pointcloud_features,
@@ -1242,6 +1252,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         T_pointcloud_camera = input_data.T_pointcloud_camera
         color_max_sh_band = input_data.color_max_sh_band
         camera_info = input_data.camera_info
+        point_extra_translation = input_data.point_extra_translation
+        point_extra_rotation = input_data.point_extra_rotation
+        point_extra_scale = input_data.point_extra_scale
         assert camera_info.camera_width % 16 == 0
         assert camera_info.camera_height % 16 == 0
         return self._module_function.apply(
@@ -1250,4 +1263,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             point_invalid_mask,
             T_pointcloud_camera,
             camera_info,
-            color_max_sh_band)
+            color_max_sh_band,
+            point_extra_translation,
+            point_extra_rotation,
+            point_extra_scale)

@@ -12,7 +12,6 @@ adaptive-controller-config:
   iteration_start_remove_floater: 2000
   under_reconstructed_num_pixels_threshold: 32
   enable_sample_from_point: True
-  under_reconstructed_move_factor: 10.
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
   num-of-features: 56
