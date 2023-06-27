@@ -3,6 +3,18 @@ An unofficial implementation of paper [3D Gaussian Splatting
 for Real-Time Radiance Field Rendering](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/) by taichi lang. 
 
 ## Current status
+### Update 2023-06-27
+A Basic viewer is avilable:
+The movement for objects is still buggy, also, taichi GUI has an upper limit of 60 FPS. Anyway, it works!
+
+rasterization result:
+
+https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/assets/18469933/cc760693-636b-4157-ae85-33813f3da54d
+
+merge scene/object:
+
+https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/assets/18469933/bc38a103-e435-4d35-9239-940e605b4552
+
 ### Update 2023-06-22
 
 I've enabled CI and cloud-based training now. The function is not very stable yet. It enables anyone to contribute to this repo even if you don't have a GPU.
