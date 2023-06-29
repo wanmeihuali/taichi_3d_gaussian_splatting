@@ -98,11 +98,8 @@ class GaussianPointCloudScene(torch.nn.Module):
             self.point_cloud_features[:, 7] = self.config.initial_alpha
             # for color spherical harmonics factors, we set them to 0.5
             self.point_cloud_features[:, 8] = 1.0
-            self.point_cloud_features[:, 9:24] = 0.0
-            self.point_cloud_features[:, 24] = 1.0
-            self.point_cloud_features[:, 25:40] = 0.0
-            self.point_cloud_features[:, 40] = 1.0
-            self.point_cloud_features[:, 41:56] = 0.0
+            self.point_cloud_features[:, 9] = 1.0
+            self.point_cloud_features[:, 10] = 1.0
 
 
     def to_parquet(self, path: str):
@@ -113,9 +110,9 @@ class GaussianPointCloudScene(torch.nn.Module):
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
-            [f"r_sh{i}" for i in range(16)] + \
-            [f"g_sh{i}" for i in range(16)] + \
-            [f"b_sh{i}" for i in range(16)]
+            [f"r_sh{i}" for i in range(1)] + \
+            [f"g_sh{i}" for i in range(1)] + \
+            [f"b_sh{i}" for i in range(1)]
         point_cloud_features_df = pd.DataFrame(
             valid_point_cloud_features.detach().cpu().numpy(), columns=feature_columns)
         scene_df = pd.concat([point_cloud_df, point_cloud_features_df], axis=1)
@@ -127,9 +124,9 @@ class GaussianPointCloudScene(torch.nn.Module):
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
-            [f"r_sh{i}" for i in range(16)] + \
-            [f"g_sh{i}" for i in range(16)] + \
-            [f"b_sh{i}" for i in range(16)]
+            [f"r_sh{i}" for i in range(1)] + \
+            [f"g_sh{i}" for i in range(1)] + \
+            [f"b_sh{i}" for i in range(1)]
         if config.add_sphere:
             scene_df = GaussianPointCloudScene._add_sphere(
                 scene_df, config.sphere_radius_factor, config.num_points_sphere)

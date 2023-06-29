@@ -102,9 +102,9 @@ class GaussianPoint3D:
     cov_scale: ti.math.vec3  # cov_scale of x, y, z
     translation: ti.math.vec3  # translation of x, y, z
     alpha: ti.f32  # opacity of the point
-    color_r: vec16f  # color of the point, r
-    color_g: vec16f  # color of the point, g
-    color_b: vec16f  # color of the point, b
+    color_r: ti.f32  # color of the point, r
+    color_g: ti.f32  # color of the point, g
+    color_b: ti.f32  # color of the point, b
 
     @ti.func
     def project_to_camera_position(
@@ -339,11 +339,11 @@ class GaussianPoint3D:
         o = ray_origin
         d = ray_direction
         # TODO: try other methods to get the query point for SH, e.g. the intersection point of the ray and the ellipsoid
-        r = SphericalHarmonics(self.color_r).evaluate(d)
+        r = self.color_r
         r_normalized = ti_sigmoid(r)
-        g = SphericalHarmonics(self.color_g).evaluate(d)
+        g = self.color_g
         g_normalized = ti_sigmoid(g)
-        b = SphericalHarmonics(self.color_b).evaluate(d)
+        b = self.color_b
         b_normalized = ti_sigmoid(b)
         # return ti.math.vec3(r, g, b)
         return ti.math.vec3(r_normalized, g_normalized, b_normalized)
@@ -356,18 +356,15 @@ class GaussianPoint3D:
     ):
         o = ray_origin
         d = ray_direction
-        r, r_jacobian = SphericalHarmonics(
-            self.color_r).evaluate_with_jacobian(d)
+        r = self.color_r
         r_normalized, r_normalized_jacobian = ti_sigmoid_with_jacobian(r)
-        g, g_jacobian = SphericalHarmonics(
-            self.color_g).evaluate_with_jacobian(d)
+        g = self.color_g
         g_normalized, g_normalized_jacobian = ti_sigmoid_with_jacobian(g)
-        b, b_jacobian = SphericalHarmonics(
-            self.color_b).evaluate_with_jacobian(d)
+        b = self.color_b
         b_normalized, b_normalized_jacobian = ti_sigmoid_with_jacobian(b)
-        r_jacobian = r_normalized_jacobian * r_jacobian
-        g_jacobian = g_normalized_jacobian * g_jacobian
-        b_jacobian = b_normalized_jacobian * b_jacobian
+        r_jacobian = r_normalized_jacobian
+        g_jacobian = g_normalized_jacobian
+        b_jacobian = b_normalized_jacobian
         
         # return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
         return ti.math.vec3(r_normalized, g_normalized, b_normalized), r_jacobian, g_jacobian, b_jacobian

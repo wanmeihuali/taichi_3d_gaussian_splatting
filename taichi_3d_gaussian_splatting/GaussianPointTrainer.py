@@ -288,9 +288,9 @@ class GaussianPointCloudTrainer:
             q_grad = feature_grad[:, :4]
             s_grad = feature_grad[:, 4:7]
             alpha_grad = feature_grad[:, 7]
-            r_grad = feature_grad[:, 8:24]
-            g_grad = feature_grad[:, 24:40]
-            b_grad = feature_grad[:, 40:56]
+            r_grad = feature_grad[:, 8]
+            g_grad = feature_grad[:, 9]
+            b_grad = feature_grad[:, 10]
             num_overlap_tiles = grad_input.num_overlap_tiles
             num_affected_pixels = grad_input.num_affected_pixels
             writer.add_histogram("grad/xyz_grad", xyz_grad, iteration)
@@ -313,9 +313,9 @@ class GaussianPointCloudTrainer:
             q = valid_point_cloud_features[:, :4]
             s = valid_point_cloud_features[:, 4:7]
             alpha = valid_point_cloud_features[:, 7]
-            r = valid_point_cloud_features[:, 8:24]
-            g = valid_point_cloud_features[:, 24:40]
-            b = valid_point_cloud_features[:, 40:56]
+            r = valid_point_cloud_features[:, 8]
+            g = valid_point_cloud_features[:, 9]
+            b = valid_point_cloud_features[:, 10]
             writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
             print(f"num_valid_points={num_valid_points};")
             writer.add_histogram("value/q", q, iteration)

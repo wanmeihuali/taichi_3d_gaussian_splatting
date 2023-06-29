@@ -310,12 +310,9 @@ def load_point_cloud_row_into_gaussian_point_3d(
     cov_scale = ti.math.vec3([pointcloud_features[point_id, offset]
                              for offset in ti.static(range(4, 4 + 3))])
     alpha = pointcloud_features[point_id, 7]
-    r_feature = vec16f([pointcloud_features[point_id, offset]
-                       for offset in ti.static(range(8, 8 + 16))])
-    g_feature = vec16f([pointcloud_features[point_id, offset]
-                       for offset in ti.static(range(24, 24 + 16))])
-    b_feature = vec16f([pointcloud_features[point_id, offset]
-                       for offset in ti.static(range(40, 40 + 16))])
+    r_feature = pointcloud_features[point_id, 8]
+    g_feature = pointcloud_features[point_id, 9]
+    b_feature = pointcloud_features[point_id, 10]
     gaussian_point_3d = GaussianPoint3D(
         translation=translation,
         cov_rotation=cov_rotation,
@@ -912,10 +909,10 @@ def gaussian_point_rasterisation_backward(
             grad_pointcloud_features[point_id, i] = gaussian_q_grad[i]
         for i in ti.static(range(3)):
             grad_pointcloud_features[point_id, i + 4] = gaussian_s_grad[i]
-        for i in ti.static(range(16)):
-            grad_pointcloud_features[point_id, i + 8] = color_r_grad[i]
-            grad_pointcloud_features[point_id, i + 24] = color_g_grad[i]
-            grad_pointcloud_features[point_id, i + 40] = color_b_grad[i]
+        for i in ti.static(range(1)):
+            grad_pointcloud_features[point_id, i + 8] = color_r_grad
+            grad_pointcloud_features[point_id, i + 9] = color_g_grad
+            grad_pointcloud_features[point_id, i + 10] = color_b_grad
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
@@ -1199,9 +1196,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
-                    grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
-                        grad_pointcloud_features=grad_pointcloud_features,
-                        color_max_sh_band=color_max_sh_band)
                     grad_pointcloud_features[:, :4] *= self.config.grad_q_factor
                     grad_pointcloud_features[:, 4:7] *= self.config.grad_s_factor
                     grad_pointcloud_features[:, 7] *= self.config.grad_alpha_factor
@@ -1227,23 +1221,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 return grad_pointcloud, grad_pointcloud_features, None, grad_T_pointcloud_camera, None, None, None, None, None
 
         self._module_function = _module_function
-
-    def _clear_grad_by_color_max_sh_band(self, grad_pointcloud_features: torch.Tensor, color_max_sh_band: int):
-        if color_max_sh_band == 0:
-            grad_pointcloud_features[:, 8 + 1: 8 + 16] = 0.
-            grad_pointcloud_features[:, 24 + 1: 24 + 16] = 0.
-            grad_pointcloud_features[:, 40 + 1: 40 + 16] = 0.
-        elif color_max_sh_band == 1:
-            grad_pointcloud_features[:, 8 + 4: 8 + 16] = 0.
-            grad_pointcloud_features[:, 24 + 4: 24 + 16] = 0.
-            grad_pointcloud_features[:, 40 + 4: 40 + 16] = 0.
-        elif color_max_sh_band == 2:
-            grad_pointcloud_features[:, 8 + 9: 8 + 16] = 0.
-            grad_pointcloud_features[:, 24 + 9: 24 + 16] = 0.
-            grad_pointcloud_features[:, 40 + 9: 40 + 16] = 0.
-        elif color_max_sh_band >= 3:
-            pass
-        return grad_pointcloud_features
 
     def forward(self, input_data: GaussianPointCloudRasterisationInput):
         pointcloud = input_data.point_cloud

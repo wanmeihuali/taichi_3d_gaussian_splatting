@@ -14,7 +14,7 @@ adaptive-controller-config:
   enable_sample_from_point: True
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
-  num-of-features: 56
+  num-of-features: 11
   add_sphere: True
   initial_alpha: -0.0
   max_initial_covariance: 3000.0
