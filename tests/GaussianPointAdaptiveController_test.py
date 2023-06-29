@@ -38,6 +38,7 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
         tmp[:, 4:7] = -4.60517018599
         tmp[:, 7] = 0.5
         point_cloud_features = torch.nn.Parameter(tmp)
+        point_object_id = torch.zeros((num_points,), dtype=torch.int32, device=torch.device("cuda:0"))
         camera_info = CameraInfo(
             camera_height=image_size[0],
             camera_width=image_size[1],
@@ -45,15 +46,20 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
             camera_intrinsics=torch.tensor([[32, 0, 16], [0, 32, 16], [
                                            0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
         )
+        """
         T_camera_world = torch.eye(
             4, dtype=torch.float32, device=torch.device("cuda:0"))
         T_camera_world[2, 3] = -2
+        """
+        q_camera_world = torch.tensor([0, 0, 0, 1], dtype=torch.float32, device=torch.device("cuda:0")).unsqueeze(0)
+        t_camera_world = torch.tensor([0, 0, -2], dtype=torch.float32, device=torch.device("cuda:0")).unsqueeze(0)
         gaussian_point_adaptive_controller = GaussianPointAdaptiveController(
             config=GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig(),
             maintained_parameters=GaussianPointAdaptiveController.GaussianPointAdaptiveControllerMaintainedParameters(
                 pointcloud=point_cloud,
                 pointcloud_features=point_cloud_features,
-                point_invalid_mask=point_invalid_mask
+                point_invalid_mask=point_invalid_mask,
+                point_object_id=point_object_id,
             ))
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
@@ -70,9 +76,11 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
                 point_cloud_features=point_cloud_features,
+                point_object_id=point_object_id,
                 point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
-                T_pointcloud_camera=T_camera_world,
+                q_pointcloud_camera=q_camera_world,
+                t_pointcloud_camera=t_camera_world,
                 color_max_sh_band=idx // 1000)
             pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()
