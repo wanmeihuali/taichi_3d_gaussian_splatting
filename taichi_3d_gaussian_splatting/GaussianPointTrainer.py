@@ -80,6 +80,7 @@ class GaussianPointCloudTrainer:
                 pointcloud=self.scene.point_cloud,
                 pointcloud_features=self.scene.point_cloud_features,
                 point_invalid_mask=self.scene.point_invalid_mask,
+                point_object_id=self.scene.point_object_id,
             ))
         self.rasterisation = GaussianPointCloudRasterisation(
             config=self.config.rasterisation_config,
@@ -140,22 +141,25 @@ class GaussianPointCloudTrainer:
             optimizer.zero_grad()
             position_optimizer.zero_grad()
             
-            image_gt, T_pointcloud_camera, camera_info = next(
+            image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info = next(
                 train_data_loader_iter)
             if downsample_factor > 1:
                 image_gt, camera_info = GaussianPointCloudTrainer._downsample_image_and_camera_info(
                     image_gt, camera_info, downsample_factor=downsample_factor)
             image_gt = image_gt.cuda()
-            T_pointcloud_camera = T_pointcloud_camera.cuda()
+            q_pointcloud_camera = q_pointcloud_camera.cuda()
+            t_pointcloud_camera = t_pointcloud_camera.cuda()
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
             camera_info.camera_width = int(camera_info.camera_width)
             camera_info.camera_height = int(camera_info.camera_height)
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=self.scene.point_cloud,
                 point_cloud_features=self.scene.point_cloud_features,
+                point_object_id=self.scene.point_object_id,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 camera_info=camera_info,
-                T_pointcloud_camera=T_pointcloud_camera,
+                q_pointcloud_camera=q_pointcloud_camera,
+                t_pointcloud_camera=t_pointcloud_camera,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
             image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
@@ -257,7 +261,7 @@ class GaussianPointCloudTrainer:
                     self.writer.add_image(
                         "train/image_problematic", grid, iteration)
                 
-            del image_gt, T_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
+            del image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000 or iteration == 5000: # they use 7000 in paper, it's hard to set a interval so hard code it here
                 self.validation(val_data_loader, iteration)
     
@@ -337,9 +341,10 @@ class GaussianPointCloudTrainer:
             for idx, val_data in enumerate(tqdm(val_data_loader)):
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
-                image_gt, T_pointcloud_camera, camera_info = val_data
+                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info = val_data
                 image_gt = image_gt.cuda()
-                T_pointcloud_camera = T_pointcloud_camera.cuda()
+                q_pointcloud_camera = q_pointcloud_camera.cuda()
+                t_pointcloud_camera = t_pointcloud_camera.cuda()
                 camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
                 # make taichi happy.
                 camera_info.camera_width = int(camera_info.camera_width)
@@ -347,9 +352,11 @@ class GaussianPointCloudTrainer:
                 gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                     point_cloud=self.scene.point_cloud,
                     point_cloud_features=self.scene.point_cloud_features,
+                    point_object_id=self.scene.point_object_id,
                     point_invalid_mask=self.scene.point_invalid_mask,
                     camera_info=camera_info,
-                    T_pointcloud_camera=T_pointcloud_camera,
+                    q_pointcloud_camera=q_pointcloud_camera,
+                    t_pointcloud_camera=t_pointcloud_camera,
                     color_max_sh_band=3
                 )
                 start_event.record()

@@ -3,7 +3,8 @@ import taichi.math as tm
 import unittest
 from taichi_3d_gaussian_splatting.utils import (intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera,
                    get_point_probability_density_from_2d_gaussian, grad_point_probability_density_2d,
-                   get_ray_origin_and_direction_by_uv)
+                    quaternion_to_rotation_matrix_torch,
+                   get_ray_origin_and_direction_by_uv, inverse_se3_qt_torch, rotation_matrix_to_quaternion_torch)
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 import torch
 import numpy as np
@@ -122,6 +123,39 @@ class TestUtils(unittest.TestCase):
                         total_has_intersection_np_ratio, atol=1e-2),
             msg=f"has_intersection_ratio={has_intersection_ratio}, total_has_intersection_np_ratio={total_has_intersection_np_ratio}"
         )
+
+    def test_rotation_matrix_to_quaternion_torch(self):
+        q_list = np.random.rand(100, 4)
+        q_list = q_list / np.linalg.norm(q_list, axis=1, keepdims=True)
+        # to wxyz
+        rotations = Rotation.from_quat(q_list)
+        matrix_list = rotations.as_matrix()
+        q_torch = rotation_matrix_to_quaternion_torch(torch.tensor(matrix_list))
+
+        self.assertTrue(np.allclose(q_torch.numpy(), q_list))
+        
+
+
+    def test_inverse_se3_qt_torch(self):
+        q_list = np.random.rand(100, 4)
+        q_list = q_list / np.linalg.norm(q_list, axis=1, keepdims=True)
+        # to wxyz
+        rotations = Rotation.from_quat(q_list)
+        matrix_list = rotations.as_matrix()
+        t_list = np.random.rand(100, 3)
+        se3_np = np.eye(4).reshape(1, 4, 4).repeat(100, axis=0)
+        se3_np[:, :3, :3] = matrix_list
+        se3_np[:, :3, 3] = t_list
+        q_list_torch = torch.tensor(q_list)
+        t_list_torch = torch.tensor(t_list)
+        q_inv_torch, t_inv_torch = inverse_se3_qt_torch(q_list_torch, t_list_torch)
+        se3_inv_np = np.linalg.inv(se3_np)
+        se3_inv_torch = torch.eye(4).reshape(1, 4, 4).repeat(100, 1, 1)
+        se3_inv_torch[:, :3, :3] = quaternion_to_rotation_matrix_torch(q_inv_torch)
+        se3_inv_torch[:, :3, 3] = t_inv_torch
+        self.assertTrue(np.allclose(se3_inv_np, se3_inv_torch.numpy()))
+        
+        
 
 
 class TestGetRayOriginAndDirectionFromCamera(unittest.TestCase):

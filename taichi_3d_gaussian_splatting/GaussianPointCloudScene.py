@@ -58,6 +58,10 @@ class GaussianPointCloudScene(torch.nn.Module):
             "point_invalid_mask",
             torch.zeros(self.point_cloud.shape[0], dtype=torch.int8)
         )
+        self.register_buffer(
+            "point_object_id",
+            torch.zeros(self.point_cloud.shape[0], dtype=torch.int32)
+        )
         if config.max_num_points_ratio is not None:
             self.point_invalid_mask[num_points:] = 1
 

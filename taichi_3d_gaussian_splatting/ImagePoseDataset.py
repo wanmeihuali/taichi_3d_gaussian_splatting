@@ -7,6 +7,7 @@ import torchvision
 import torchvision.transforms as transforms
 from .Camera import CameraInfo
 from typing import Any
+from .utils import se3_to_quaternion_and_translation_torch
 
 
 class ImagePoseDataset(torch.utils.data.Dataset):
@@ -38,6 +39,8 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         image_path = self.df.iloc[idx]["image_path"]
         T_pointcloud_camera = self._pandas_field_to_tensor(
             self.df.iloc[idx]["T_pointcloud_camera"])
+        q_pointcloud_camera, t_pointcloud_camera = se3_to_quaternion_and_translation_torch(
+            T_pointcloud_camera.unsqueeze(0))
         camera_intrinsics = self._pandas_field_to_tensor(
             self.df.iloc[idx]["camera_intrinsics"])
         camera_height = self.df.iloc[idx]["camera_height"]
@@ -56,4 +59,4 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             camera_width=camera_width,
             camera_id=camera_id,
         )
-        return image, T_pointcloud_camera, camera_info
+        return image, q_pointcloud_camera ,t_pointcloud_camera, camera_info

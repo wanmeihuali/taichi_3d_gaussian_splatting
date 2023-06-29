@@ -86,6 +86,7 @@ class GaussianPointAdaptiveController:
         pointcloud_features: torch.Tensor
         # shape: [num_points], dtype: int8 because taichi doesn't support bool type
         point_invalid_mask: torch.Tensor
+        point_object_id: torch.Tensor  # shape: [num_points]
 
     @dataclass
     class GaussianPointAdaptiveControllerDensifyPointInfo:
@@ -247,6 +248,8 @@ class GaussianPointAdaptiveController:
                 self.densify_point_info.densify_point_position_before_optimization[:num_fillable_densify_points]
             self.maintained_parameters.pointcloud_features[invalid_point_id_to_fill] = \
                 self.maintained_parameters.pointcloud_features[self.densify_point_info.densify_point_id[:num_fillable_densify_points]]
+            self.maintained_parameters.point_object_id[invalid_point_id_to_fill] = \
+                self.maintained_parameters.point_object_id[self.densify_point_info.densify_point_id[:num_fillable_densify_points]]
             self.maintained_parameters.pointcloud_features[invalid_point_id_to_fill, 4:7] -= \
                 self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points]
             over_reconstructed_mask = (self.densify_point_info.densify_size_reduction_factor[:num_fillable_densify_points] > 1e-6).reshape(-1)
