@@ -6,7 +6,7 @@ from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import Gaussia
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
 from taichi_3d_gaussian_splatting.utils import torch2ti, se3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
 from dataclasses import dataclass
-from typing import Tuple
+from typing import List, Tuple
 import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -33,7 +33,7 @@ class GaussianPointVisualizer:
             [[0.9992602094, -0.0041446825, 0.0382342376, 0.8111615373], [0.0047891027, 0.9998477637, -0.0167783848,
                                                                          0.4972433596], [-0.0381588759, 0.0169490798, 0.999127935, -3.8378280443], [0.0, 0.0, 0.0, 1.0]],
             device="cuda")
-        parquet_path_list: list[str] = None
+        parquet_path_list: List[str] = None
         step_size: float = 0.1
         mouse_sensitivity: float = 3
 
