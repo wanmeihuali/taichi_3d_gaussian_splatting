@@ -198,3 +198,5 @@ The current implementation is based on my understanding of the paper, and it wil
 - [x] Add a inference only framework to support adding/moving objects in the scene, scene merging, scene editing, etc.
 - [ ] Add a install script/docker image
 - [ ] Support batch training. Currently the code only supports single image training, and only uses small part of the GPU memory.
+- [ ] Implement radix sort/cumsum by Taichi instead of torch, torch-taichi tensor cast seems only available on CUDA device. If we want to switch to other device, we need to get rid of torch.
+- [ ] Implement a Taichi only inference rasterizer which only use taichi field, and migrate to MacOS/Android/IOS.
