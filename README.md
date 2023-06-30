@@ -47,7 +47,7 @@ top left: [result from this repo(30k iteration)](https://github.com/wanmeihuali/
 </details>
 
 ## Why taichi?
-- Taichi is a language for high-performance computing. It is designed to close the gap between the productivity-focused Python language and the performance- and parallelism-focused C++/CUDA languages. By using Taichi, the repo is pure python code, and achieves the same or even better performance compared to CUDA implementation. Also, the code is much easier to read and maintain.
+- Taichi is a language for high-performance computing. It is designed to close the gap between the productivity-focused Python language and the performance- and parallelism-focused C++/CUDA languages. By using Taichi, the repo is pure Python, and achieves the same or even better performance compared to CUDA implementation. Also, the code is much easier to read and maintain.
 - Taichi provides various backends, including CUDA, OpenGL, Metal, etc. We do plan to change the backend to support various platforms, but currently, the repo only supports CUDA backend.
 - Taichi provides automatic differentiation, although the repo does not use it currently, it is a nice feature for future development. 
 
