@@ -16,26 +16,6 @@ graph LR
     D[CameraPose] --> B
     B --> E[DensePointCloudWithExtraFeatures]
 ```
-<details><summary>How train works in detail:</summary>
-<p>
-
-```mermaid
-stateDiagram-v2
-
-    state WeightToTrain {
-        sparsePointCloud
-        pointCloudExtraFeatures
-    }
-    WeightToTrain --> Rasterizer: input
-    cameraPose --> Rasterizer: input
-    Rasterizer --> Loss: rasterized image
-    ImageFromMultiViews --> Loss
-    Loss --> Rasterizer: gradient
-    Rasterizer --> WeightToTrain: gradient
-```
-</p>
-</details>
-
 
 ### Inference:
 The algorithm takes the dense point cloud with extra features and any camera pose as input, use the same rasterizer to render the image from the camera pose.
@@ -162,6 +142,22 @@ see [this file](docs/RawDataFormat.md) about how to prepare the dataset.
 ```bash
 python gaussian_point_train.py --train_config {path to config file}
 ```
+
+The training process works in the following way:
+```mermaid
+stateDiagram-v2
+    state WeightToTrain {
+        sparsePointCloud
+        pointCloudExtraFeatures
+    }
+    WeightToTrain --> Rasterizer: input
+    cameraPose --> Rasterizer: input
+    Rasterizer --> Loss: rasterized image
+    ImageFromMultiViews --> Loss
+    Loss --> Rasterizer: gradient
+    Rasterizer --> WeightToTrain: gradient
+```
+
 The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file.
 
 ## How to contribute/Use CI to train on cloud
