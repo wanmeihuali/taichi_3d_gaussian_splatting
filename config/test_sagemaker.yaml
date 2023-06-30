@@ -8,6 +8,7 @@ adaptive-controller-config:
   num-iterations-densify: 100
   num-iterations-reset-alpha: 4000
   num-iterations-warm-up: 500
+  num-iterations-stop-densify: 14000
   reset-alpha-value: -1.9
   transparent-alpha-threshold: -2.0
   floater_num_pixels_threshold: 400000

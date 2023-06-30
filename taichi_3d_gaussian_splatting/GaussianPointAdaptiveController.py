@@ -69,6 +69,7 @@ class GaussianPointAdaptiveController:
         # in paper section 5.2, they describe a method to moderate the increase in the number of Gaussians is to set the 𝛼 value close to zero every
         # 3000 iterations. I have no idea how it is implemented. I just assume that it is a reset of 𝛼 to fixed value.
         num_iterations_reset_alpha: int = 3000
+        num_iterations_stop_densify: int = 100000
         reset_alpha_value: float = 0.1
         # the paper doesn't mention this value, but we need a value and method to determine whether a point is under-reconstructed or over-reconstructed
         # for now, the method is to threshold norm of exp(s)
@@ -130,19 +131,20 @@ class GaussianPointAdaptiveController:
     def update(self, input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
         self.iteration_counter += 1
         with torch.no_grad():
-            self.accumulated_num_in_camera[input_data.point_id_in_camera_list] += 1
-            self.accumulated_num_pixels[input_data.point_id_in_camera_list] += input_data.num_affected_pixels
-            grad_viewspace = input_data.magnitude_grad_viewspace
-            grad_viewspace_norm = grad_viewspace.norm(dim=1)   
-            self.accumulated_view_space_position_gradients[input_data.point_id_in_camera_list] += grad_viewspace_norm
-            avg_grad_viewspace_norm = grad_viewspace_norm / input_data.num_affected_pixels
-            avg_grad_viewspace_norm[torch.isnan(avg_grad_viewspace_norm)] = 0
-            self.accumulated_view_space_position_gradients_avg[input_data.point_id_in_camera_list] += avg_grad_viewspace_norm
-            self.accumulated_position_gradients[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera
-            self.accumulated_position_gradients_norm[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera.norm(dim=1)
+            if self.iteration_counter <= self.config.num_iterations_stop_densify:
+                self.accumulated_num_in_camera[input_data.point_id_in_camera_list] += 1
+                self.accumulated_num_pixels[input_data.point_id_in_camera_list] += input_data.num_affected_pixels
+                grad_viewspace = input_data.magnitude_grad_viewspace
+                grad_viewspace_norm = grad_viewspace.norm(dim=1)   
+                self.accumulated_view_space_position_gradients[input_data.point_id_in_camera_list] += grad_viewspace_norm
+                avg_grad_viewspace_norm = grad_viewspace_norm / input_data.num_affected_pixels
+                avg_grad_viewspace_norm[torch.isnan(avg_grad_viewspace_norm)] = 0
+                self.accumulated_view_space_position_gradients_avg[input_data.point_id_in_camera_list] += avg_grad_viewspace_norm
+                self.accumulated_position_gradients[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera
+                self.accumulated_position_gradients_norm[input_data.point_id_in_camera_list] += input_data.grad_point_in_camera.norm(dim=1)
             if self.iteration_counter < self.config.num_iterations_warm_up:
                 pass
-            elif self.iteration_counter % self.config.num_iterations_densify == 0:
+            elif self.iteration_counter % self.config.num_iterations_densify == 0 and self.iteration_counter <= self.config.num_iterations_stop_densify:
                 self._find_densify_points(input_data)
                 self.input_data = input_data
 
