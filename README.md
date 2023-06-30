@@ -158,7 +158,18 @@ stateDiagram-v2
     Rasterizer --> WeightToTrain: gradient
 ```
 
-The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file.
+The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file. The trained point cloud with feature is also stored as parquet and the output directory is specified in the config file.
+
+## Visualization
+A simple visualizer is provided. The visualizer is implemented by Taichi GUI which limited the FPS to 60(If anyone knows how to change this limitation please ping me). The visualizer takes one or multiple parquet results.
+```bash
+python3 visualizer --parquet_path_list <parquet_path_0> <parquet_path_1> ...
+```
+The visualizer merges multiple point clouds and displays them in the same scene.
+- Press 0 to select all point clouds(default state).
+- Press 1 to 9 to select one of the point clouds.
+- When all point clouds are selected, use "WASD=-" to move the camera, and use "QE" to rotate by the y-axis, or drag the mouse to do free rotation.
+- When only one of the point clouds is selected, use "WASD=-" to move the object/scene, and use "QE" to rotate the object/scene by the y-axis, or r drag the mouse to do free rotation by the center of the object.
 
 ## How to contribute/Use CI to train on cloud
 
