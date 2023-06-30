@@ -132,7 +132,7 @@ class GaussianPointAdaptiveController:
         with torch.no_grad():
             self.accumulated_num_in_camera[input_data.point_id_in_camera_list] += 1
             self.accumulated_num_pixels[input_data.point_id_in_camera_list] += input_data.num_affected_pixels
-            grad_viewspace = input_data.grad_viewspace
+            grad_viewspace = input_data.magnitude_grad_viewspace
             grad_viewspace_norm = grad_viewspace.norm(dim=1)   
             self.accumulated_view_space_position_gradients[input_data.point_id_in_camera_list] += grad_viewspace_norm
             avg_grad_viewspace_norm = grad_viewspace_norm / input_data.num_affected_pixels
