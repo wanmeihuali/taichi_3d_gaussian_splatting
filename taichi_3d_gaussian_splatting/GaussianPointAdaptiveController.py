@@ -150,7 +150,7 @@ class GaussianPointAdaptiveController:
 
     def refinement(self):
         with torch.no_grad():
-            if self.iteration_counter < self.config.num_iterations_warm_up:
+            if self.iteration_counter < self.config.num_iterations_warm_up or self.iteration_counter > self.config.num_iterations_stop_densify:
                 return
             if self.iteration_counter % self.config.num_iterations_densify == 0:
                 self._add_densify_points()
