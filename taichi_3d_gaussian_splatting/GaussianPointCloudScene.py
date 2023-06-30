@@ -26,6 +26,7 @@ class GaussianPointCloudScene(torch.nn.Module):
         point_cloud: Union[np.ndarray, torch.Tensor],
         config: PointCloudSceneConfig,
         point_cloud_features: Optional[torch.Tensor] = None,
+        point_object_id: Optional[torch.Tensor] = None,
     ):
         super().__init__()
         assert len(point_cloud.shape) == 2, "point_cloud must be a 2D array"
@@ -58,9 +59,11 @@ class GaussianPointCloudScene(torch.nn.Module):
             "point_invalid_mask",
             torch.zeros(self.point_cloud.shape[0], dtype=torch.int8)
         )
+        if point_object_id is None:
+            point_object_id = torch.zeros(self.point_cloud.shape[0], dtype=torch.int32)
         self.register_buffer(
             "point_object_id",
-            torch.zeros(self.point_cloud.shape[0], dtype=torch.int32)
+            point_object_id
         )
         if config.max_num_points_ratio is not None:
             self.point_invalid_mask[num_points:] = 1
