@@ -161,7 +161,7 @@ stateDiagram-v2
 The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file. The trained point cloud with feature is also stored as parquet and the output directory is specified in the config file.
 
 ## Visualization
-A simple visualizer is provided. The visualizer is implemented by Taichi GUI which limited the FPS to 60(If anyone knows how to change this limitation please ping me). The visualizer takes one or multiple parquet results.
+A simple visualizer is provided. The visualizer is implemented by Taichi GUI which limited the FPS to 60(If anyone knows how to change this limitation please ping me). The visualizer takes one or multiple parquet results. Example parquets can be downloaded [here](https://drive.google.com/file/d/12-kZZay8RFlDk7hJQysG_Cr4-oxDp37l/view?usp=sharing).
 ```bash
 python3 visualizer --parquet_path_list <parquet_path_0> <parquet_path_1> ...
 ```
