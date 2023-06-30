@@ -192,6 +192,8 @@ The current implementation is based on my understanding of the paper, and it wil
 - [x] Add result score/image in README.md
     - try same dataset in the paper.
     - fix issue in current blender plugin, and also make the plugin open source.
+- [ ] camera pose optimization: get the gradient of the camera pose, and optimize it during training.
+- [ ] Dynamic Rigid Object support. The current implementation already supports multiple camera poses in one scene, so the movement of rigid objects shall be able to transform into the movement of the camera. Need to find some sfm solution that can provide an estimation of 6 DOF pose for different objects, and modify the dataset code to do the test.
 
 ### Engineering part
 - [x] fix bug: crash when there's no point in camrea.
