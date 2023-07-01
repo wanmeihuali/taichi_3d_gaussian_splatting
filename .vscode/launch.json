@@ -18,6 +18,23 @@
             ]
         },
         {
+            "name": "prepare_BlenderNerf",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/prepare_InstantNGP_with_mesh.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--transforms_train",
+                "/home/kuangyuan/hdd/datasets/nerf_gen/origin_blendernerf/transforms_train.json",
+                "--mesh_path",
+                "/home/kuangyuan/hdd/datasets/nerf_gen/origin_blendernerf/Boots.stl",
+                "--output_path",
+                "/home/kuangyuan/hdd/datasets/nerf_gen/origin_blendernerf/output"
+            ]
+        },
+
+        {
             "name": "gen config template",
             "type": "python",
             "request": "launch",
