@@ -117,6 +117,7 @@ python gaussian_point_train.py --train_config config/tat_truck_every_8_test.yaml
 
 <details><summary>CLICK ME</summary>
 <p>
+
 It is actually one random free mesh from [Internet](https://www.turbosquid.com/3d-models/3d-tactical-boots-1948918), I believe it is free to use. [BlenderNerf](https://github.com/maximeraafat/BlenderNeRF.git) is used to generate the dataset. The preprocessed image, pregenerated camera pose and point cloud for boot scene can be downloaded from this [link](https://drive.google.com/drive/folders/1d14l9ewnyI7zCA6BxuQUWseQbIKyo3Jh?usp=sharing). Please download the images into a folder named `image` and put it under the root directory of this repo. The camera poses and sparse point cloud should be put under `data/boots_super_sparse`. The folder structure should be like this:
 ```
 ├── data
@@ -130,6 +131,9 @@ It is actually one random free mesh from [Internet](https://www.turbosquid.com/3
 │   │   ├── COS_Camera.002.png
 |   |   ├── ...
 ```
+Note that because the image in this dataset has a higher resolution(1920x1080), training on it is actually slower than training on the truck scene.
+
+
 </p>
 </details>
 
