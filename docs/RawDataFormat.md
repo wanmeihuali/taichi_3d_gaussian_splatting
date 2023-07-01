@@ -95,5 +95,5 @@ So the camera system in the json is with x-axis pointing right, y-axis pointing 
 The ground truth image is stored in png format. The image should be in RGB format. The image should be the same size as the camera height and width in the json file.
 
 ## Running config
-See [here](config/boots_super_sparse_config.yaml) for example. The config is in yaml format. Please update the path to point cloud and camera parameters in the config file.
+See [here](../config/boots_super_sparse_config.yaml) for example. The config is in yaml format. Please update the path to point cloud and camera parameters in the config file.
 
