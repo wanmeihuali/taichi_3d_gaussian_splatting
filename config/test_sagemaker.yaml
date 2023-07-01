@@ -44,7 +44,7 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-  grad_color_factor: 1.0
+  grad_color_factor: 5.0
   grad_s_factor: 1.0
   grad_q_factor: 1.0
   grad_alpha_factor: 1.0
