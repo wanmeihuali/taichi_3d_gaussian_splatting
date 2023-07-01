@@ -1,6 +1,9 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 0.000006
-  densification_overlap_tiles_threshold: 16
+  densification-view-space-position-gradients-threshold: 6e-6
+  densification_view_avg_space_position_gradients_threshold: 1e3
+  densification_multi_frame_view_space_position_gradients_threshold: 1e3
+  densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: 4e3
+  densification_multi_frame_position_gradients_threshold: 1e3
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
   num-iterations-reset-alpha: 4000
@@ -16,7 +19,7 @@ gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
   num-of-features: 56
   add_sphere: True
-  initial_alpha: -0.0
+  initial_alpha: 0.05
   max_initial_covariance: 3000.0
   initial_covariance_ratio: 0.1
 increase-color-max-sh-band-interval: 1000.0
@@ -41,6 +44,10 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
+  grad_color_factor: 1.0
+  grad_s_factor: 1.0
+  grad_q_factor: 1.0
+  grad_alpha_factor: 1.0
 summary-writer-log-dir: /opt/ml/output/data/tensorboard
 output-model-dir: /opt/ml/model
 train-dataset-json-path: '/opt/ml/input/data/training/train.json'
