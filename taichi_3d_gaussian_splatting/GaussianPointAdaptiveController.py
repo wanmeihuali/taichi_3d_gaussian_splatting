@@ -59,11 +59,11 @@ class GaussianPointAdaptiveController:
         # from paper: densify Gaussians with an average magnitude of view-space position gradients above a threshold 𝜏pos, which we set to 0.0002 in our tests.
         # I have no idea why their threshold is so low, may be their view space is normalized to [0, 1]?
         # TODO: find out a proper threshold
-        densification_view_space_position_gradients_threshold: float = 0.005
-        densification_view_avg_space_position_gradients_threshold: float = 0.000004
-        densification_multi_frame_view_space_position_gradients_threshold: float = 0.0002
-        densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: float = 0.000004
-        densification_multi_frame_position_gradients_threshold: float = 0.0002
+        densification_view_space_position_gradients_threshold: float = 6e-6
+        densification_view_avg_space_position_gradients_threshold: float = 1e3
+        densification_multi_frame_view_space_position_gradients_threshold: float = 1e3
+        densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: float = 1e3
+        densification_multi_frame_position_gradients_threshold: float = 1e3
         # from paper:  large Gaussians in regions with high variance need to be split into smaller Gaussians. We replace such Gaussians by two new ones, and divide their scale by a factor of 𝜙 = 1.6
         gaussian_split_factor_phi: float = 1.6
         # in paper section 5.2, they describe a method to moderate the increase in the number of Gaussians is to set the 𝛼 value close to zero every
