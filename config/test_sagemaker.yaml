@@ -1,7 +1,7 @@
 adaptive-controller-config:
   densification-view-space-position-gradients-threshold: 1e3
   densification_view_avg_space_position_gradients_threshold: 1e3
-  densification_multi_frame_view_space_position_gradients_threshold: 6e-6
+  densification_multi_frame_view_space_position_gradients_threshold: 1e-6
   densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: 4e3
   densification_multi_frame_position_gradients_threshold: 1e3
   gaussian-split-factor-phi: 1.6
