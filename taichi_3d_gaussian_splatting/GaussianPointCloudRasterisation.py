@@ -612,9 +612,13 @@ def gaussian_point_rasterisation_backward(
     # (M, 2, 2)
     in_camera_grad_uv_cov_buffer: ti.types.ndarray(ti.f32, ndim=3),
     in_camera_grad_color_buffer: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    in_camera_depth: ti.types.ndarray(ti.f32, ndim=1),  # (M)
-    in_camera_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     in_camera_num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
+    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
+    point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
 ):
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
@@ -684,50 +688,34 @@ def gaussian_point_rasterisation_backward(
             to_load_idx_point_offset_with_sort_key = block_end_idx_point_offset_with_sort_key - thread_id - 1
             if to_load_idx_point_offset_with_sort_key >= block_start_idx_point_offset_with_sort_key:
                 to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
-                to_load_point_id = point_id_in_camera_list[to_load_point_offset]
-                point_q_camera_pointcloud = ti.Vector(
-                    [q_camera_pointcloud[point_object_id[to_load_point_id], idx] for idx in ti.static(range(4))])
-                point_t_camera_pointcloud = ti.Vector(
-                    [t_camera_pointcloud[point_object_id[to_load_point_id], idx] for idx in ti.static(range(3))])
-                T_camera_pointcloud_mat = tranform_matrix_from_quaternion_and_translation(
-                    q=point_q_camera_pointcloud,
-                    t=point_t_camera_pointcloud,
-                )
-
-                T_pointcloud_camera = taichi_inverse_se3(
-                    T_camera_pointcloud_mat)
-                ray_origin = ti.math.vec3(
-                    [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
-                to_load_gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
-                    pointcloud=pointcloud,
-                    pointcloud_features=pointcloud_features,
-                    point_id=to_load_point_id)
-                to_load_uv, to_load_translation_camera = to_load_gaussian_point_3d.project_to_camera_position(
-                    T_camera_world=T_camera_pointcloud_mat,
-                    projective_transform=camera_intrinsics_mat)
+                to_load_uv = ti.math.vec2([point_uv[to_load_point_offset, 0], point_uv[to_load_point_offset, 1]])
+                
                 for i in ti.static(range(2)):
                     tile_point_uv[thread_id, i] = to_load_uv[i]
                     tile_point_grad_uv[thread_id, i] = 0.0
                     tile_point_abs_grad_uv[thread_id, i] = 0.0
-                to_load_uv_cov = to_load_gaussian_point_3d.project_to_camera_covariance(
-                    T_camera_world=T_camera_pointcloud_mat,
-                    projective_transform=camera_intrinsics_mat,
-                    translation_camera=to_load_translation_camera)
+                
+                to_load_uv_cov = ti.math.mat2([
+                    [point_uv_covariance[to_load_point_offset, 0, 0], 
+                     point_uv_covariance[to_load_point_offset, 0, 1]],
+                    [point_uv_covariance[to_load_point_offset, 1, 0], 
+                     point_uv_covariance[to_load_point_offset, 1, 1]]
+                ])
                 for i in ti.static(range(2)):
                     for j in ti.static(range(2)):
                         tile_point_uv_cov[thread_id, i,
                                           j] = to_load_uv_cov[i, j]
                         tile_point_grad_uv_cov[thread_id, i, j] = 0.0
-                to_load_ray_direction = to_load_gaussian_point_3d.translation - ray_origin
-                to_load_color = to_load_gaussian_point_3d.get_color_by_ray(
-                    ray_origin=ray_origin,
-                    ray_direction=to_load_ray_direction,
-                )
+                to_load_color = ti.math.vec3([
+                    point_color[to_load_point_offset, 0],
+                    point_color[to_load_point_offset, 1],
+                    point_color[to_load_point_offset, 2],
+                ])
                 for i in ti.static(range(3)):
                     tile_point_color[thread_id, i] = to_load_color[i]
                     tile_point_grad_color[thread_id, i] = 0.0
 
-                tile_point_alpha[thread_id] = to_load_gaussian_point_3d.alpha
+                tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
                 tile_point_grad_alpha[thread_id] = 0.0
                 tile_point_num_affected_pixels[thread_id] = 0
 
@@ -753,7 +741,7 @@ def gaussian_point_rasterisation_backward(
 
                 point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
                 point_id = point_id_in_camera_list[point_offset]
-                gaussian_point_3d_alpha = tile_point_alpha[idx_point_offset_with_sort_key_in_block]
+                point_alpha_after_activation_value = tile_point_alpha[idx_point_offset_with_sort_key_in_block]
 
                 # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
                 gaussian_alpha, d_p_d_mean, d_p_d_cov = grad_point_probability_density_2d_normalized(
@@ -761,9 +749,7 @@ def gaussian_point_rasterisation_backward(
                     gaussian_mean=uv,
                     gaussian_covariance=uv_cov,
                 )
-                point_alpha_after_activation = 1. / \
-                    (1. + ti.math.exp(-gaussian_point_3d_alpha))
-                prod_alpha = gaussian_alpha * point_alpha_after_activation
+                prod_alpha = gaussian_alpha * point_alpha_after_activation_value
                 # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
                 # 255 ) and also clamp 𝛼 with 0.99 from above.
                 if prod_alpha >= 1. / 255.:
@@ -791,9 +777,9 @@ def gaussian_point_rasterisation_backward(
                         alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
-                        (1. - point_alpha_after_activation) * \
-                        point_alpha_after_activation
-                    gaussian_alpha_grad = alpha_grad * point_alpha_after_activation
+                        (1. - point_alpha_after_activation_value) * \
+                        point_alpha_after_activation_value
+                    gaussian_alpha_grad = alpha_grad * point_alpha_after_activation_value
                     # gaussian_alpha_grad is dp
                     point_viewspace_grad = gaussian_alpha_grad * \
                         d_p_d_mean  # (2,) as the paper said, view space gradient is used for detect candidates for densification
@@ -889,10 +875,6 @@ def gaussian_point_rasterisation_backward(
             T_camera_world=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
         )
-        depth = translation_camera[2]
-        in_camera_depth[idx] = depth
-        in_camera_uv[idx, 0] = uv[0]
-        in_camera_uv[idx, 1] = uv[1]
         uv_cov = gaussian_point_3d.project_to_camera_covariance(
             T_camera_world=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
@@ -1155,7 +1137,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     q_pointcloud_camera,
                     q_camera_pointcloud,
                     t_pointcloud_camera,
-                    t_camera_pointcloud
+                    t_camera_pointcloud,
+                    point_uv,
+                    point_in_camera,
+                    point_uv_covariance,
+                    point_alpha_after_activation,
+                    point_color,
                 )
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
@@ -1180,7 +1167,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         q_pointcloud_camera, \
                         q_camera_pointcloud, \
                         t_pointcloud_camera, \
-                        t_camera_pointcloud = ctx.saved_tensors
+                        t_camera_pointcloud, \
+                        point_uv, \
+                        point_in_camera, \
+                        point_uv_covariance, \
+                        point_alpha_after_activation, \
+                        point_color = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     color_max_sh_band = ctx.color_max_sh_band
                     grad_rasterized_image = grad_rasterized_image.contiguous()
@@ -1199,10 +1191,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(point_id_in_camera_list.shape[0], 2, 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_grad_color_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_depth = torch.empty(
-                        size=(point_id_in_camera_list.shape[0],), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_uv = torch.empty(
-                        size=(point_id_in_camera_list.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_num_affected_pixels = torch.zeros(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.int32, device=pointcloud.device)
 
@@ -1229,9 +1217,14 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                         in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer,
                         in_camera_grad_color_buffer=in_camera_grad_color_buffer,
-                        in_camera_depth=in_camera_depth,
-                        in_camera_uv=in_camera_uv,
+                        # in_camera_depth=in_camera_depth,
+                        # in_camera_uv=in_camera_uv,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
+                        point_uv=point_uv,
+                        point_in_camera=point_in_camera,
+                        point_uv_covariance=point_uv_covariance,
+                        point_alpha_after_activation=point_alpha_after_activation,
+                        point_color=point_color,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
@@ -1257,8 +1250,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                             num_overlap_tiles=num_overlap_tiles,
                             num_affected_pixels=in_camera_num_affected_pixels,
-                            point_uv_in_camera=in_camera_uv,
-                            point_depth=in_camera_depth,
+                            point_uv_in_camera=point_uv,
+                            point_depth=point_in_camera[:, 2],
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
