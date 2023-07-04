@@ -355,6 +355,16 @@ def load_point_cloud_row_into_gaussian_point_3d(
     )
     return gaussian_point_3d
 
+@ti.kernel
+def normalize_cov_rotation(
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
+    point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+):
+    for idx in range(point_id_list.shape[0]):
+        point_id = point_id_list[idx]
+        normalize_cov_rotation_in_pointcloud_features(
+            pointcloud_features=pointcloud_features,
+            point_id=point_id)
 
 @ti.kernel
 def generate_point_attributes_in_camera_plane(
@@ -371,14 +381,10 @@ def generate_point_attributes_in_camera_plane(
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
 ):
-    camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-    
     for idx in range(point_id_list.shape[0]):
+        camera_intrinsics_mat = ti.Matrix(
+            [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
         point_id = point_id_list[idx]
-        normalize_cov_rotation_in_pointcloud_features(
-            pointcloud_features=pointcloud_features,
-            point_id=point_id)
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
             pointcloud=pointcloud,
             pointcloud_features=pointcloud_features,
@@ -441,6 +447,7 @@ def gaussian_point_rasterisation(
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
     rasterized_depth: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
@@ -492,11 +499,6 @@ def gaussian_point_rasterisation(
                 point_group_id * 256 + thread_id
             if to_load_idx_point_offset_with_sort_key < end_offset:
                 to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
-                to_load_point_id = point_id_in_camera_list[to_load_point_offset]
-                to_load_gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
-                    pointcloud=pointcloud,
-                    pointcloud_features=pointcloud_features,
-                    point_id=to_load_point_id)
                 tile_point_uv[thread_id, 0] = point_uv[to_load_point_offset, 0]
                 tile_point_uv[thread_id, 1] = point_uv[to_load_point_offset, 1]
                 tile_point_uv_cov[thread_id, 0,
@@ -508,7 +510,7 @@ def gaussian_point_rasterisation(
                 tile_point_uv_cov[thread_id, 1,
                                   1] = point_uv_covariance[to_load_point_offset, 1, 1]
                 tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
-                tile_point_alpha[thread_id] = to_load_gaussian_point_3d.alpha
+                tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
 
                 tile_point_color[thread_id,
                                  0] = point_color[to_load_point_offset, 0]
@@ -531,7 +533,7 @@ def gaussian_point_rasterisation(
                 depth = tile_point_depth[point_group_offset]
                 uv_cov = ti.math.mat2(tile_point_uv_cov[point_group_offset, 0, 0], tile_point_uv_cov[point_group_offset, 0, 1],
                                       tile_point_uv_cov[point_group_offset, 1, 0], tile_point_uv_cov[point_group_offset, 1, 1])
-                gaussian_point_3d_alpha = tile_point_alpha[point_group_offset]
+                point_alpha_after_activation_value = tile_point_alpha[point_group_offset]
                 color = ti.math.vec3([tile_point_color[point_group_offset, 0],
                                      tile_point_color[point_group_offset, 1], tile_point_color[point_group_offset, 2]])
 
@@ -540,9 +542,7 @@ def gaussian_point_rasterisation(
                     gaussian_mean=uv,
                     gaussian_covariance=uv_cov,
                 )
-                point_alpha_after_activation = 1. / \
-                    (1. + ti.math.exp(-gaussian_point_3d_alpha))
-                alpha = gaussian_alpha * point_alpha_after_activation
+                alpha = gaussian_alpha * point_alpha_after_activation_value
                 # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
                 # 255 ) and also clamp 𝛼 with 0.99 from above.
                 # print(
@@ -1034,6 +1034,11 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_color = torch.zeros(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
 
+                normalize_cov_rotation(
+                    pointcloud_features=pointcloud_features,
+                    point_id_list=point_id_in_camera_list,
+                )
+
                 generate_point_attributes_in_camera_plane(
                     pointcloud=pointcloud,
                     pointcloud_features=pointcloud_features,
@@ -1128,6 +1133,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_uv=point_uv,
                         point_in_camera=point_in_camera,
                         point_uv_covariance=point_uv_covariance,
+                        point_alpha_after_activation=point_alpha_after_activation,
                         point_color=point_color,
                         rasterized_image=rasterized_image,
                         rasterized_depth=rasterized_depth,
