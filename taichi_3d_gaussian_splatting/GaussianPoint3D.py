@@ -9,6 +9,7 @@ mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
 mat9x3f = ti.types.matrix(n=9, m=3, dtype=ti.f32)
 mat4x9f = ti.types.matrix(n=4, m=9, dtype=ti.f32)
 mat9x4f = ti.types.matrix(n=9, m=4, dtype=ti.f32)
+mat3x4f = ti.types.matrix(n=3, m=4, dtype=ti.f32)
 
 
 @ti.func
@@ -157,6 +158,69 @@ class GaussianPoint3D:
         d_translation_camera_d_translation = W
         d_uv_d_translation = d_uv_d_translation_camera @ d_translation_camera_d_translation  # 2 x 3
         return d_uv_d_translation
+
+    @ti.func
+    def project_to_camera_position_by_q_t_jacobian(
+        self,
+        q_camera_world: ti.math.vec4,
+        t_camera_world: ti.math.vec3,
+        projective_transform: ti.math.mat3,
+    ):
+        T = tranform_matrix_from_quaternion_and_translation(
+            q=q_camera_world, t=t_camera_world
+        )
+        W = ti.math.mat3([
+            [T[0, 0], T[0, 1], T[0, 2]],
+            [T[1, 0], T[1, 1], T[1, 2]],
+            [T[2, 0], T[2, 1], T[2, 2]]
+        ])
+
+        # the forward output is uv, cov_uv, the backward input is d_uv, d_cov_uv
+        # jacobian: d_uv / d_translation, d_cov_uv / d_cov_rotation, d_cov_uv / d_cov_scale
+        # in paper, d_cov_uv / d_cov_rotation is called d_Sigma' / dq, d_cov_uv / d_cov_scale is called d_Sigma' / ds
+        # t = self.translation
+        t = T @ ti.math.vec4(
+            [self.translation.x, self.translation.y, self.translation.z, 1])
+        K = projective_transform
+        # d_uv_d_translation_camera = \left[\begin{matrix}\frac{K_{0, 0}}{t_{2, 0}} & \frac{K_{0, 1}}{t_{2, 0}} & \frac{- K_{0, 0} t_{0, 0} - K_{0, 1} t_{1, 0}}{t_{2, 0}^{2}}\\\frac{K_{1, 0}}{t_{2, 0}} & \frac{K_{1, 1}}{t_{2, 0}} & \frac{- K_{1, 0} t_{0, 0} - K_{1, 1} t_{1, 0}}{t_{2, 0}^{2}}\end{matrix}\right]
+        d_uv_d_translation_camera = mat2x3f([
+            [K[0, 0] / t.z, K[0, 1] / t.z,
+                (-K[0, 0] * t.x - K[0, 1] * t.y) / (t.z * t.z)],
+            [K[1, 0] / t.z, K[1, 1] / t.z, (-K[1, 0] * t.x - K[1, 1] * t.y) / (t.z * t.z)]])
+        d_translation_camera_d_translation = W
+        d_uv_d_translation = d_uv_d_translation_camera @ d_translation_camera_d_translation  # 2 x 3
+        q = q_camera_world
+        # \left[\begin{matrix}2 qy t_{1, 0} + 2 qz t_{2, 0} & 2 qw t_{2, 0} + 2 qx t_{1, 0} - 4 qy t_{0, 0} & - 2 qw t_{1, 0} + 2 qx t_{2, 0} - 4 qz t_{0, 0} & 2 qy t_{2, 0} - 2 qz t_{1, 0}\\- 2 qw t_{2, 0} - 4 qx t_{1, 0} + 2 qy t_{0, 0} & 2 qx t_{0, 0} + 2 qz t_{2, 0} & 2 qw t_{0, 0} + 2 qy t_{2, 0} - 4 qz t_{1, 0} & - 2 qx t_{2, 0} + 2 qz t_{0, 0}\\2 qw t_{1, 0} - 4 qx t_{2, 0} + 2 qz t_{0, 0} & - 2 qw t_{0, 0} - 4 qy t_{2, 0} + 2 qz t_{1, 0} & 2 qx t_{0, 0} + 2 qy t_{1, 0} & 2 qx t_{1, 0} - 2 qy t_{0, 0}\end{matrix}\right]
+        d_translation_camera_d_q = mat3x4f([
+            [2 * q.y * t.y + 2 * q.z * t.z, 
+             2 * q.w * t.z + 2 * q.x * t.y - 4 * q.y * t.x, 
+             -2 * q.w * t.y + 2 * q.x * t.z - 4 * q.z * t.x, 
+             2 * q.y * t.z - 2 * q.z * t.y],
+            [-2 * q.w * t.z - 4 * q.x * t.y + 2 * q.y * t.x,
+             2 * q.x * t.x + 2 * q.z * t.z,
+             2 * q.w * t.x + 2 * q.y * t.z - 4 * q.z * t.y,
+             -2 * q.x * t.z + 2 * q.z * t.x],
+            [2 * q.w * t.y - 4 * q.x * t.z + 2 * q.z * t.x,
+             -2 * q.w * t.x - 4 * q.y * t.z + 2 * q.z * t.y,
+             2 * q.x * t.x + 2 * q.y * t.y,
+             2 * q.x * t.y - 2 * q.y * t.x]])
+        
+        # \left[\begin{matrix}- 2 qy^{2} - 2 qz^{2} + 1 & - 2 qw qz + 2 qx qy & 2 qw qy + 2 qx qz\\2 qw qz + 2 qx qy & - 2 qx^{2} - 2 qz^{2} + 1 & - 2 qw qx + 2 qy qz\\- 2 qw qy + 2 qx qz & 2 qw qx + 2 qy qz & - 2 qx^{2} - 2 qy^{2} + 1\end{matrix}\right]
+        d_translation_camera_d_t = ti.math.mat3([
+            [-2 * q.y * q.y - 2 * q.z * q.z + 1, 
+             -2 * q.w * q.z + 2 * q.x * q.y, 
+             2 * q.w * q.y + 2 * q.x * q.z],
+            [2 * q.w * q.z + 2 * q.x * q.y,
+             -2 * q.x * q.x - 2 * q.z * q.z + 1,
+             -2 * q.w * q.x + 2 * q.y * q.z],
+            [-2 * q.w * q.y + 2 * q.x * q.z,
+             2 * q.w * q.x + 2 * q.y * q.z,
+             -2 * q.x * q.x - 2 * q.y * q.y + 1]])
+        d_uv_d_q = d_uv_d_translation_camera @ d_translation_camera_d_q
+        d_uv_d_t = d_uv_d_translation_camera @ d_translation_camera_d_t
+        return d_uv_d_translation, d_uv_d_q, d_uv_d_t
+
+
 
     @ti.func
     def project_to_camera_covariance(
