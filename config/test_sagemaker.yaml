@@ -52,4 +52,4 @@ summary-writer-log-dir: /opt/ml/output/data/tensorboard
 output-model-dir: /opt/ml/model
 train-dataset-json-path: '/opt/ml/input/data/training/train.json'
 val-dataset-json-path: '/opt/ml/input/data/training/val.json'
-val-interval: 3000
+val-interval: 1000
