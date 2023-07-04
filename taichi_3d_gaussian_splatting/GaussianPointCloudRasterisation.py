@@ -612,8 +612,6 @@ def gaussian_point_rasterisation_backward(
     # (M, 2, 2)
     in_camera_grad_uv_cov_buffer: ti.types.ndarray(ti.f32, ndim=3),
     in_camera_grad_color_buffer: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    in_camera_depth: ti.types.ndarray(ti.f32, ndim=1),  # (M)
-    in_camera_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     in_camera_num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
 
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
@@ -751,10 +749,6 @@ def gaussian_point_rasterisation_backward(
                     gaussian_mean=uv,
                     gaussian_covariance=uv_cov,
                 )
-                """
-                point_alpha_after_activation_value = 1. / \
-                    (1. + ti.math.exp(-gaussian_point_3d_alpha))
-                """
                 prod_alpha = gaussian_alpha * point_alpha_after_activation_value
                 # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
                 # 255 ) and also clamp 𝛼 with 0.99 from above.
@@ -881,10 +875,6 @@ def gaussian_point_rasterisation_backward(
             T_camera_world=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
         )
-        depth = translation_camera[2]
-        in_camera_depth[idx] = depth
-        in_camera_uv[idx, 0] = uv[0]
-        in_camera_uv[idx, 1] = uv[1]
         uv_cov = gaussian_point_3d.project_to_camera_covariance(
             T_camera_world=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
@@ -1201,10 +1191,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(point_id_in_camera_list.shape[0], 2, 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_grad_color_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_depth = torch.empty(
-                        size=(point_id_in_camera_list.shape[0],), dtype=torch.float32, device=pointcloud.device)
-                    in_camera_uv = torch.empty(
-                        size=(point_id_in_camera_list.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     in_camera_num_affected_pixels = torch.zeros(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.int32, device=pointcloud.device)
 
@@ -1231,8 +1217,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                         in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer,
                         in_camera_grad_color_buffer=in_camera_grad_color_buffer,
-                        in_camera_depth=in_camera_depth,
-                        in_camera_uv=in_camera_uv,
+                        # in_camera_depth=in_camera_depth,
+                        # in_camera_uv=in_camera_uv,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
                         point_uv=point_uv,
                         point_in_camera=point_in_camera,
@@ -1264,8 +1250,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                             num_overlap_tiles=num_overlap_tiles,
                             num_affected_pixels=in_camera_num_affected_pixels,
-                            point_uv_in_camera=in_camera_uv,
-                            point_depth=in_camera_depth,
+                            point_uv_in_camera=point_uv,
+                            point_depth=point_in_camera[:, 2],
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
