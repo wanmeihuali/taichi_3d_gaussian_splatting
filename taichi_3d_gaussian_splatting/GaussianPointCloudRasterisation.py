@@ -879,8 +879,9 @@ def gaussian_point_rasterisation_backward(
             T_camera_world=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
             translation_camera=translation_camera)
-        d_uv_d_translation = gaussian_point_3d.project_to_camera_position_jacobian(
-            T_camera_world=T_camera_pointcloud_mat,
+        d_uv_d_translation, d_uv_d_q, d_uv_d_t = gaussian_point_3d.project_to_camera_position_by_q_t_jacobian(
+            q_camera_world=point_q_camera_pointcloud,
+            t_camera_world=point_t_camera_pointcloud,
             projective_transform=camera_intrinsics_mat,
         )  # (2, 3)
         d_Sigma_prime_d_q, d_Sigma_prime_d_s = gaussian_point_3d.project_to_camera_covariance_jacobian(
