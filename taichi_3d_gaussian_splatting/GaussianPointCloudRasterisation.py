@@ -605,6 +605,8 @@ def gaussian_point_rasterisation_backward(
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
     grad_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     grad_pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
+    grad_q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4)
+    grad_t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
     grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
     magnitude_grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
     # (H, W, 2)
@@ -840,7 +842,14 @@ def gaussian_point_rasterisation_backward(
     # end of per pixel loop
 
     # one more loop to compute the gradient from viewspace to 3D point
+    ti.loop_config(block_dim=256)
     for idx in range(point_id_in_camera_list.shape[0]):
+        thread_id = idx % 256
+        tile_camera_pose_q_grad = ti.simt.block.SharedArray(
+            (256, 4), dtype=ti.f32)  # 2KB shared memory
+        tile_camera_pose_t_grad = ti.simt.block.SharedArray(
+            (256, 3), dtype=ti.f32)  # 2KB shared memory
+
         point_id = point_id_in_camera_list[idx]
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
             pointcloud=pointcloud,
@@ -903,6 +912,8 @@ def gaussian_point_rasterisation_backward(
         # cov is Sigma
         gaussian_q_grad = point_grad_uv_cov_flat @ d_Sigma_prime_d_q
         gaussian_s_grad = point_grad_uv_cov_flat @ d_Sigma_prime_d_s
+        point_camera_pose_q_grad = point_grad_uv @ d_uv_d_q
+        point_camera_pose_t_grad = point_grad_uv @ d_uv_d_t
 
         for i in ti.static(range(3)):
             grad_pointcloud[point_id, i] = translation_grad[i]
@@ -914,6 +925,36 @@ def gaussian_point_rasterisation_backward(
             grad_pointcloud_features[point_id, i + 8] = color_r_grad[i]
             grad_pointcloud_features[point_id, i + 24] = color_g_grad[i]
             grad_pointcloud_features[point_id, i + 40] = color_b_grad[i]
+
+        for object_id in range(q_camera_pointcloud.shape[0]):
+            if point_object_id[point_id] == object_id:
+                for i in ti.static(range(4)):
+                    tile_camera_pose_q_grad[thread_id, i] = point_camera_pose_q_grad[i]
+                for i in ti.static(range(3)):
+                    tile_camera_pose_t_grad[thread_id, i] = point_camera_pose_t_grad[i]
+            else:
+                for i in ti.static(range(4)):
+                    tile_camera_pose_q_grad[thread_id, i] = 0.
+                for i in ti.static(range(3)):
+                    tile_camera_pose_t_grad[thread_id, i] = 0.
+            
+            # do reduction, for jth each round, s[i] += s[i + 2^j]
+            for i in ti.static(range(8)):
+                offset = 1 << i
+                thread_selector = offset << 1
+                if thread_id % thread_selector == 0 and idx + offset < point_id_in_camera_list.shape[0]:
+                    for j in ti.static(range(4)):
+                        tile_camera_pose_q_grad[thread_id, j] += tile_camera_pose_q_grad[thread_id + offset, j]
+                    for j in ti.static(range(3)):
+                        tile_camera_pose_t_grad[thread_id, j] += tile_camera_pose_t_grad[thread_id + offset, j]
+                ti.simt.block.sync()
+            if thread_id == 0:
+                for i in ti.static(range(4)):
+                    ti.atomic_add(grad_q_camera_pointcloud[object_id, i], tile_camera_pose_q_grad[0, i])
+                for i in ti.static(range(3)):
+                    ti.atomic_add(grad_t_camera_pointcloud[object_id, i], tile_camera_pose_t_grad[0, i])
+            ti.simt.block.sync()
+            
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
@@ -1194,6 +1235,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
                     in_camera_num_affected_pixels = torch.zeros(
                         size=(point_id_in_camera_list.shape[0],), dtype=torch.int32, device=pointcloud.device)
+                    grad_q_camera_pointcloud = torch.zeros_like(q_camera_pointcloud)
+                    grad_t_camera_pointcloud = torch.zeros_like(t_camera_pointcloud)
 
                     gaussian_point_rasterisation_backward(
                         camera_height=camera_info.camera_height,
@@ -1214,12 +1257,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         grad_pointcloud=grad_pointcloud,
                         grad_pointcloud_features=grad_pointcloud_features,
                         grad_uv=grad_viewspace,
+                        grad_q_camera_pointcloud=grad_q_camera_pointcloud,
+                        grad_t_camera_pointcloud=grad_t_camera_pointcloud,
                         magnitude_grad_uv=magnitude_grad_viewspace,
                         magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                         in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer,
                         in_camera_grad_color_buffer=in_camera_grad_color_buffer,
-                        # in_camera_depth=in_camera_depth,
-                        # in_camera_uv=in_camera_uv,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
                         point_uv=point_uv,
                         point_in_camera=point_in_camera,
