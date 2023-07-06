@@ -13,7 +13,7 @@ class GaussianPointCloudScene(torch.nn.Module):
     @dataclass
     class PointCloudSceneConfig(YAMLWizard):
         num_of_features: int = 56
-        max_num_points_ratio: Optional[float] = None,
+        max_num_points_ratio: Optional[float] = None
         add_sphere: bool = False
         sphere_radius_factor: float = 4.0
         num_points_sphere: int = 10000
