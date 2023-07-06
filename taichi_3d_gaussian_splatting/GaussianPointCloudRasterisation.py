@@ -1015,8 +1015,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         pointcloud_features,
                         point_invalid_mask,
                         point_object_id,
-                        q_pointcloud_camera,
-                        t_pointcloud_camera,
+                        q_camera_pointcloud,
+                        t_camera_pointcloud,
                         camera_info,
                         color_max_sh_band,
                         ):
@@ -1024,8 +1024,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
                     pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
-                q_camera_pointcloud, t_camera_pointcloud = inverse_se3_qt_torch(
-                    q=q_pointcloud_camera, t=t_pointcloud_camera)
                 filter_point_in_camera(
                     pointcloud=pointcloud,
                     point_invalid_mask=point_invalid_mask,
@@ -1176,9 +1174,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     pixel_offset_of_last_effective_point,
                     num_overlap_tiles,
                     point_object_id,
-                    q_pointcloud_camera,
                     q_camera_pointcloud,
-                    t_pointcloud_camera,
                     t_camera_pointcloud,
                     point_uv,
                     point_in_camera,
@@ -1194,7 +1190,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             @staticmethod
             @custom_bwd
             def backward(ctx, grad_rasterized_image, grad_rasterized_depth, grad_pixel_valid_point_count):
-                grad_pointcloud = grad_pointcloud_features = grad_q_pointcloud_camera = grad_t_pointcloud_camera = None
+                grad_pointcloud = grad_pointcloud_features = grad_q_camera_pointcloud = grad_t_camera_pointcloud = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, \
                         pointcloud_features, \
@@ -1206,9 +1202,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         pixel_offset_of_last_effective_point, \
                         num_overlap_tiles, \
                         point_object_id, \
-                        q_pointcloud_camera, \
                         q_camera_pointcloud, \
-                        t_pointcloud_camera, \
                         t_camera_pointcloud, \
                         point_uv, \
                         point_in_camera, \
@@ -1317,8 +1311,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_pointcloud_features, \
                     None, \
                     None, \
-                    grad_q_pointcloud_camera, \
-                    grad_t_pointcloud_camera, \
+                    grad_q_camera_pointcloud, \
+                    grad_t_camera_pointcloud, \
                     None, None
 
         self._module_function = _module_function
@@ -1347,6 +1341,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_object_id = input_data.point_object_id
         q_pointcloud_camera = input_data.q_pointcloud_camera
         t_pointcloud_camera = input_data.t_pointcloud_camera
+        q_camera_pointcloud, t_camera_pointcloud = inverse_se3_qt_torch(
+            q=q_pointcloud_camera, t=t_pointcloud_camera)
         color_max_sh_band = input_data.color_max_sh_band
         camera_info = input_data.camera_info
         assert camera_info.camera_width % 16 == 0
@@ -1356,8 +1352,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             pointcloud_features,
             point_invalid_mask,
             point_object_id,
-            q_pointcloud_camera,
-            t_pointcloud_camera,
+            q_camera_pointcloud,
+            t_camera_pointcloud,
             camera_info,
             color_max_sh_band,
         )
