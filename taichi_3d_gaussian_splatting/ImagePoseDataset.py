@@ -22,7 +22,7 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         self.df = pd.read_json(dataset_json_path, orient="records")
         for column in required_columns:
             assert column in self.df.columns, f"column {column} is not in the dataset"
-        self.q_pointcloud_camera_table, self.t_pointcloud_camera_table, self.num_objects = self._get_all_camera_poses()
+        self._check_num_objects()
 
     def __len__(self):
         # return 1 # for debugging
@@ -67,22 +67,18 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         camera_pose_indices = torch.arange(idx * self.num_objects, (idx + 1) * self.num_objects)
         return image, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info
 
-    def _get_all_camera_poses(self):
-        q_pointcloud_camera_list = []
-        t_pointcloud_camera_list = []
-        num_objects = None
+
+    def _check_num_objects(self):
+        self.num_objects = None
         for idx, row in self.df.iterrows():
             T_pointcloud_camera = self._pandas_field_to_tensor(
                 row["T_pointcloud_camera"])
             if len(T_pointcloud_camera.shape) == 2:
                 T_pointcloud_camera = T_pointcloud_camera.unsqueeze(0)
+            num_objects = T_pointcloud_camera.shape[0]
+            if self.num_objects is None:
+                self.num_objects = num_objects
+            elif self.num_objects != num_objects:
+                raise ValueError(
+                    f"num_objects in row {idx} is {num_objects}, but previous rows have {self.num_objects}")
             
-            # both q_pointcloud_camera and t_pointcloud_camera are of shape (K, 4), K is num of objects
-            q_pointcloud_camera, t_pointcloud_camera = se3_to_quaternion_and_translation_torch(
-                T_pointcloud_camera)
-            num_objects = q_pointcloud_camera.shape[0]
-            q_pointcloud_camera_list.append(q_pointcloud_camera)
-            t_pointcloud_camera_list.append(t_pointcloud_camera)
-        q_pointcloud_camera = torch.cat(q_pointcloud_camera_list, dim=0)
-        t_pointcloud_camera = torch.cat(t_pointcloud_camera_list, dim=0)
-        return q_pointcloud_camera, t_pointcloud_camera, num_objects

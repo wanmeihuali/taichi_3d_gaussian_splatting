@@ -885,3 +885,9 @@ print(np.sqrt(eigen_values[0]) * 4)
 print(np.sqrt(eigen_values[1]) * 4)
 
 # %%
+import pandas as pd
+"/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_experiment/camera_poses_6000.parquet"
+df = pd.read_parquet("/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_experiment/camera_poses_6000.parquet")
+# %%
+df.head()
+# %%

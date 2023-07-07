@@ -77,9 +77,7 @@ class GaussianPointCloudTrainer:
             dataset_json_path=self.config.val_dataset_json_path)
         self.scene = GaussianPointCloudScene.from_parquet(
             self.config.pointcloud_parquet_path, config=self.config.gaussian_point_cloud_scene_config)
-        self.camera_poses = CameraPoses(
-            q_pointcloud_camera_table=self.train_dataset.q_pointcloud_camera_table,
-            t_pointcloud_camera_table=self.train_dataset.t_pointcloud_camera_table)
+        self.camera_poses = CameraPoses(dataset_json_path=self.config.train_dataset_json_path)
         self.scene = self.scene.cuda()
         self.camera_poses = self.camera_poses.cuda()
         self.adaptive_controller = GaussianPointAdaptiveController(
@@ -433,7 +431,11 @@ class GaussianPointCloudTrainer:
                 print(f"val_inference_time={average_inference_time};")
             self.scene.to_parquet(
                 os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
+            self.camera_poses.to_parquet(
+                os.path.join(self.config.output_model_dir, f"camera_poses_{iteration}.parquet"))
             if mean_psnr_score > self.best_psnr_score:
                 self.best_psnr_score = mean_psnr_score
                 self.scene.to_parquet(
                     os.path.join(self.config.output_model_dir, f"best_scene.parquet"))
+                self.camera_poses.to_parquet(
+                    os.path.join(self.config.output_model_dir, f"best_camera_poses.parquet"))
