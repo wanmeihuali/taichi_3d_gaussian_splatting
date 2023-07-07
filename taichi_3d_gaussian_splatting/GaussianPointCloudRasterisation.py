@@ -996,6 +996,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         num_affected_pixels: torch.Tensor  # M
         point_depth: torch.Tensor  # M
         point_uv_in_camera: torch.Tensor  # Mx2
+        grad_q_camera_pointcloud: torch.Tensor  # Kx4
+        grad_t_camera_pointcloud: torch.Tensor  # Kx3
 
     def __init__(
         self,
@@ -1290,6 +1292,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                             num_affected_pixels=in_camera_num_affected_pixels,
                             point_uv_in_camera=point_uv,
                             point_depth=point_in_camera[:, 2],
+                            grad_q_camera_pointcloud=grad_q_camera_pointcloud,
+                            grad_t_camera_pointcloud=grad_t_camera_pointcloud,
                         )
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
