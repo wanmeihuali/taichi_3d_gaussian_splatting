@@ -67,7 +67,7 @@ class GaussianPointCloudTrainer:
         os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
         if self.config.output_model_dir is None:
             self.config.output_model_dir = self.config.summary_writer_log_dir
-            os.makedirs(self.config.output_model_dir, exist_ok=True)
+        os.makedirs(self.config.output_model_dir, exist_ok=True)
         self.writer = SummaryWriter(
             log_dir=self.config.summary_writer_log_dir)
 
