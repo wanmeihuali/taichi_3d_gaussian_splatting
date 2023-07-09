@@ -133,8 +133,8 @@ class GaussianPointCloudTrainer:
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
-        camera_pose_optimizer = torch.optim.AdamW(
-            self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate, betas=(0.9, 0.999))
+        camera_pose_optimizer = torch.optim.SGD(
+            self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate)
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
             optimizer=position_optimizer, gamma=self.config.position_learning_rate_decay_rate)
