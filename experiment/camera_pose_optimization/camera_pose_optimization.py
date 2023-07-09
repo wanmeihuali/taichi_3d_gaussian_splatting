@@ -44,6 +44,10 @@ if __name__ == "__main__":
 
     df = pd.read_json(original_train_dataset_json_path, orient="records")
     df["T_pointcloud_camera"] = df["T_pointcloud_camera"].apply(lambda x: np.array(x).reshape(4, 4))
+    df["T_pointcloud_camera_with_noise"] = df["T_pointcloud_camera"].apply(lambda x: add_delta_to_se3(x))
+    # sample in row, select 20% of the data to add noise
+    df["T_pointcloud_camera"] = df.apply(lambda x: x["T_pointcloud_camera_with_noise"] if np.random.rand() < 0.2 else x["T_pointcloud_camera"], axis=1)
+
 
     # save df to a temp json file
     df.to_json("/tmp/temp.json", orient="records")
