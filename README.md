@@ -246,7 +246,7 @@ stateDiagram-v2
 The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file. The trained point cloud with feature is also stored as parquet and the output directory is specified in the config file.
 
 ### Run on colab (to take advantage of google provided GPU accelerators)
-Notebook provided under /tools/run_3d_gaussian_splatting_on_colab.ipynb
+You can find the related notebook here: /tools/run_3d_gaussian_splatting_on_colab.ipynb
 1. Set the hardware accelerator in colab: "Runtime->Change Runtime Type->Hardware accelerator->select GPU->select T4"
 2. Upload this repo to corresponding folder in your google drive.
 3. Mount your google drive to your notebook (see notebook).
