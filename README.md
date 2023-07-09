@@ -246,15 +246,16 @@ stateDiagram-v2
 The result is visualized in tensorboard. The tensorboard log is stored in the output directory specified in the config file. The trained point cloud with feature is also stored as parquet and the output directory is specified in the config file.
 
 ### Run on colab (to take advantage of google provided GPU accelerators)
+Notebook provided under /tools/run_3d_gaussian_splatting_on_colab.ipynb
 1. Set the hardware accelerator in colab: "Runtime->Change Runtime Type->Hardware accelerator->select GPU->select T4"
-2. Upload the code to corresponding folder in your google drive.
-3. Mount your google drive to this notebook (see following code).
-4. Install condacolab (see following code).
-5. Install requirement.txt with pip (see following code).
-6. Install pytorch, torchvision, pytorch-cuda etc. with conda (see following code).
+2. Upload this repo to corresponding folder in your google drive.
+3. Mount your google drive to your notebook (see notebook).
+4. Install condacolab (see notebook).
+5. Install requirement.txt with pip (see notebook).
+6. Install pytorch, torchvision, pytorch-cuda etc. with conda (see notebook).
 7. Prepare the dataset as instructed in https://github.com/wanmeihuali/taichi_3d_gaussian_splatting#dataset
-8. Run the trainer with correct config (see following code).
-9. Check out the training process through tensorboard (see following code).
+8. Run the trainer with correct config (see notebook).
+9. Check out the training process through tensorboard (see notebook).
 
 ## Visualization
 A simple visualizer is provided. The visualizer is implemented by Taichi GUI which limited the FPS to 60(If anyone knows how to change this limitation please ping me). The visualizer takes one or multiple parquet results. Example parquets can be downloaded [here](https://drive.google.com/file/d/12-kZZay8RFlDk7hJQysG_Cr4-oxDp37l/view?usp=sharing).
