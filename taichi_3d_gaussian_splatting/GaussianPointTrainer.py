@@ -43,6 +43,7 @@ class GaussianPointCloudTrainer:
         position_learning_rate: float = 1e-5
         position_learning_rate_decay_rate: float = 0.97
         position_learning_rate_decay_interval: int = 100
+        camera_pose_learning_rate_decay_rate: float = 0.97
         increase_color_max_sh_band_interval: int = 1000.
         camera_pose_learning_rate: float = 1e-6
         log_loss_interval: int = 10
@@ -133,11 +134,13 @@ class GaussianPointCloudTrainer:
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
-        camera_pose_optimizer = torch.optim.SGD(
-            self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate)
+        camera_pose_optimizer = torch.optim.AdamW(
+            self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate, betas=(0.9, 0.999))
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
             optimizer=position_optimizer, gamma=self.config.position_learning_rate_decay_rate)
+        camera_pose_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer=camera_pose_optimizer, gamma=self.config.camera_pose_learning_rate_decay_rate)
         downsample_factor = self.config.initial_downsample_factor
 
         recent_losses = deque(maxlen=100)
@@ -201,6 +204,10 @@ class GaussianPointCloudTrainer:
 
             if iteration % self.config.position_learning_rate_decay_interval == 0:
                 scheduler.step()
+            if iteration > self.config.iteration_start_camera_pose_optimization and \
+                iteration % self.config.camera_pose_optimization_batch_size == 0 and \
+                iteration % self.config.position_learning_rate_decay_interval == 0:    
+                camera_pose_scheduler.step()
             magnitude_grad_viewspace_on_image = None
             if self.adaptive_controller.input_data is not None:
                 magnitude_grad_viewspace_on_image = self.adaptive_controller.input_data.magnitude_grad_viewspace_on_image
