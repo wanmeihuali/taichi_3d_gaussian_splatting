@@ -30,14 +30,14 @@ print-metrics-to-console: True
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 3000
 log_validation_image: True
-iteration_start_camera_pose_optimization: 5000
+iteration_start_camera_pose_optimization: 50000
 camera_pose_optimization_batch_size: 200
 feature_learning_rate: 0.005
 position_learning_rate: 0.00005
 position_learning_rate_decay_rate: 0.9947
 camera_pose_learning_rate_decay_rate: 0.9947
 position_learning_rate_decay_interval: 100
-camera_pose_learning_rate: 2e-3
+camera_pose_learning_rate: 2e-5
 loss-function-config:
   lambda-value: 0.2
   enable_regularization: False
