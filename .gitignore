@@ -1,5 +1,6 @@
 *.pyc
 logs/
+logs_new/
 data/
 Data/
 *.egg

@@ -114,12 +114,13 @@ class GaussianPointCloudScene(torch.nn.Module):
                 point_cloud_rgb = torch.tensor(point_cloud_rgb, dtype=torch.float32, requires_grad=False, device=self.point_cloud_features.device)
                 point_cloud_rgb = point_cloud_rgb / 255.0
                 point_cloud_rgb = torch.clamp(point_cloud_rgb, 0.0, 0.99)
+                c0 = 0.28209479177387814
                 self.point_cloud_features[(self.point_invalid_mask == 0), 8] = \
-                    self._logit(point_cloud_rgb[:, 0])
+                    self._logit(point_cloud_rgb[:, 0]) / c0
                 self.point_cloud_features[(self.point_invalid_mask == 0), 24] = \
-                    self._logit(point_cloud_rgb[:, 1])
+                    self._logit(point_cloud_rgb[:, 1]) / c0
                 self.point_cloud_features[(self.point_invalid_mask == 0), 40] = \
-                    self._logit(point_cloud_rgb[:, 2])
+                    self._logit(point_cloud_rgb[:, 2]) / c0
 
     def _logit(self, x: torch.Tensor) -> torch.Tensor:
         return torch.log(x / (1.0 - x))
