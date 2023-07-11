@@ -30,7 +30,7 @@ jobs:
           fi
   
   build:
-    if: needs.check-label-prefix.outputs.need_experiment == 'true'
+    if: needs.check-label-prefix.outputs.need_experiment
     name: Run experiment
     runs-on: ubuntu-latest
     permissions:
