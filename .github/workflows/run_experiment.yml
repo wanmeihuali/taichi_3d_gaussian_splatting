@@ -23,6 +23,7 @@ jobs:
           PREFIX="need_experiment"
           
           if [[ "$LABEL_NAME" == "$PREFIX"* ]]; then
+            echo "need_experiment=true"
             echo "need_experiment=true" >> $GITHUB_OUTPUT
           else
             echo "need_experiment=false" >> $GITHUB_OUTPUT
