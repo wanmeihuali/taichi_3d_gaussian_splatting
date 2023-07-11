@@ -2,6 +2,7 @@
 from .GaussianPointCloudScene import GaussianPointCloudScene
 from .ImagePoseDataset import ImagePoseDataset
 from .Camera import CameraInfo
+from .CameraPoses import CameraPoses
 from .GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from .GaussianPointAdaptiveController import GaussianPointAdaptiveController
 from .LossFunction import LossFunction
@@ -37,10 +38,14 @@ class GaussianPointCloudTrainer:
         num_iterations: int = 300000
         val_interval: int = 1000
         feature_learning_rate: float = 1e-3
+        iteration_start_camera_pose_optimization: int = 30000
+        camera_pose_optimization_batch_size: int = 500
         position_learning_rate: float = 1e-5
         position_learning_rate_decay_rate: float = 0.97
         position_learning_rate_decay_interval: int = 100
+        camera_pose_learning_rate_decay_rate: float = 0.97
         increase_color_max_sh_band_interval: int = 1000.
+        camera_pose_learning_rate: float = 1e-6
         log_loss_interval: int = 10
         log_metrics_interval: int = 100
         print_metrics_to_console: bool = False
@@ -63,7 +68,7 @@ class GaussianPointCloudTrainer:
         os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
         if self.config.output_model_dir is None:
             self.config.output_model_dir = self.config.summary_writer_log_dir
-            os.makedirs(self.config.output_model_dir, exist_ok=True)
+        os.makedirs(self.config.output_model_dir, exist_ok=True)
         self.writer = SummaryWriter(
             log_dir=self.config.summary_writer_log_dir)
 
@@ -73,7 +78,9 @@ class GaussianPointCloudTrainer:
             dataset_json_path=self.config.val_dataset_json_path)
         self.scene = GaussianPointCloudScene.from_parquet(
             self.config.pointcloud_parquet_path, config=self.config.gaussian_point_cloud_scene_config)
+        self.camera_poses = CameraPoses(dataset_json_path=self.config.train_dataset_json_path)
         self.scene = self.scene.cuda()
+        self.camera_poses = self.camera_poses.cuda()
         self.adaptive_controller = GaussianPointAdaptiveController(
             config=self.config.adaptive_controller_config,
             maintained_parameters=GaussianPointAdaptiveController.GaussianPointAdaptiveControllerMaintainedParameters(
@@ -127,9 +134,13 @@ class GaussianPointCloudTrainer:
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.AdamW(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
+        camera_pose_optimizer = torch.optim.AdamW(
+            self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate, betas=(0.9, 0.999))
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
             optimizer=position_optimizer, gamma=self.config.position_learning_rate_decay_rate)
+        camera_pose_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            optimizer=camera_pose_optimizer, gamma=self.config.camera_pose_learning_rate_decay_rate)
         downsample_factor = self.config.initial_downsample_factor
 
         recent_losses = deque(maxlen=100)
@@ -138,17 +149,24 @@ class GaussianPointCloudTrainer:
         for iteration in tqdm(range(self.config.num_iterations)):
             if iteration % self.config.half_downsample_factor_interval == 0 and iteration > 0 and downsample_factor > 1:
                 downsample_factor = downsample_factor // 2
+
             optimizer.zero_grad()
             position_optimizer.zero_grad()
+            if iteration > self.config.iteration_start_camera_pose_optimization and \
+                iteration % self.config.camera_pose_optimization_batch_size == 0:
+                camera_pose_optimizer.zero_grad()
             
-            image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info = next(
+            image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = next(
                 train_data_loader_iter)
+            trained_q_pointcloud_camera, trained_t_pointcloud_camera = self.camera_poses(camera_pose_indices)
             if downsample_factor > 1:
                 image_gt, camera_info = GaussianPointCloudTrainer._downsample_image_and_camera_info(
                     image_gt, camera_info, downsample_factor=downsample_factor)
             image_gt = image_gt.cuda()
-            q_pointcloud_camera = q_pointcloud_camera.cuda()
-            t_pointcloud_camera = t_pointcloud_camera.cuda()
+            input_q_pointcloud_camera = input_q_pointcloud_camera.cuda()
+            input_t_pointcloud_camera = input_t_pointcloud_camera.cuda()
+            trained_q_pointcloud_camera = trained_q_pointcloud_camera.cuda()
+            trained_t_pointcloud_camera = trained_t_pointcloud_camera.cuda()
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
             camera_info.camera_width = int(camera_info.camera_width)
             camera_info.camera_height = int(camera_info.camera_height)
@@ -158,8 +176,8 @@ class GaussianPointCloudTrainer:
                 point_object_id=self.scene.point_object_id,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 camera_info=camera_info,
-                q_pointcloud_camera=q_pointcloud_camera,
-                t_pointcloud_camera=t_pointcloud_camera,
+                q_pointcloud_camera=trained_q_pointcloud_camera,
+                t_pointcloud_camera=trained_t_pointcloud_camera,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
             image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
@@ -176,12 +194,20 @@ class GaussianPointCloudTrainer:
             loss.backward()
             optimizer.step()
             position_optimizer.step()
+            if iteration > self.config.iteration_start_camera_pose_optimization and \
+                iteration % self.config.camera_pose_optimization_batch_size == self.config.camera_pose_optimization_batch_size - 1:
+                camera_pose_optimizer.step()
+                self.camera_poses.normalize_quaternion()
 
             recent_losses.append(loss.item())
             
 
             if iteration % self.config.position_learning_rate_decay_interval == 0:
                 scheduler.step()
+            if iteration > self.config.iteration_start_camera_pose_optimization and \
+                iteration % self.config.camera_pose_optimization_batch_size == 0 and \
+                iteration % self.config.position_learning_rate_decay_interval == 0:    
+                camera_pose_scheduler.step()
             magnitude_grad_viewspace_on_image = None
             if self.adaptive_controller.input_data is not None:
                 magnitude_grad_viewspace_on_image = self.adaptive_controller.input_data.magnitude_grad_viewspace_on_image
@@ -261,7 +287,7 @@ class GaussianPointCloudTrainer:
                     self.writer.add_image(
                         "train/image_problematic", grid, iteration)
                 
-            del image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
+            del image_gt, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000 or iteration == 5000: # they use 7000 in paper, it's hard to set a interval so hard code it here
                 self.validation(val_data_loader, iteration)
     
@@ -295,6 +321,8 @@ class GaussianPointCloudTrainer:
             r_grad = feature_grad[:, 8:24]
             g_grad = feature_grad[:, 24:40]
             b_grad = feature_grad[:, 40:56]
+            grad_q_camera_pointcloud = grad_input.grad_q_camera_pointcloud
+            grad_t_camera_pointcloud = grad_input.grad_t_camera_pointcloud
             num_overlap_tiles = grad_input.num_overlap_tiles
             num_affected_pixels = grad_input.num_affected_pixels
             writer.add_histogram("grad/xyz_grad", xyz_grad, iteration)
@@ -307,6 +335,9 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("grad/b_grad", b_grad, iteration)
             writer.add_histogram("value/num_overlap_tiles", num_overlap_tiles, iteration)
             writer.add_histogram("value/num_affected_pixels", num_affected_pixels, iteration)
+            writer.add_histogram("grad/grad_q_camera_pointcloud", grad_q_camera_pointcloud, iteration)
+            writer.add_histogram("grad/grad_t_camera_pointcloud", grad_t_camera_pointcloud, iteration)
+
 
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
@@ -342,7 +373,7 @@ class GaussianPointCloudTrainer:
             for idx, val_data in enumerate(tqdm(val_data_loader)):
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
-                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info = val_data
+                image_gt, q_pointcloud_camera, t_pointcloud_camera, _,  camera_info = val_data
                 image_gt = image_gt.cuda()
                 q_pointcloud_camera = q_pointcloud_camera.cuda()
                 t_pointcloud_camera = t_pointcloud_camera.cuda()
@@ -408,7 +439,11 @@ class GaussianPointCloudTrainer:
                 print(f"val_inference_time={average_inference_time};")
             self.scene.to_parquet(
                 os.path.join(self.config.output_model_dir, f"scene_{iteration}.parquet"))
+            self.camera_poses.to_parquet(
+                os.path.join(self.config.output_model_dir, f"camera_poses_{iteration}.parquet"))
             if mean_psnr_score > self.best_psnr_score:
                 self.best_psnr_score = mean_psnr_score
                 self.scene.to_parquet(
                     os.path.join(self.config.output_model_dir, f"best_scene.parquet"))
+                self.camera_poses.to_parquet(
+                    os.path.join(self.config.output_model_dir, f"best_camera_poses.parquet"))
