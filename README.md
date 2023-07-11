@@ -62,7 +62,7 @@ The results for the official implementation and this implementation are tested o
 | Truck(7k) | offcial implementation | 23.22 | - | 1.73e6 |
 | Truck(7k) | this implementation | 23.762359619140625 | 0.835700511932373 | ~2.3e5 |
 | Truck(30k) | paper | 25.187 | 0.879 | - |
-| Truck(30k) | offcial implementation | 24.86 | - | 2.1e6 |
+| Truck(30k) | offcial implementation | 24.88 | - | 2.1e6 |
 | Truck(30k) | this implementation | 25.127460479736328 | 0.8657363057136536 | 4.62e5 |
 
 [Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/91#issuecomment-1630260288):
