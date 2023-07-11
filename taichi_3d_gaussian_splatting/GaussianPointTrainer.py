@@ -325,6 +325,7 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)
+            writer.add_histogram("value/sigmoid_alpha", torch.sigmoid(alpha), iteration)
             writer.add_histogram("value/r", r, iteration)
             writer.add_histogram("value/g", g, iteration)
             writer.add_histogram("value/b", b, iteration)
