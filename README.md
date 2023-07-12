@@ -52,26 +52,24 @@ top left: [result from this repo(30k iteration)](https://github.com/wanmeihuali/
 - Taichi provides automatic differentiation, although the repo does not use it currently, it is a nice feature for future development. 
 
 ## Current status
-Working but not reaching the metric from paper. Now the repo can generate result for datasets such as tank and temple, and shows pretty good performance for small object dataset. However, the performance metric is still a bit worse than the paper.
+The repo is now tested with the dataset provided by the official implementation. For the truck dataset, The repo is able to achieve a bit higher PSNR than the official implementation with only 1/5 to 1/4 number of points. However, the training/inference speed is still slower than the official implementation. 
 
-| Dataset | PSNR from paper | PSNR from this repo | SSIM from paper | SSIM from this repo | training time(RTX 3090) |  training time(T4) | #points |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Truck(7k) | 23.51 | 22.84 | 0.840 | 0.798 | 10min50s | - | 350k |
-| Truck(30k) | 25.187 | 24.25 | 0.879 | 0.8357 | 1h14min | - |682k |
-| [Truck(30k) less point](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/36#issuecomment-1603107339) | 25.187 | 24.15 | 0.879 | 0.824 | - | 1h40min |313k |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Train(30k) less point | 21.8 | 20.097 | 0.802 | 0.758 | - | 1h55min | 445k |
+The results for the official implementation and this implementation are tested on the same dataset. I notice that the result from official implementation is slightly different from their paper, the reason may be the difference in testing resolution.
 
-[garden(1927x840)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/49#issuecomment-1605892361)
-| train:ssim | val:psnr | train:psnr | val:5kpsnr | val:7kssim | val:7kpsnr | train:5kpsnr | val:5kssim | train:5kssim | train:7kssim | val:ssim | train:7kpsnr |
+| Dataset | source | PSNR | SSIM | #points |
+| --- | --- | --- | --- | --- |
+| Truck(7k) | paper | 23.51 | 0.840 | - |
+| Truck(7k) | offcial implementation | 23.22 | - | 1.73e6 |
+| Truck(7k) | this implementation | 23.762359619140625 | 0.835700511932373 | ~2.3e5 |
+| Truck(30k) | paper | 25.187 | 0.879 | - |
+| Truck(30k) | offcial implementation | 24.88 | - | 2.1e6 |
+| Truck(30k) | this implementation | 25.127460479736328 | 0.8657363057136536 | 4.62e5 |
+
+[Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/91#issuecomment-1630260288):
+| train:5kpsnr | train:5kssim | train:7kpsnr | train:7kssim | train:psnr | train:ssim | val:5kpsnr | val:5kssim | val:7kpsnr | val:7kssim | val:psnr | val:ssim |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0.8359270095825195 | 26.33028221130371 | 26.563976287841797 | 24.334638595581055 | 0.7433000802993774 | 25.014371871948242 | 23.131235122680664 | 0.7052685618400574 | 0.6888041496276855 | 0.7371317744255066 | 0.8041130304336548 | 25.55982208251953 |
+| 21.456432342529297 | 0.7930525541305542 | 26.37507438659668 | 0.8753818273544312 | 23.809328079223633 | 0.8456022143363953 | 23.075576782226562 | 0.8141209483146667 | 23.762359619140625 | 0.835700511932373 | 25.127460479736328 | 0.8657363057136536 |
 
-
-[Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/49#issuecomment-1605699569):
-| val:5kpsnr | val:7kssim | train:7kpsnr | train:7kssim | val:7kpsnr | val:ssim | train:psnr | val:psnr | train:5kssim | train:ssim | train:5kpsnr | val:5kssim |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 22.275985717773438 | 0.8001110553741455 | 24.976150512695312 | 0.8154618144035339 | 22.946680068969727 | 0.8391811847686768 | 25.5905704498291 | 24.461441040039062 | 0.7955425977706909 | 0.8418866395950317 | 23.247669219970703 | 0.7754911780357361 |
 
 ## Installation
 1. Prepare an environment contains pytorch and torchvision
