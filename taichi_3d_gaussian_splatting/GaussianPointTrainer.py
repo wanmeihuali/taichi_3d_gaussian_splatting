@@ -123,9 +123,9 @@ class GaussianPointCloudTrainer:
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
         
-        optimizer = torch.optim.AdamW(
+        optimizer = torch.optim.Adam(
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
-        position_optimizer = torch.optim.AdamW(
+        position_optimizer = torch.optim.Adam(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
