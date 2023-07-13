@@ -255,12 +255,13 @@ class GaussianPointCloudTrainer:
                     image_list.append(image_diff)
                 grid = make_grid(image_list, nrow=2)
                 
-                self.writer.add_image(
-                    "train/image", grid, iteration)
                 if is_problematic:
                     self.writer.add_image(
                         "train/image_problematic", grid, iteration)
-                
+                else:
+                    self.writer.add_image(
+                        "train/image", grid, iteration)
+
             del image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
             if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000 or iteration == 5000: # they use 7000 in paper, it's hard to set a interval so hard code it here
                 self.validation(val_data_loader, iteration)
