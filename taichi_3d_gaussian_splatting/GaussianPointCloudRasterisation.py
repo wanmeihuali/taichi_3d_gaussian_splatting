@@ -922,9 +922,10 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         far_plane: float = 1000.
         depth_to_sort_key_scale: float = 100.
         grad_color_factor = 5.
+        grad_high_order_color_factor = 1.
         grad_s_factor = 0.5
         grad_q_factor = 1.
-        grad_alpha_factor = 1.
+        grad_alpha_factor = 20.
 
     @dataclass
     class GaussianPointCloudRasterisationInput:
@@ -1234,8 +1235,16 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                                              4:7] *= self.config.grad_s_factor
                     grad_pointcloud_features[:,
                                              7] *= self.config.grad_alpha_factor
-                    grad_pointcloud_features[:,
-                                             8:] *= self.config.grad_color_factor
+                    
+                    # 8, 24, 40 are the zero order coefficients of the SH basis
+                    grad_pointcloud_features[:, 8] *= self.config.grad_color_factor
+                    grad_pointcloud_features[:, 24] *= self.config.grad_color_factor
+                    grad_pointcloud_features[:, 40] *= self.config.grad_color_factor
+                    # other coefficients are the higher order coefficients of the SH basis
+                    grad_pointcloud_features[:, 9:24] *= self.config.grad_high_order_color_factor
+                    grad_pointcloud_features[:, 25:40] *= self.config.grad_high_order_color_factor
+                    grad_pointcloud_features[:, 41:] *= self.config.grad_high_order_color_factor
+                    
 
                     if backward_valid_point_hook is not None:
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
