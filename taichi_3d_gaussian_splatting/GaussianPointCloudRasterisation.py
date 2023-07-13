@@ -922,7 +922,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         far_plane: float = 1000.
         depth_to_sort_key_scale: float = 100.
         grad_color_factor = 5.
-        grad_high_order_color_factor = 5.
+        grad_high_order_color_factor = 1.
         grad_s_factor = 0.5
         grad_q_factor = 1.
         grad_alpha_factor = 20.
