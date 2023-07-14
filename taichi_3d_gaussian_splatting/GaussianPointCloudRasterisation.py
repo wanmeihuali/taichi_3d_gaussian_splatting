@@ -71,129 +71,49 @@ def filter_point_in_camera(
         else:
             point_in_camera_mask[point_id] = ti.cast(0, ti.i8)
 
-
-@ti.kernel
-def generate_point_sort_key(
-    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
-    point_object_id: ti.types.ndarray(ti.i32, ndim=1),  # (N), we allow points belong to different objects, different objects may have different camera poses. By moving camera, we can actually handle moving objects.
-    q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4), K is number of objects
-    t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3), K is number of objects
-    point_in_camera_id: ti.types.ndarray(ti.i32, ndim=1),  # (M)
-    point_in_camera_sort_key: ti.types.ndarray(ti.i64, ndim=1),  # (M)
-    camera_width: ti.i32,  # required to be multiple of 16
+@ti.func
+def get_bounding_box_by_point_and_radii(
+    uv: ti.math.vec2,  # (2)
+    radii: ti.f32,  # scalar
+    camera_width: ti.i32,
     camera_height: ti.i32,
-    depth_to_sort_key_scale: ti.f32,
 ):
-    camera_intrinsics_mat = ti.Matrix(
-        [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
-    for idx in range(point_in_camera_id.shape[0]):
-        point_id = point_in_camera_id[idx]
-        point_xyz = ti.Vector(
-            [pointcloud[point_id, 0], pointcloud[point_id, 1], pointcloud[point_id, 2]])
-        point_q_camera_pointcloud = ti.Vector(
-            [q_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(4))])
-        point_t_camera_pointcloud = ti.Vector(
-            [t_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(3))])
-        T_camera_pointcloud_mat = tranform_matrix_from_quaternion_and_translation(
-            q=point_q_camera_pointcloud,
-            t=point_t_camera_pointcloud,
-        )
-        pixel_uv, point_in_camera = project_point_to_camera(
-            translation=point_xyz,
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-        )
-        point_depth = point_in_camera.z
-        # as the paper said:  the lower 32 bits encode its projected depth and the higher bits encode the index of the overlapped tile.
-        encoded_projected_depth = ti.cast(
-            point_depth * depth_to_sort_key_scale, ti.i32)
-        tile_u = ti.cast(pixel_uv[0] // 16, ti.i32)
-        tile_v = ti.cast(pixel_uv[1] // 16, ti.i32)
-        encoded_tile_id = ti.cast(
-            tile_u + tile_v * (camera_width // 16), ti.i32)
-        sort_key = ti.cast(encoded_projected_depth, ti.i64) + \
-            (ti.cast(encoded_tile_id, ti.i64) << 32)
-        point_in_camera_sort_key[idx] = sort_key
-
-
-HALF_NEIGHBOR_TILE_SIZE = 7  # in paper it is 8
-
+    radii = ti.max(radii, 1.0) # avoid zero radii, at least 1 pixel
+    min_u = ti.max(0.0, uv[0] - radii)
+    max_u = uv[0] + radii
+    min_v = ti.max(0.0, uv[1] - radii)
+    max_v = uv[1] + radii
+    min_tile_u = ti.cast(min_u // 16, ti.i32)
+    min_tile_u = ti.min(min_tile_u, camera_width // 16)
+    max_tile_u = ti.cast(max_u // 16, ti.i32) + 1
+    max_tile_u = ti.min(ti.max(max_tile_u, min_tile_u + 1), camera_width // 16)
+    min_tile_v = ti.cast(min_v // 16, ti.i32)
+    min_tile_v = ti.min(min_tile_v, camera_height // 16)
+    max_tile_v = ti.cast(max_v // 16, ti.i32) + 1
+    max_tile_v = ti.min(ti.max(max_tile_v, min_tile_v + 1), camera_height // 16)
+    return min_tile_u, max_tile_u, min_tile_v, max_tile_v
+    
 
 @ti.kernel
 def generate_num_overlap_tiles(
     num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
-    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
-    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
+    point_radii: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     camera_width: ti.i32,  # required to be multiple of 16
     camera_height: ti.i32,
 ):
     for point_offset in range(num_overlap_tiles.shape[0]):
         uv = ti.math.vec2([point_uv[point_offset, 0],
                            point_uv[point_offset, 1]])
-        uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
-                               point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
-        point_alpha_after_activation_value = point_alpha_after_activation[point_offset]
+        radii = point_radii[point_offset]
 
-        center_tile_u = ti.cast(uv[0] // 16, ti.i32)
-        center_tile_v = ti.cast(uv[1] // 16, ti.i32)
-
-        # eigen_values, eigen_vectors = ti.sym_eig(uv_cov)
-        large_eigen_values = (uv_cov[0, 0] + uv_cov[1, 1] +
-                              ti.sqrt((uv_cov[0, 0] - uv_cov[1, 1]) * (uv_cov[0, 0] - uv_cov[1, 1]) + 4.0 * uv_cov[0, 1] * uv_cov[1, 0])) / 2.0
-        # 3.0 is a value from experiment
-        search_size = ti.sqrt(large_eigen_values) * 3.0
-        tile_search_size = ti.cast(ti.ceil(search_size / 16.0), ti.i32)
-        tile_search_size = ti.max(tile_search_size, 1)
-
-        overlap_tiles_count = 0
-        # we define overlap as: the alpha at the center or four corners of the tile is larger than 1/255,
-        # or the point is inside the 3x3 tile block
-        # TODO: move the if check outside the loop
-        for tile_u_offset in range(-tile_search_size, tile_search_size + 1):
-            for tile_v_offset in range(-tile_search_size, tile_search_size + 1):
-                tile_u = center_tile_u + tile_u_offset
-                tile_v = center_tile_v + tile_v_offset
-                if tile_u >= 0 and tile_u < camera_width // 16 and tile_v >= 0 and tile_v < camera_height // 16:
-                    center_u = tile_u * 16 + 8
-                    center_v = tile_v * 16 + 8
-                    gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([center_u, center_v]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    )
-                    corner_u_0 = tile_u * 16
-                    corner_v_0 = tile_v * 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_0, corner_v_0]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    corner_u_1 = tile_u * 16 + 16
-                    corner_v_1 = tile_v * 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_1, corner_v_1]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    corner_u_2 = tile_u * 16
-                    corner_v_2 = tile_v * 16 + 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_2, corner_v_2]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    corner_u_3 = tile_u * 16 + 16
-                    corner_v_3 = tile_v * 16 + 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_3, corner_v_3]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255. or \
-                            (ti.abs(tile_u_offset) <= 1 and ti.abs(tile_v_offset) <= 1 and point_alpha_after_activation_value > 1 / 255.):
-                        overlap_tiles_count += 1
+        min_tile_u, max_tile_u, min_tile_v, max_tile_v = get_bounding_box_by_point_and_radii(
+            uv=uv,
+            radii=radii,
+            camera_width=camera_width,
+            camera_height=camera_height,
+        )
+        overlap_tiles_count = (max_tile_u - min_tile_u) * (max_tile_v - min_tile_v)
         num_overlap_tiles[point_offset] = overlap_tiles_count
 
 
@@ -201,8 +121,7 @@ def generate_num_overlap_tiles(
 def generate_point_sort_key_by_num_overlap_tiles(
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
-    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
+    point_radii: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     accumulated_num_overlap_tiles: ti.types.ndarray(ti.i64, ndim=1),  # (M)
     # (K), K = sum(num_overlap_tiles)
     point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),
@@ -217,79 +136,29 @@ def generate_point_sort_key_by_num_overlap_tiles(
                            point_uv[point_offset, 1]])
         xyz_in_camera = ti.math.vec3(
             [point_in_camera[point_offset, 0], point_in_camera[point_offset, 1], point_in_camera[point_offset, 2]])
-        uv_cov = ti.math.mat2([point_uv_covariance[point_offset, 0, 0], point_uv_covariance[point_offset, 0, 1],
-                               point_uv_covariance[point_offset, 1, 0], point_uv_covariance[point_offset, 1, 1]])
-        point_alpha_after_activation_value = point_alpha_after_activation[point_offset]
+        radii = point_radii[point_offset]
+        min_tile_u, max_tile_u, min_tile_v, max_tile_v = get_bounding_box_by_point_and_radii(
+            uv=uv,
+            radii=radii,
+            camera_width=camera_width,
+            camera_height=camera_height,
+        )
 
         point_depth = xyz_in_camera[2]
         encoded_projected_depth = ti.cast(
             point_depth * depth_to_sort_key_scale, ti.i32)
-        center_tile_u = ti.cast(uv[0] // 16, ti.i32)
-        center_tile_v = ti.cast(uv[1] // 16, ti.i32)
-
-        # eigen_values, eigen_vectors = ti.sym_eig(uv_cov)
-        large_eigen_values = (uv_cov[0, 0] + uv_cov[1, 1] +
-                              ti.sqrt((uv_cov[0, 0] - uv_cov[1, 1]) * (uv_cov[0, 0] - uv_cov[1, 1]) + 4.0 * uv_cov[0, 1] * uv_cov[1, 0])) / 2.0
-        # 3.0 is a value from experiment
-        search_size = ti.sqrt(large_eigen_values) * 3.0
-        tile_search_size = ti.cast(ti.ceil(search_size / 16.0), ti.i32)
-        tile_search_size = ti.max(tile_search_size, 1)
-
-        overlap_tiles_count = 0
-        # we define overlap as: the alpha at the center or four corners of the tile is larger than 1/255,
-        # or the point is inside the 3x3 tile block
-        for tile_u_offset in range(-tile_search_size, tile_search_size + 1):
-            for tile_v_offset in range(-tile_search_size, tile_search_size + 1):
-                tile_u = center_tile_u + tile_u_offset
-                tile_v = center_tile_v + tile_v_offset
-                if tile_u >= 0 and tile_u < camera_width // 16 and tile_v >= 0 and tile_v < camera_height // 16:
-                    center_u = tile_u * 16 + 8
-                    center_v = tile_v * 16 + 8
-                    gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([center_u, center_v]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    )
-                    corner_u_0 = tile_u * 16
-                    corner_v_0 = tile_v * 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_0, corner_v_0]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    corner_u_1 = tile_u * 16 + 16
-                    corner_v_1 = tile_v * 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_1, corner_v_1]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    corner_u_2 = tile_u * 16
-                    corner_v_2 = tile_v * 16 + 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_2, corner_v_2]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-                    corner_u_3 = tile_u * 16 + 16
-                    corner_v_3 = tile_v * 16 + 16
-                    gaussian_alpha = ti.max(gaussian_alpha, get_point_probability_density_from_2d_gaussian_normalized(
-                        xy=ti.math.vec2([corner_u_3, corner_v_3]),
-                        gaussian_mean=uv,
-                        gaussian_covariance=uv_cov,
-                    ))
-
-                    if gaussian_alpha * point_alpha_after_activation_value > 1 / 255. or \
-                            (ti.abs(tile_u_offset) <= 1 and ti.abs(tile_v_offset) <= 1 and point_alpha_after_activation_value > 1 / 255.):
-                        key_idx = accumulated_num_overlap_tiles[point_offset] + \
-                            overlap_tiles_count
-                        encoded_tile_id = ti.cast(
-                            tile_u + tile_v * (camera_width // 16), ti.i32)
-                        sort_key = ti.cast(encoded_projected_depth, ti.i64) + \
-                            (ti.cast(encoded_tile_id, ti.i64) << 32)
-                        point_in_camera_sort_key[key_idx] = sort_key
-                        point_offset_with_sort_key[key_idx] = point_offset
-                        overlap_tiles_count += 1
+        for tile_u in range(min_tile_u, max_tile_u):
+            for tile_v in range(min_tile_v, max_tile_v):
+                    overlap_tiles_count = (max_tile_v - min_tile_v) * \
+                        (tile_u - min_tile_u) + (tile_v - min_tile_v)
+                    key_idx = accumulated_num_overlap_tiles[point_offset] + \
+                        overlap_tiles_count
+                    encoded_tile_id = ti.cast(
+                        tile_u + tile_v * (camera_width // 16), ti.i32)
+                    sort_key = ti.cast(encoded_projected_depth, ti.i64) + \
+                        (ti.cast(encoded_tile_id, ti.i64) << 32)
+                    point_in_camera_sort_key[key_idx] = sort_key
+                    point_offset_with_sort_key[key_idx] = point_offset
 
 
 @ti.kernel
@@ -356,17 +225,6 @@ def load_point_cloud_row_into_gaussian_point_3d(
     return gaussian_point_3d
 
 @ti.kernel
-def normalize_cov_rotation(
-    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
-    point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
-):
-    for idx in range(point_id_list.shape[0]):
-        point_id = point_id_list[idx]
-        normalize_cov_rotation_in_pointcloud_features(
-            pointcloud_features=pointcloud_features,
-            point_id=point_id)
-
-@ti.kernel
 def generate_point_attributes_in_camera_plane(
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
@@ -380,11 +238,15 @@ def generate_point_attributes_in_camera_plane(
     point_uv_covariance: ti.types.ndarray(ti.f32, ndim=3),  # (M, 2, 2)
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
+    point_radii: ti.types.ndarray(ti.f32, ndim=1),  # (M)
 ):
     for idx in range(point_id_list.shape[0]):
         camera_intrinsics_mat = ti.Matrix(
             [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
         point_id = point_id_list[idx]
+        normalize_cov_rotation_in_pointcloud_features(
+            pointcloud_features=pointcloud_features,
+            point_id=point_id)
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
             pointcloud=pointcloud,
             pointcloud_features=pointcloud_features,
@@ -429,7 +291,11 @@ def generate_point_attributes_in_camera_plane(
         )
         point_color[idx, 0], point_color[idx,
                                          1], point_color[idx, 2] = color[0], color[1], color[2]
-
+        large_eigen_values = (uv_cov[0, 0] + uv_cov[1, 1] +
+                              ti.sqrt((uv_cov[0, 0] - uv_cov[1, 1]) * (uv_cov[0, 0] - uv_cov[1, 1]) + 4.0 * uv_cov[0, 1] * uv_cov[1, 0])) / 2.0
+        # 3.0 is a value from experiment
+        radii = ti.sqrt(large_eigen_values) * 3.0
+        point_radii[idx] = radii
 
 @ti.kernel
 def gaussian_point_rasterisation(
@@ -1015,11 +881,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     size=(num_points_in_camera, 2, 2), dtype=torch.float32, device=pointcloud.device)
                 point_color = torch.zeros(
                     size=(num_points_in_camera, 3), dtype=torch.float32, device=pointcloud.device)
+                point_radii = torch.empty(
+                    size=(num_points_in_camera,), dtype=torch.float32, device=pointcloud.device)
 
-                normalize_cov_rotation(
-                    pointcloud_features=pointcloud_features,
-                    point_id_list=point_id_in_camera_list,
-                )
 
                 generate_point_attributes_in_camera_plane(
                     pointcloud=pointcloud,
@@ -1034,14 +898,14 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_uv_covariance=point_uv_covariance,
                     point_alpha_after_activation=point_alpha_after_activation,
                     point_color=point_color,
+                    point_radii=point_radii,
                 )
 
                 num_overlap_tiles = torch.empty_like(point_id_in_camera_list)
                 generate_num_overlap_tiles(
                     num_overlap_tiles=num_overlap_tiles,
                     point_uv=point_uv,
-                    point_uv_covariance=point_uv_covariance,
-                    point_alpha_after_activation=point_alpha_after_activation,
+                    point_radii=point_radii,
                     camera_width=camera_info.camera_width,
                     camera_height=camera_info.camera_height,
                 )
@@ -1063,8 +927,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     generate_point_sort_key_by_num_overlap_tiles(
                         point_uv=point_uv,
                         point_in_camera=point_in_camera,
-                        point_uv_covariance=point_uv_covariance,
-                        point_alpha_after_activation=point_alpha_after_activation,
+                        point_radii=point_radii,
                         accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
                         point_offset_with_sort_key=point_offset_with_sort_key,
                         point_in_camera_sort_key=point_in_camera_sort_key,
