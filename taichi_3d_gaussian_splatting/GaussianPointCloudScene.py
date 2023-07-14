@@ -164,6 +164,7 @@ class GaussianPointCloudScene(torch.nn.Module):
             scene = GaussianPointCloudScene(
                 point_cloud, config)
 
+
             point_cloud_rgb = scene_df[["r", "g", "b"]
                                        ].to_numpy() if df_has_color else None
             scene.initialize(point_cloud_rgb=point_cloud_rgb)
