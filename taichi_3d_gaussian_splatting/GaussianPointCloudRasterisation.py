@@ -350,9 +350,11 @@ def gaussian_point_rasterisation(
         tile_point_depth = ti.simt.block.SharedArray(256, dtype=ti.f32)
         tile_point_alpha = ti.simt.block.SharedArray(256, dtype=ti.f32)
         tile_point_color = ti.simt.block.SharedArray((256, 3), dtype=ti.f32)
+        """
         tile_saturated_pixel_count = ti.simt.block.SharedArray(
             (1,), dtype=ti.i32)
         tile_saturated_pixel_count[0] = 0
+        """
 
         num_points_in_tile = end_offset - start_offset
         num_point_groups = (num_points_in_tile + 255) // 256
@@ -421,7 +423,7 @@ def gaussian_point_rasterisation(
                 # and stop front-to-back blending before it can exceed 0.9999.
                 if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
                     pixel_saturated = True
-                    ti.atomic_add(tile_saturated_pixel_count[0], 1)
+                    # ti.atomic_add(tile_saturated_pixel_count[0], 1)
                     break
                 offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
                 accumulated_color += color * alpha * T_i
@@ -432,9 +434,11 @@ def gaussian_point_rasterisation(
                 valid_point_count += 1
             # end of point group loop
             # block the next update for shared memory until all threads finish the current update
-            ti.simt.block.sync()
-            if tile_saturated_pixel_count[0] == 256:
+            all_saturated = ti.simt.block.sync_all_nonzero(predicate=ti.cast(pixel_saturated, ti.i32))
+            if all_saturated != 0:
                 break
+            # if tile_saturated_pixel_count[0] == 256:
+            #    break
 
         # end of point group id loop
 
