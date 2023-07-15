@@ -301,13 +301,10 @@ def generate_point_attributes_in_camera_plane(
 def gaussian_point_rasterisation(
     camera_height: ti.i32,
     camera_width: ti.i32,
-    pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
     # (tiles_per_row * tiles_per_col)
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
     # (tiles_per_row * tiles_per_col)
     tile_points_end: ti.types.ndarray(ti.i32, ndim=1),
-    point_id_in_camera_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
     # (K) the offset of the point in point_id_in_camera_list
     point_offset_with_sort_key: ti.types.ndarray(ti.i32, ndim=1),
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
@@ -387,12 +384,12 @@ def gaussian_point_rasterisation(
                 tile_point_color[2, thread_id] = point_color[to_load_point_offset, 2]
 
             ti.simt.block.sync()
-            max_point_group_offset = ti.min(256, num_points_in_tile - point_group_id * 256)
+            max_point_group_offset: ti.i32 = ti.min(256, num_points_in_tile - point_group_id * 256)
             for point_group_offset in range(max_point_group_offset):
                 if pixel_saturated:
                     break
                 # forward rendering process
-                idx_point_offset_with_sort_key = start_offset + \
+                idx_point_offset_with_sort_key: ti.i32 = start_offset + \
                     point_group_id * 256 + point_group_offset
 
                 uv = ti.math.vec2(
@@ -974,11 +971,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     gaussian_point_rasterisation(
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
-                        pointcloud=pointcloud,
-                        pointcloud_features=pointcloud_features,
                         tile_points_start=tile_points_start,
                         tile_points_end=tile_points_end,
-                        point_id_in_camera_list=point_id_in_camera_list,
                         point_offset_with_sort_key=point_offset_with_sort_key,
                         point_uv=point_uv,
                         point_in_camera=point_in_camera,
