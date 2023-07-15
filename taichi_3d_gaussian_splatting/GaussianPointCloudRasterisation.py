@@ -329,8 +329,15 @@ def gaussian_point_rasterisation(
         tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
         tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
         pixel_offset_in_tile = pixel_offset - tile_id * 256
-        pixel_offset_u_in_tile = pixel_offset_in_tile % 16
-        pixel_offset_v_in_tile = pixel_offset_in_tile // 16
+        # mini_tile_idx is 4x4 tile index in a 16x16 tile
+        # two mini_tile forms a warp, and we want them to form a 4x8 area in image
+        # rather than 2x16 to avoid warp divergence
+        mini_tile_idx = pixel_offset_in_tile // 16
+        mini_tile_offset = pixel_offset_in_tile % 16
+        pixel_offset_u_in_tile = (mini_tile_idx % 4) * 4 + \
+            mini_tile_offset % 4
+        pixel_offset_v_in_tile = (mini_tile_idx // 4) * 4 + \
+            mini_tile_offset // 4
         pixel_u = tile_u * 16 + pixel_offset_u_in_tile
         pixel_v = tile_v * 16 + pixel_offset_v_in_tile
         start_offset = tile_points_start[tile_id]
@@ -344,12 +351,12 @@ def gaussian_point_rasterisation(
 
         valid_point_count: ti.i32 = 0
 
-        tile_point_uv = ti.simt.block.SharedArray((256, 2), dtype=ti.f32)
+        tile_point_uv = ti.simt.block.SharedArray((2, 256), dtype=ti.f32)
         tile_point_uv_cov = ti.simt.block.SharedArray(
-            (256, 2, 2), dtype=ti.f32)
+            (2, 2, 256), dtype=ti.f32)
         tile_point_depth = ti.simt.block.SharedArray(256, dtype=ti.f32)
         tile_point_alpha = ti.simt.block.SharedArray(256, dtype=ti.f32)
-        tile_point_color = ti.simt.block.SharedArray((256, 3), dtype=ti.f32)
+        tile_point_color = ti.simt.block.SharedArray((3, 256), dtype=ti.f32)
         tile_saturated_pixel_count = ti.simt.block.SharedArray(
             (1,), dtype=ti.i32)
         tile_saturated_pixel_count[0] = 0
@@ -365,25 +372,18 @@ def gaussian_point_rasterisation(
                 point_group_id * 256 + thread_id
             if to_load_idx_point_offset_with_sort_key < end_offset:
                 to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
-                tile_point_uv[thread_id, 0] = point_uv[to_load_point_offset, 0]
-                tile_point_uv[thread_id, 1] = point_uv[to_load_point_offset, 1]
-                tile_point_uv_cov[thread_id, 0,
-                                  0] = point_uv_covariance[to_load_point_offset, 0, 0]
-                tile_point_uv_cov[thread_id, 0,
-                                  1] = point_uv_covariance[to_load_point_offset, 0, 1]
-                tile_point_uv_cov[thread_id, 1,
-                                  0] = point_uv_covariance[to_load_point_offset, 1, 0]
-                tile_point_uv_cov[thread_id, 1,
-                                  1] = point_uv_covariance[to_load_point_offset, 1, 1]
+                tile_point_uv[0, thread_id] = point_uv[to_load_point_offset, 0]
+                tile_point_uv[1, thread_id] = point_uv[to_load_point_offset, 1]
+                tile_point_uv_cov[0, 0, thread_id] = point_uv_covariance[to_load_point_offset, 0, 0]
+                tile_point_uv_cov[0, 1, thread_id] = point_uv_covariance[to_load_point_offset, 0, 1]
+                tile_point_uv_cov[1, 0, thread_id] = point_uv_covariance[to_load_point_offset, 1, 0]
+                tile_point_uv_cov[1, 1, thread_id] = point_uv_covariance[to_load_point_offset, 1, 1]
                 tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
                 tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
 
-                tile_point_color[thread_id,
-                                 0] = point_color[to_load_point_offset, 0]
-                tile_point_color[thread_id,
-                                 1] = point_color[to_load_point_offset, 1]
-                tile_point_color[thread_id,
-                                 2] = point_color[to_load_point_offset, 2]
+                tile_point_color[0, thread_id] = point_color[to_load_point_offset, 0]
+                tile_point_color[1, thread_id] = point_color[to_load_point_offset, 1]
+                tile_point_color[2, thread_id] = point_color[to_load_point_offset, 2]
 
             ti.simt.block.sync()
             for point_group_offset in range(256):
@@ -395,13 +395,13 @@ def gaussian_point_rasterisation(
                     break
 
                 uv = ti.math.vec2(
-                    [tile_point_uv[point_group_offset, 0], tile_point_uv[point_group_offset, 1]])
+                    [tile_point_uv[0, point_group_offset], tile_point_uv[1, point_group_offset]])
                 depth = tile_point_depth[point_group_offset]
-                uv_cov = ti.math.mat2(tile_point_uv_cov[point_group_offset, 0, 0], tile_point_uv_cov[point_group_offset, 0, 1],
-                                      tile_point_uv_cov[point_group_offset, 1, 0], tile_point_uv_cov[point_group_offset, 1, 1])
+                uv_cov = ti.math.mat2(tile_point_uv_cov[0, 0, point_group_offset], tile_point_uv_cov[0, 1, point_group_offset],
+                                      tile_point_uv_cov[1, 0, point_group_offset], tile_point_uv_cov[1, 1, point_group_offset])
                 point_alpha_after_activation_value = tile_point_alpha[point_group_offset]
-                color = ti.math.vec3([tile_point_color[point_group_offset, 0],
-                                     tile_point_color[point_group_offset, 1], tile_point_color[point_group_offset, 2]])
+                color = ti.math.vec3([tile_point_color[0, point_group_offset],
+                                     tile_point_color[1, point_group_offset], tile_point_color[2, point_group_offset]])
 
                 gaussian_alpha = get_point_probability_density_from_2d_gaussian_normalized(
                     xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
