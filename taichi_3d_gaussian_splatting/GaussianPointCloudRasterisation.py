@@ -321,6 +321,7 @@ def gaussian_point_rasterisation(
     # (H, W)
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
     pixel_valid_point_count: ti.types.ndarray(ti.i32, ndim=2),
+    rgb_only: ti.template(),
 ):
     ti.loop_config(block_dim=256)
     for pixel_offset in ti.ndrange(camera_height * camera_width):
@@ -353,12 +354,12 @@ def gaussian_point_rasterisation(
 
         tile_point_uv = ti.simt.block.SharedArray((2, 256), dtype=ti.f32)
         tile_point_uv_cov = ti.simt.block.SharedArray(
-            (2, 2, 256), dtype=ti.f32)
-        tile_point_depth = ti.simt.block.SharedArray(256, dtype=ti.f32)
+            (3, 256), dtype=ti.f32)
         tile_point_alpha = ti.simt.block.SharedArray(256, dtype=ti.f32)
         tile_point_color = ti.simt.block.SharedArray((3, 256), dtype=ti.f32)
         tile_saturated_pixel_count = ti.simt.block.SharedArray(
             (1,), dtype=ti.i32)
+        tile_point_depth = ti.simt.block.SharedArray(256, dtype=ti.f32)
         tile_saturated_pixel_count[0] = 0
 
         num_points_in_tile = end_offset - start_offset
@@ -374,11 +375,11 @@ def gaussian_point_rasterisation(
                 to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
                 tile_point_uv[0, thread_id] = point_uv[to_load_point_offset, 0]
                 tile_point_uv[1, thread_id] = point_uv[to_load_point_offset, 1]
-                tile_point_uv_cov[0, 0, thread_id] = point_uv_covariance[to_load_point_offset, 0, 0]
-                tile_point_uv_cov[0, 1, thread_id] = point_uv_covariance[to_load_point_offset, 0, 1]
-                tile_point_uv_cov[1, 0, thread_id] = point_uv_covariance[to_load_point_offset, 1, 0]
-                tile_point_uv_cov[1, 1, thread_id] = point_uv_covariance[to_load_point_offset, 1, 1]
-                tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
+                tile_point_uv_cov[0, thread_id] = point_uv_covariance[to_load_point_offset, 0, 0]
+                tile_point_uv_cov[1, thread_id] = point_uv_covariance[to_load_point_offset, 0, 1]
+                tile_point_uv_cov[2, thread_id] = point_uv_covariance[to_load_point_offset, 1, 1]
+                if rgb_only:
+                    tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
                 tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
 
                 tile_point_color[0, thread_id] = point_color[to_load_point_offset, 0]
@@ -386,19 +387,18 @@ def gaussian_point_rasterisation(
                 tile_point_color[2, thread_id] = point_color[to_load_point_offset, 2]
 
             ti.simt.block.sync()
-            for point_group_offset in range(256):
+            max_point_group_offset = ti.min(256, num_points_in_tile - point_group_id * 256)
+            for point_group_offset in range(max_point_group_offset):
+                if pixel_saturated:
+                    break
                 # forward rendering process
                 idx_point_offset_with_sort_key = start_offset + \
                     point_group_id * 256 + point_group_offset
 
-                if idx_point_offset_with_sort_key >= end_offset or pixel_saturated:
-                    break
-
                 uv = ti.math.vec2(
                     [tile_point_uv[0, point_group_offset], tile_point_uv[1, point_group_offset]])
-                depth = tile_point_depth[point_group_offset]
-                uv_cov = ti.math.mat2(tile_point_uv_cov[0, 0, point_group_offset], tile_point_uv_cov[0, 1, point_group_offset],
-                                      tile_point_uv_cov[1, 0, point_group_offset], tile_point_uv_cov[1, 1, point_group_offset])
+                uv_cov = ti.math.mat2(tile_point_uv_cov[0, point_group_offset], tile_point_uv_cov[1, point_group_offset],
+                                      tile_point_uv_cov[1, point_group_offset], tile_point_uv_cov[2, point_group_offset])
                 point_alpha_after_activation_value = tile_point_alpha[point_group_offset]
                 color = ti.math.vec3([tile_point_color[0, point_group_offset],
                                      tile_point_color[1, point_group_offset], tile_point_color[2, point_group_offset]])
@@ -419,17 +419,20 @@ def gaussian_point_rasterisation(
                 # from paper: before a Gaussian is included in the forward rasterization
                 # pass, we compute the accumulated opacity if we were to include it
                 # and stop front-to-back blending before it can exceed 0.9999.
-                if 1 - (1 - accumulated_alpha) * (1 - alpha) >= 0.9999:
+                if T_i * (1 - alpha) < 0.0001:
                     pixel_saturated = True
                     ti.atomic_add(tile_saturated_pixel_count[0], 1)
                     break
                 offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
                 accumulated_color += color * alpha * T_i
-                accumulated_depth += depth * alpha * T_i
-                depth_normalization_factor += alpha * T_i
+
+                if not rgb_only:
+                    depth = tile_point_depth[point_group_offset]
+                    accumulated_depth += depth * alpha * T_i
+                    depth_normalization_factor += alpha * T_i
+                    valid_point_count += 1
                 T_i = T_i * (1 - alpha)
                 accumulated_alpha = 1. - T_i
-                valid_point_count += 1
             # end of point group loop
             # block the next update for shared memory until all threads finish the current update
             ti.simt.block.sync()
@@ -441,12 +444,13 @@ def gaussian_point_rasterisation(
         rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
         rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
         rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
-        rasterized_depth[pixel_v, pixel_u] = accumulated_depth / \
-            ti.max(depth_normalization_factor, 1e-6)
-        pixel_accumulated_alpha[pixel_v, pixel_u] = accumulated_alpha
-        pixel_offset_of_last_effective_point[pixel_v,
-                                             pixel_u] = offset_of_last_effective_point
-        pixel_valid_point_count[pixel_v, pixel_u] = valid_point_count
+        if not rgb_only:
+            rasterized_depth[pixel_v, pixel_u] = accumulated_depth / \
+                ti.max(depth_normalization_factor, 1e-6)
+            pixel_accumulated_alpha[pixel_v, pixel_u] = accumulated_alpha
+            pixel_offset_of_last_effective_point[pixel_v,
+                                                pixel_u] = offset_of_last_effective_point
+            pixel_valid_point_count[pixel_v, pixel_u] = valid_point_count
     # end of pixel loop
 
 
@@ -787,6 +791,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         near_plane: float = 0.8
         far_plane: float = 1000.
         depth_to_sort_key_scale: float = 100.
+        rgb_only: bool = False
         grad_color_factor = 5.
         grad_high_order_color_factor = 1.
         grad_s_factor = 0.5
@@ -981,6 +986,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_alpha_after_activation=point_alpha_after_activation,
                         point_color=point_color,
                         rasterized_image=rasterized_image,
+                        rgb_only=self.config.rgb_only,
                         rasterized_depth=rasterized_depth,
                         pixel_accumulated_alpha=pixel_accumulated_alpha,
                         pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
