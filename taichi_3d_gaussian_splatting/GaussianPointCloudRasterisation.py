@@ -529,7 +529,9 @@ def gaussian_point_rasterisation_backward(
         # let w_i = \sum_{j=i+1}^{n} c_j a_j T(j)
         # we have w_n = 0, w_{i-1} = w_i + c_i a_i T(i)
         # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
-        w_i = ti.math.vec3(0.0, 0.0, 0.0)
+        accum_res = ti.math.vec3(0.0, 0.0, 0.0)
+        prev_color = ti.math.vec3(0.0, 0.0, 0.0)
+        prev_alpha:ti.f32 = 0.0
 
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
@@ -622,12 +624,16 @@ def gaussian_point_rasterisation_backward(
                     point_grad_color = d_pixel_rgb_d_color * pixel_rgb_grad
 
                     # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
-                    alpha_grad_from_rgb = (color * T_i - w_i / (1. - alpha)) \
-                        * pixel_rgb_grad
+                    # alpha_grad_from_rgb = (color * T_i - w_i / (1. - alpha)) \
+                    #     * pixel_rgb_grad
+                    accum_res = prev_alpha * prev_color + (1. - prev_alpha) * accum_res
+                    prev_color = color
+                    alpha_grad = ((color - accum_res) * pixel_rgb_grad).sum() * T_i
+                    prev_alpha = alpha
                     # w_{i-1} = w_i + c_i a_i T(i)
-                    w_i += color * alpha * T_i
-                    alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
-                        alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
+                    # w_i += color * alpha * T_i
+                    # alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
+                    #     alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
                         (1. - point_alpha_after_activation_value) * \
