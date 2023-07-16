@@ -10,12 +10,12 @@ from taichi_3d_gaussian_splatting.ImagePoseDataset import ImagePoseDataset
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
 from taichi_3d_gaussian_splatting.utils import torch2ti, se3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
 # %%
-ITERATIONS = 1000
-WARMUP_ITERATIONS = 100
+ITERATIONS = 100
+WARMUP_ITERATIONS = 1000
 DEVICE = torch.device("cuda:0")
 DATASET_JSON_PATH = "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/data/tat_truck_every_8_original/train.json"
 PARQUET_PATH = "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/logs_new/tat_truck_every_8_origin_dataset/scene_30000.parquet"
-USE_PLY = False
+USE_PLY = True
 PLY_PATH = "/home/kuangyuan/hdd/Development/gaussian-splatting/output/dd7034aa-9/point_cloud/iteration_30000/point_cloud.ply"
 
 plydata = PlyData.read(PLY_PATH)
@@ -59,7 +59,7 @@ rots = np.roll(rots, shift=-1, axis=1)
 # normalize quaternion
 rots = rots / np.linalg.norm(rots, axis=1, keepdims=True)
 
-ti.init(arch=ti.cuda)
+ti.init(arch=ti.cuda, print_kernel_llvm_ir_optimized=True)
 
 if USE_PLY:
     point_cloud = torch.from_numpy(xyz).float()
