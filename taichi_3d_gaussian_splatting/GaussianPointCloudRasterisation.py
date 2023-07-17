@@ -468,7 +468,7 @@ def gaussian_point_rasterisation_backward(
     grad_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     grad_pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
     grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
-    magnitude_grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
+    magnitude_grad_viewspace: ti.types.ndarray(ti.f32, ndim=1),  # (N)
     # (H, W, 2)
     magnitude_grad_viewspace_on_image: ti.types.ndarray(ti.f32, ndim=3),
     # (M, 2, 2)
@@ -614,6 +614,7 @@ def gaussian_point_rasterisation_backward(
                         point_viewspace_grad)
                     point_uv_cov_grad = gaussian_alpha_grad * \
                         d_p_d_cov  # (2, 2)
+                    magnitude_point_grad_viewspace = ti.sqrt(point_viewspace_grad[0] ** 2 + point_viewspace_grad[1] ** 2)
 
                     point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
                     point_id = point_id_in_camera_list[point_offset]
@@ -621,9 +622,7 @@ def gaussian_point_rasterisation_backward(
                     for i in ti.static(range(2)):
                         ti.atomic_add(
                             grad_uv[point_id, i], point_viewspace_grad[i])
-                        ti.atomic_add(magnitude_grad_uv[point_id, i], ti.abs(
-                            point_viewspace_grad[i]))
-
+                    ti.atomic_add(magnitude_grad_viewspace[point_id], magnitude_point_grad_viewspace)
                     ti.atomic_add(in_camera_grad_uv_cov_buffer[point_offset, 0], 
                                   point_uv_cov_grad[0, 0])
                     ti.atomic_add(in_camera_grad_uv_cov_buffer[point_offset, 1],
@@ -748,7 +747,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         grad_point_in_camera: torch.Tensor  # Mx3
         grad_pointfeatures_in_camera: torch.Tensor  # Mx56
         grad_viewspace: torch.Tensor  # Mx2
-        magnitude_grad_viewspace: torch.Tensor  # M x 2
+        magnitude_grad_viewspace: torch.Tensor  # M
         magnitude_grad_viewspace_on_image: torch.Tensor  # HxWx2
         num_overlap_tiles: torch.Tensor  # M
         num_affected_pixels: torch.Tensor  # M
@@ -976,7 +975,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_viewspace = torch.zeros(
                         size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     magnitude_grad_viewspace = torch.zeros(
-                        size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
+                        size=(pointcloud.shape[0], ), dtype=torch.float32, device=pointcloud.device)
                     magnitude_grad_viewspace_on_image = torch.empty_like(
                         grad_rasterized_image[:, :, :2])
 
@@ -1007,7 +1006,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         grad_pointcloud=grad_pointcloud,
                         grad_pointcloud_features=grad_pointcloud_features,
                         grad_uv=grad_viewspace,
-                        magnitude_grad_uv=magnitude_grad_viewspace,
+                        magnitude_grad_viewspace=magnitude_grad_viewspace,
                         magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                         in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer,
                         in_camera_grad_color_buffer=in_camera_grad_color_buffer,
