@@ -455,6 +455,7 @@ def gaussian_point_rasterisation_backward(
     point_object_id: ti.types.ndarray(ti.i32, ndim=1),  # (N)
     q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4)
     t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
+    t_pointcloud_camera: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
     # (tiles_per_row * tiles_per_col)
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
     tile_points_end: ti.types.ndarray(ti.i32, ndim=1),
@@ -717,22 +718,14 @@ def gaussian_point_rasterisation_backward(
             [q_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(4))])
         point_t_camera_pointcloud = ti.Vector(
             [t_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(3))])
+        ray_origin = ti.Vector(
+            [t_pointcloud_camera[point_object_id[point_id], idx] for idx in ti.static(range(3))])
         T_camera_pointcloud_mat = tranform_matrix_from_quaternion_and_translation(
             q=point_q_camera_pointcloud,
             t=point_t_camera_pointcloud,
         )
-        T_pointcloud_camera = taichi_inverse_se3(
-            T_camera_pointcloud_mat)
-        ray_origin = ti.math.vec3(
-            [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
-        uv, translation_camera = gaussian_point_3d.project_to_camera_position(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-        )
-        uv_cov = gaussian_point_3d.project_to_camera_covariance(
-            T_camera_world=T_camera_pointcloud_mat,
-            projective_transform=camera_intrinsics_mat,
-            translation_camera=translation_camera)
+        translation_camera = ti.Vector([
+            point_in_camera[idx, j] for j in ti.static(range(3))])
         d_uv_d_translation = gaussian_point_3d.project_to_camera_position_jacobian(
             T_camera_world=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
@@ -1050,6 +1043,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_object_id=point_object_id,
                         q_camera_pointcloud=q_camera_pointcloud,
                         t_camera_pointcloud=t_camera_pointcloud,
+                        t_pointcloud_camera=t_pointcloud_camera,
                         pointcloud=pointcloud,
                         pointcloud_features=pointcloud_features,
                         tile_points_start=tile_points_start,
