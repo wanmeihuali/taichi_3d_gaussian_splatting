@@ -472,7 +472,7 @@ def gaussian_point_rasterisation_backward(
     # (H, W, 2)
     magnitude_grad_viewspace_on_image: ti.types.ndarray(ti.f32, ndim=3),
     # (M, 2, 2)
-    in_camera_grad_uv_cov_buffer: ti.types.ndarray(ti.f32, ndim=3),
+    in_camera_grad_uv_cov_buffer: ti.types.ndarray(ti.f32, ndim=2),
     in_camera_grad_color_buffer: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     in_camera_num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
 
@@ -505,18 +505,6 @@ def gaussian_point_rasterisation_backward(
             (3, 256), dtype=ti.f32)  # 3KB shared memory
         tile_point_alpha = ti.simt.block.SharedArray(
             (256,), dtype=ti.f32)  # 1KB shared memory
-        tile_point_grad_uv = ti.simt.block.SharedArray(
-            (3, 256), dtype=ti.f32)  # 2KB shared memory
-        tile_point_abs_grad_uv = ti.simt.block.SharedArray(
-            (2, 256), dtype=ti.f32)  # 2KB shared memory
-        tile_point_grad_uv_cov = ti.simt.block.SharedArray(
-            (3, 256), dtype=ti.f32)  # 4KB shared memory
-        tile_point_grad_color = ti.simt.block.SharedArray(
-            (3, 256), dtype=ti.f32)  # 3KB shared memory
-        tile_point_grad_alpha = ti.simt.block.SharedArray(
-            (256,), dtype=ti.f32)  # 1KB shared memory
-        tile_point_num_affected_pixels = ti.simt.block.SharedArray(
-            (256,), dtype=ti.i32)  # 1KB shared memory
 
         pixel_offset_in_tile = pixel_offset - tile_id * 256
         pixel_offset_u_in_tile = pixel_offset_in_tile % 16
@@ -554,25 +542,18 @@ def gaussian_point_rasterisation_backward(
                 
                 for i in ti.static(range(2)):
                     tile_point_uv[i, thread_id] = to_load_uv[i]
-                    tile_point_grad_uv[i, thread_id] = 0.0
-                    tile_point_abs_grad_uv[i, thread_id] = 0.0
                 
                 for i in ti.static(range(3)):
                     tile_point_uv_conic[i, thread_id] = point_uv_conic[to_load_point_offset, i]
-                    tile_point_grad_uv_cov[i, thread_id] = 0.0
                 for i in ti.static(range(3)):
                     tile_point_color[i, thread_id] = point_color[to_load_point_offset, i]
-                    tile_point_grad_color[i, thread_id] = 0.0
 
                 tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
-                tile_point_grad_alpha[thread_id] = 0.0
-                tile_point_num_affected_pixels[thread_id] = 0
 
             ti.simt.block.sync()
-            for inverse_point_offset_offset in range(256):
+            max_inverse_point_offset_offset = ti.min(256, tile_point_count - inverse_point_offset_base)
+            for inverse_point_offset_offset in range(max_inverse_point_offset_offset):
                 inverse_point_offset = inverse_point_offset_base + inverse_point_offset_offset
-                if inverse_point_offset >= tile_point_count:
-                    break
 
                 idx_point_offset_with_sort_key = end_offset - inverse_point_offset - 1
                 if idx_point_offset_with_sort_key >= last_effective_point:
@@ -587,8 +568,7 @@ def gaussian_point_rasterisation_backward(
                     tile_point_uv_conic[2, idx_point_offset_with_sort_key_in_block],
                 ])
 
-                point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
-                point_id = point_id_in_camera_list[point_offset]
+                
                 point_alpha_after_activation_value = tile_point_alpha[idx_point_offset_with_sort_key_in_block]
 
                 # d_p_d_mean is (2,), d_p_d_cov is (2, 2), needs to be flattened to (4,)
@@ -621,8 +601,7 @@ def gaussian_point_rasterisation_backward(
                         * pixel_rgb_grad
                     # w_{i-1} = w_i + c_i a_i T(i)
                     w_i += color * alpha * T_i
-                    alpha_grad: ti.f32 = alpha_grad_from_rgb[0] + \
-                        alpha_grad_from_rgb[1] + alpha_grad_from_rgb[2]
+                    alpha_grad: ti.f32 = alpha_grad_from_rgb.sum()
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
                         (1. - point_alpha_after_activation_value) * \
@@ -636,56 +615,28 @@ def gaussian_point_rasterisation_backward(
                     point_uv_cov_grad = gaussian_alpha_grad * \
                         d_p_d_cov  # (2, 2)
 
+                    point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
+                    point_id = point_id_in_camera_list[point_offset]
                     # atomic accumulate on block shared memory shall be faster
                     for i in ti.static(range(2)):
                         ti.atomic_add(
-                            tile_point_grad_uv[i, idx_point_offset_with_sort_key_in_block], point_viewspace_grad[i])
-                        ti.atomic_add(tile_point_abs_grad_uv[i, idx_point_offset_with_sort_key_in_block], ti.abs(
+                            grad_uv[point_id, i], point_viewspace_grad[i])
+                        ti.atomic_add(magnitude_grad_uv[point_id, i], ti.abs(
                             point_viewspace_grad[i]))
 
-                    ti.atomic_add(tile_point_grad_uv_cov[0, idx_point_offset_with_sort_key_in_block], 
+                    ti.atomic_add(in_camera_grad_uv_cov_buffer[point_offset, 0], 
                                   point_uv_cov_grad[0, 0])
-                    ti.atomic_add(tile_point_grad_uv_cov[1, idx_point_offset_with_sort_key_in_block],
-                                    point_uv_cov_grad[0, 1])
-                    ti.atomic_add(tile_point_grad_uv_cov[2, idx_point_offset_with_sort_key_in_block],
+                    ti.atomic_add(in_camera_grad_uv_cov_buffer[point_offset, 1],
+                                  point_uv_cov_grad[0, 1])
+                    ti.atomic_add(in_camera_grad_uv_cov_buffer[point_offset, 2],
                                   point_uv_cov_grad[1, 1])
+                    
                     for i in ti.static(range(3)):
-                        ti.atomic_add(
-                            tile_point_grad_color[i, idx_point_offset_with_sort_key_in_block], point_grad_color[i])
+                        ti.atomic_add(in_camera_grad_color_buffer[point_offset, i], point_grad_color[i])
+                    ti.atomic_add(grad_pointcloud_features[point_id, 7], gaussian_point_3d_alpha_grad)
                     ti.atomic_add(
-                        tile_point_grad_alpha[idx_point_offset_with_sort_key_in_block], gaussian_point_3d_alpha_grad)
-                    ti.atomic_add(
-                        tile_point_num_affected_pixels[idx_point_offset_with_sort_key_in_block], 1)
+                        in_camera_num_affected_pixels[point_offset], 1)
             # end of the 256 block loop
-            ti.simt.block.sync()
-            # if the thread load the point, then it shall save the gradient of the point
-            if to_load_idx_point_offset_with_sort_key >= block_start_idx_point_offset_with_sort_key:
-                to_save_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
-                to_save_point_id = point_id_in_camera_list[to_save_point_offset]
-                for i in ti.static(range(2)):
-                    # no further process needed for abs grad, so directly save to global memory
-                    ti.atomic_add(grad_uv[to_save_point_id, i],
-                                  tile_point_grad_uv[i, thread_id])
-                    ti.atomic_add(
-                        magnitude_grad_uv[to_save_point_id, i], tile_point_abs_grad_uv[i, thread_id])
-                ti.atomic_add(
-                    in_camera_grad_uv_cov_buffer[to_save_point_offset, 0, 0], tile_point_grad_uv_cov[0, thread_id])
-                ti.atomic_add(
-                    in_camera_grad_uv_cov_buffer[to_save_point_offset, 0, 1], tile_point_grad_uv_cov[1, thread_id])
-                ti.atomic_add(
-                    in_camera_grad_uv_cov_buffer[to_save_point_offset, 1, 0], tile_point_grad_uv_cov[1, thread_id])
-                ti.atomic_add(
-                    in_camera_grad_uv_cov_buffer[to_save_point_offset, 1, 1], tile_point_grad_uv_cov[2, thread_id])
-                for i in ti.static(range(3)):
-                    ti.atomic_add(
-                        in_camera_grad_color_buffer[to_save_point_offset, i], tile_point_grad_color[i, thread_id])
-                # no further process needed for alpha grad, so directly save to global memory
-                ti.atomic_add(
-                    grad_pointcloud_features[to_save_point_id, 7], tile_point_grad_alpha[thread_id])
-                # no further process needed for num_affected_pixels, so directly save to global memory
-                ti.atomic_add(
-                    in_camera_num_affected_pixels[to_save_point_offset], tile_point_num_affected_pixels[thread_id])
-            # sync the block, so that the next block can read the data into shared memory without issue
             ti.simt.block.sync()
         # end of the backward traversal loop, from last point to first point
         magnitude_grad_viewspace_on_image[pixel_v, pixel_u,
@@ -704,10 +655,10 @@ def gaussian_point_rasterisation_backward(
         point_grad_uv = ti.math.vec2(
             grad_uv[point_id, 0], grad_uv[point_id, 1])
         point_grad_uv_cov_flat = ti.math.vec4(
-            in_camera_grad_uv_cov_buffer[idx, 0, 0],
-            in_camera_grad_uv_cov_buffer[idx, 0, 1],
-            in_camera_grad_uv_cov_buffer[idx, 1, 0],
-            in_camera_grad_uv_cov_buffer[idx, 1, 1],
+            in_camera_grad_uv_cov_buffer[idx, 0],
+            in_camera_grad_uv_cov_buffer[idx, 1],
+            in_camera_grad_uv_cov_buffer[idx, 1],
+            in_camera_grad_uv_cov_buffer[idx, 2],
         )
         point_grad_color = ti.math.vec3(
             in_camera_grad_color_buffer[idx, 0],
@@ -1030,7 +981,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         grad_rasterized_image[:, :, :2])
 
                     in_camera_grad_uv_cov_buffer = torch.zeros(
-                        size=(point_id_in_camera_list.shape[0], 2, 2), dtype=torch.float32, device=pointcloud.device)
+                        size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
                     in_camera_grad_color_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
                     in_camera_num_affected_pixels = torch.zeros(
