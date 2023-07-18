@@ -86,6 +86,7 @@ class GaussianPointCloudTrainer:
                 point_invalid_mask=self.scene.point_invalid_mask,
                 point_object_id=self.scene.point_object_id,
             ))
+        self.config.rasterisation_config.output_hwc = False
         self.rasterisation = GaussianPointCloudRasterisation(
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
@@ -122,7 +123,11 @@ class GaussianPointCloudTrainer:
     def train(self):
         ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
         train_data_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=4)
+            self.train_dataset, 
+            batch_size=None, 
+            sampler=torch.utils.data.RandomSampler(self.train_dataset, replacement=True, num_samples=self.config.num_iterations),
+            pin_memory=True, 
+            num_workers=4)
         val_data_loader = torch.utils.data.DataLoader(
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
@@ -172,9 +177,7 @@ class GaussianPointCloudTrainer:
             image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
             # clip to [0, 1]
-            image_pred = torch.clamp(image_pred, min=0, max=1)
-            # hxwx3->3xhxw
-            image_pred = image_pred.permute(2, 0, 1)
+            # image_pred = torch.clamp(image_pred, min=0, max=1)
             loss, l1_loss, ssim_loss = self.loss_function(
                 image_pred, 
                 image_gt, 
@@ -365,8 +368,7 @@ class GaussianPointCloudTrainer:
                 torch.cuda.synchronize()
                 time_taken = start_event.elapsed_time(end_event)
                 total_inference_time += time_taken
-                image_pred = torch.clamp(image_pred, 0, 1)
-                image_pred = image_pred.permute(2, 0, 1)
+                # image_pred = torch.clamp(image_pred, 0, 1)
                 image_depth = self._easy_cmap(image_depth)
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
                 loss, _, _ = self.loss_function(image_pred, image_gt)

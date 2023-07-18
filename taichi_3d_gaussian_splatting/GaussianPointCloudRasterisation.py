@@ -322,6 +322,7 @@ def gaussian_point_rasterisation(
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
     pixel_valid_point_count: ti.types.ndarray(ti.i32, ndim=2),
     rgb_only: ti.template(),
+    output_hwc: ti.template(),
 ):
     ti.loop_config(block_dim=256)
     for pixel_offset in ti.ndrange(camera_height * camera_width):
@@ -432,9 +433,15 @@ def gaussian_point_rasterisation(
 
         # end of point group id loop
 
-        rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
-        rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
-        rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
+        if output_hwc:
+            rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
+            rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
+            rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
+        else:
+            rasterized_image[0, pixel_v, pixel_u] = accumulated_color[0]
+            rasterized_image[1, pixel_v, pixel_u] = accumulated_color[1]
+            rasterized_image[2, pixel_v, pixel_u] = accumulated_color[2]
+            
         if not rgb_only:
             rasterized_depth[pixel_v, pixel_u] = accumulated_depth / \
                 ti.max(depth_normalization_factor, 1e-6)
@@ -481,6 +488,8 @@ def gaussian_point_rasterisation_backward(
     need_extra_info: ti.template(),
     magnitude_grad_viewspace: ti.types.ndarray(ti.f32, ndim=1),  # (N)
     in_camera_num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+
+    grad_hwc: ti.template(),
 ):
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
@@ -520,8 +529,13 @@ def gaussian_point_rasterisation_backward(
         # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
         w_i = ti.math.vec3(0.0, 0.0, 0.0)
 
-        pixel_rgb_grad = ti.math.vec3(
-            rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
+        pixel_rgb_grad = ti.math.vec3(0.0, 0.0, 0.0)
+        if grad_hwc:
+            pixel_rgb_grad = ti.math.vec3(
+                rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
+        else:
+            pixel_rgb_grad = ti.math.vec3(
+                rasterized_image_grad[0, pixel_v, pixel_u], rasterized_image_grad[1, pixel_v, pixel_u], rasterized_image_grad[2, pixel_v, pixel_u])
         total_magnitude_grad_viewspace_on_image = ti.math.vec2(0.0, 0.0)
 
         # for inverse_point_offset in range(effective_point_count):
@@ -723,6 +737,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         grad_s_factor = 0.5
         grad_q_factor = 1.
         grad_alpha_factor = 20.
+        output_hwc: bool = True
 
     @dataclass
     class GaussianPointCloudRasterisationInput:
@@ -884,8 +899,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         tile_points_end=tile_points_end,
                     )
 
-                rasterized_image = torch.empty(
-                    camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
+                if self.config.output_hwc:
+                    rasterized_image = torch.empty(
+                        camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
+                else:
+                    rasterized_image = torch.empty(
+                        3, camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
                 rasterized_depth = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.float32, device=pointcloud.device)
                 pixel_accumulated_alpha = torch.empty(
@@ -912,7 +931,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         rasterized_depth=rasterized_depth,
                         pixel_accumulated_alpha=pixel_accumulated_alpha,
                         pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
-                        pixel_valid_point_count=pixel_valid_point_count)
+                        pixel_valid_point_count=pixel_valid_point_count,
+                        output_hwc=self.config.output_hwc)
                 ctx.save_for_backward(
                     pointcloud,
                     pointcloud_features,
@@ -1012,6 +1032,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         need_extra_info=output_extra_grad,
                         magnitude_grad_viewspace=magnitude_grad_viewspace,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
+                        grad_hwc=self.config.output_hwc,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
