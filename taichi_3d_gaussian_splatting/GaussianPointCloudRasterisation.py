@@ -480,9 +480,6 @@ def gaussian_point_rasterisation_backward(
 
     need_extra_info: ti.template(),
     magnitude_grad_viewspace: ti.types.ndarray(ti.f32, ndim=1),  # (N)
-    # (H, W, 2)
-    magnitude_grad_viewspace_on_image: ti.types.ndarray(ti.f32, ndim=3),
-    # (M, 2, 2)
     in_camera_num_affected_pixels: ti.types.ndarray(ti.i32, ndim=1),  # (M)
 ):
     camera_intrinsics_mat = ti.Matrix(
@@ -643,11 +640,7 @@ def gaussian_point_rasterisation_backward(
             # end of the 256 block loop
             ti.simt.block.sync()
         # end of the backward traversal loop, from last point to first point
-        if need_extra_info:
-            magnitude_grad_viewspace_on_image[pixel_v, pixel_u,
-                                            0] = total_magnitude_grad_viewspace_on_image[0]
-            magnitude_grad_viewspace_on_image[pixel_v, pixel_u,
-                                            1] = total_magnitude_grad_viewspace_on_image[1]
+        
     # end of per pixel loop
 
     # one more loop to compute the gradient from viewspace to 3D point
@@ -746,19 +739,17 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         q_pointcloud_camera: torch.Tensor  # Kx4, x to the right, y down, z forward, K is the number of objects
         t_pointcloud_camera: torch.Tensor  # Kx3, x to the right, y down, z forward, K is the number of objects
         color_max_sh_band: int = 2
+        output_extra_grad: bool = False
 
     @dataclass
     class BackwardValidPointHookInput:
         point_id_in_camera_list: torch.Tensor  # M
         grad_point_in_camera: torch.Tensor  # Mx3
-        grad_pointfeatures_in_camera: torch.Tensor  # Mx56
-        grad_viewspace: torch.Tensor  # Mx2
-        magnitude_grad_viewspace: torch.Tensor  # M
-        magnitude_grad_viewspace_on_image: torch.Tensor  # HxWx2
-        num_overlap_tiles: torch.Tensor  # M
-        num_affected_pixels: torch.Tensor  # M
-        point_depth: torch.Tensor  # M
-        point_uv_in_camera: torch.Tensor  # Mx2
+        grad_pointfeatures_in_camera: Optional[torch.Tensor] = None  # Mx56
+        magnitude_grad_viewspace: Optional[torch.Tensor] = None # M
+        num_affected_pixels: Optional[torch.Tensor] = None # M
+        point_depth: Optional[torch.Tensor] = None # M
+        point_uv_in_camera: Optional[torch.Tensor] = None  # Mx2
 
     def __init__(
         self,
@@ -781,6 +772,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         t_pointcloud_camera,
                         camera_info,
                         color_max_sh_band,
+                        output_extra_grad,
                         ):
                 point_in_camera_mask = torch.zeros(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
@@ -931,7 +923,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tile_points_end,
                     pixel_accumulated_alpha,
                     pixel_offset_of_last_effective_point,
-                    num_overlap_tiles,
                     point_object_id,
                     q_pointcloud_camera,
                     q_camera_pointcloud,
@@ -945,6 +936,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 )
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
+                ctx.output_extra_grad = output_extra_grad
                 # rasterized_image.requires_grad_(True)
                 return rasterized_image, rasterized_depth, pixel_valid_point_count
 
@@ -960,7 +952,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         tile_points_end, \
                         pixel_accumulated_alpha, \
                         pixel_offset_of_last_effective_point, \
-                        num_overlap_tiles, \
                         point_object_id, \
                         q_pointcloud_camera, \
                         q_camera_pointcloud, \
@@ -973,6 +964,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_color = ctx.saved_tensors
                     camera_info = ctx.camera_info
                     color_max_sh_band = ctx.color_max_sh_band
+                    output_extra_grad = ctx.output_extra_grad
                     grad_rasterized_image = grad_rasterized_image.contiguous()
                     grad_pointcloud = torch.zeros_like(pointcloud)
                     grad_pointcloud_features = torch.zeros_like(
@@ -982,8 +974,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         size=(pointcloud.shape[0], 2), dtype=torch.float32, device=pointcloud.device)
                     magnitude_grad_viewspace = torch.zeros(
                         size=(pointcloud.shape[0], ), dtype=torch.float32, device=pointcloud.device)
-                    magnitude_grad_viewspace_on_image = torch.empty_like(
-                        grad_rasterized_image[:, :, :2])
 
                     in_camera_grad_uv_cov_buffer = torch.zeros(
                         size=(point_id_in_camera_list.shape[0], 3), dtype=torch.float32, device=pointcloud.device)
@@ -1019,9 +1009,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_uv_conic=point_uv_conic,
                         point_alpha_after_activation=point_alpha_after_activation,
                         point_color=point_color,
-                        need_extra_info=True,
+                        need_extra_info=output_extra_grad,
                         magnitude_grad_viewspace=magnitude_grad_viewspace,
-                        magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
@@ -1049,39 +1038,25 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
                             point_id_in_camera_list=point_id_in_camera_list,
                             grad_point_in_camera=grad_pointcloud[point_id_in_camera_list],
-                            grad_pointfeatures_in_camera=grad_pointcloud_features[
-                                point_id_in_camera_list],
-                            grad_viewspace=grad_viewspace[point_id_in_camera_list],
-                            magnitude_grad_viewspace=magnitude_grad_viewspace[point_id_in_camera_list],
-                            magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
-                            num_overlap_tiles=num_overlap_tiles,
-                            num_affected_pixels=in_camera_num_affected_pixels,
-                            point_uv_in_camera=point_uv,
-                            point_depth=point_in_camera[:, 2],
                         )
+                        if output_extra_grad:
+                            backward_valid_point_hook_input.grad_pointfeatures_in_camera = grad_pointcloud_features[
+                                point_id_in_camera_list]
+                            backward_valid_point_hook_input.magnitude_grad_viewspace = magnitude_grad_viewspace[
+                                point_id_in_camera_list]
+                            backward_valid_point_hook_input.num_affected_pixels = in_camera_num_affected_pixels
+                            backward_valid_point_hook_input.point_uv_in_camera = point_uv
+                            backward_valid_point_hook_input.point_depth = point_in_camera[:, 2]
+                            
                         backward_valid_point_hook(
                             backward_valid_point_hook_input)
-                """_summary_
-                pointcloud,
-                        pointcloud_features,
-                        point_invalid_mask,
-                        point_object_id,
-                        q_pointcloud_camera,
-                        t_pointcloud_camera,
-                        camera_info,
-                        color_max_sh_band,
-
-                Returns:
-                    _type_: _description_
-                """
-
                 return grad_pointcloud, \
                     grad_pointcloud_features, \
                     None, \
                     None, \
                     grad_q_pointcloud_camera, \
                     grad_t_pointcloud_camera, \
-                    None, None
+                    None, None, None
 
         self._module_function = _module_function
 
@@ -1110,6 +1085,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         q_pointcloud_camera = input_data.q_pointcloud_camera
         t_pointcloud_camera = input_data.t_pointcloud_camera
         color_max_sh_band = input_data.color_max_sh_band
+        output_extra_grad = input_data.output_extra_grad
         camera_info = input_data.camera_info
         assert camera_info.camera_width % 16 == 0
         assert camera_info.camera_height % 16 == 0
@@ -1122,4 +1098,5 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             t_pointcloud_camera,
             camera_info,
             color_max_sh_band,
+            output_extra_grad,
         )

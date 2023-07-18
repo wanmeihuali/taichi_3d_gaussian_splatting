@@ -13,7 +13,7 @@ adaptive-controller-config:
   floater_num_pixels_threshold: 400000
   floater_near_camrea_num_pixels_threshold: 300000
   iteration_start_remove_floater: 2000
-  under_reconstructed_num_pixels_threshold: 32
+  under_reconstructed_size_threshold: 0.01
   enable_sample_from_point: True
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0
