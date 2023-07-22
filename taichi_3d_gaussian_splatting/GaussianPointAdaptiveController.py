@@ -78,7 +78,7 @@ class GaussianPointAdaptiveController:
         floater_depth_threshold: float = 100
         iteration_start_remove_floater: int = 2000
         plot_densify_interval: int = 200
-        under_reconstructed_size_threshold: int = 0.01
+        under_reconstructed_size_threshold: float = 0.01
         under_reconstructed_move_factor: float = 100.0
         enable_ellipsoid_offset: bool = False
         enable_sample_from_point: bool = True
