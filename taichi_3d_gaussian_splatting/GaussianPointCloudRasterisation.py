@@ -1032,7 +1032,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         magnitude_grad_viewspace=magnitude_grad_viewspace,
                         in_camera_num_affected_pixels=in_camera_num_affected_pixels,
                         grad_hwc=self.config.output_hwc,
-
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(

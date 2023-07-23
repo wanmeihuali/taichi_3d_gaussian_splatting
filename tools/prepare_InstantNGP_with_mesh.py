@@ -9,14 +9,26 @@ import numpy as np
 import json
 # %%
 def convert_json(input_json, image_path_prefix):
-    camera_intrinsics = np.array([
-        [input_json["fl_x"], 0, input_json["cx"]],
-        [0, input_json["fl_y"], input_json["cy"]],
-        [0, 0, 1]])
-    camera_width = input_json["w"]
-    camera_height = input_json["h"]
+    if "fl_x" in input_json and "fl_y" in input_json and "cx" in input_json and "cy" in input_json:
+        camera_intrinsics = np.array([
+            [input_json["fl_x"], 0, input_json["cx"]],
+            [0, input_json["fl_y"], input_json["cy"]],
+            [0, 0, 1]])
+    if "w" in input_json:
+        camera_width = input_json["w"]
+    if "h" in input_json:
+        camera_height = input_json["h"]
     data_list = []
     for idx, frame in enumerate(input_json["frames"]):
+        if "fl_x" in frame and "fl_y" in frame and "cx" in frame and "cy" in frame:
+            camera_intrinsics = np.array([
+                [frame["fl_x"], 0, frame["cx"]],
+                [0, frame["fl_y"], frame["cy"]],
+                [0, 0, 1]])
+        if "w" in frame:
+            camera_width = frame["w"]
+        if "h" in frame:
+            camera_height = frame["h"]
         image_path = frame["file_path"]
         T_pointcloud_camera_blender = np.array(
             frame["transform_matrix"]).reshape(4, 4)
