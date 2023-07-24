@@ -446,3 +446,93 @@ def decoupled_look_back_scan(
                 state_and_prefix_sum[0], first_part_state_and_prefix_sum)
 
 # %%
+
+
+@ti.kernel
+def decoupled_look_back_scan_2(
+    num_elements: ti.i32,
+    inputs: ti.types.ndarray(dtype=ti.i32, ndim=1),
+    outputs: ti.types.ndarray(dtype=ti.i32, ndim=1),
+    global_counter: ti.types.ndarray(dtype=ti.i32, ndim=1),
+    state_and_prefix_sum: ti.types.ndarray(dtype=ti.i64, ndim=1),
+):
+    scan_part_num = (num_elements + SCAN_PART_SIZE - 1) // SCAN_PART_SIZE
+    global_counter[0] = 0
+    for idx in state_and_prefix_sum:
+        state_and_prefix_sum[idx] = 0
+    ti.loop_config(block_dim=SCAN_BLOCK_SIZE)
+    for idx in range(scan_part_num * SCAN_BLOCK_SIZE):
+        thread_idx = idx & (SCAN_BLOCK_SIZE - 1)
+        current_global_counter = ti.simt.block.SharedArray(1, dtype=ti.i32)
+        if thread_idx == 0:
+            current_global_counter[0] = ti.atomic_add(global_counter[0], 1)
+        ti.simt.block.sync()  # ensure all threads in block have the same global counter
+        # use the global counter to determine the block index, so that we can ensure the block order
+        block_idx = current_global_counter[0]
+        base_sum = ti.simt.block.SharedArray(1, dtype=ti.i32)
+        base_sum[0] = 0
+        local_inputs = ti.Vector(
+            [0 for _ in ti.static(range(MAX_LOCAL_INPUTS))], dt=ti.i32)
+        local_inclusive_prefix = ti.Vector(
+            [0 for _ in ti.static(range(MAX_LOCAL_INPUTS))], dt=ti.i32)
+        part_begin = block_idx * SCAN_PART_SIZE
+        part_end = part_begin + SCAN_PART_SIZE
+        offset = part_begin + thread_idx
+        lastest_value = 0
+        for local_inputs_idx in ti.static(range(SCAN_PART_SIZE // SCAN_BLOCK_SIZE)):
+            local_inputs[local_inputs_idx] = inputs[offset] if offset < num_elements else 0
+            value: ti.i32 = local_inputs[local_inputs_idx] if offset < num_elements else 0
+            value = scan_block(value, thread_idx)
+            if offset < num_elements:
+                lastest_value = value + base_sum[0]
+                local_inclusive_prefix[local_inputs_idx] = lastest_value
+            ti.simt.block.sync()
+            if thread_idx == (SCAN_BLOCK_SIZE - 1):
+                base_sum[0] += value
+            ti.simt.block.sync()
+            offset += SCAN_BLOCK_SIZE
+
+        if block_idx == 0:
+            if offset - SCAN_BLOCK_SIZE == ti.min(part_end, num_elements) - 1:
+                first_part_state_and_prefix_sum = (
+                    ti.cast(SCAN_P_STATE, ti.i64) << 32) | lastest_value
+                ti.atomic_max(
+                    state_and_prefix_sum[0], first_part_state_and_prefix_sum)
+            offset = part_begin + thread_idx
+            for local_inputs_idx in ti.static(range(SCAN_PART_SIZE // SCAN_BLOCK_SIZE)):
+                if offset < num_elements:
+                    outputs[offset] = local_inclusive_prefix[local_inputs_idx]
+                offset += SCAN_BLOCK_SIZE
+        else:
+            part_sum = base_sum[0]
+            if thread_idx == 0:
+                part_state_and_prefix_sum: ti.i64 = (
+                    ti.cast(SCAN_A_STATE, ti.i64) << 32) | part_sum
+                ti.atomic_max(state_and_prefix_sum[block_idx],
+                              part_state_and_prefix_sum)
+                predecessor_idx = block_idx - 1
+                exclusive_prefix: ti.i32 = 0
+                while True:
+                    predecessor_state_and_prefix_sum: ti.i64 = ti.atomic_or(state_and_prefix_sum[
+                        predecessor_idx], ti.i64(0))
+                    if (predecessor_state_and_prefix_sum >> 32) == SCAN_A_STATE:
+                        exclusive_prefix += ti.cast(
+                            predecessor_state_and_prefix_sum & ti.i64(0xFFFFFFFF), ti.i32)
+                        predecessor_idx -= 1
+                    elif (predecessor_state_and_prefix_sum >> 32) == SCAN_P_STATE:
+                        exclusive_prefix += ti.cast(
+                            predecessor_state_and_prefix_sum & ti.i64(0xFFFFFFFF), ti.i32)
+                        break
+                    # else: SCAN_X_STATE, wait for the predecessor to finish
+                inclusive_prefix = exclusive_prefix + part_sum
+                part_state_and_prefix_sum: ti.i64 = (
+                    ti.cast(SCAN_P_STATE, ti.i64) << 32) | inclusive_prefix
+                ti.atomic_max(state_and_prefix_sum[block_idx],
+                              part_state_and_prefix_sum)
+                base_sum[0] = exclusive_prefix
+            ti.simt.block.sync()
+            offset = part_begin + thread_idx
+            for local_inputs_idx in ti.static(range(SCAN_PART_SIZE // SCAN_BLOCK_SIZE)):
+                if offset < num_elements:
+                    outputs[offset] = local_inclusive_prefix[local_inputs_idx] + base_sum[0]
+                offset += SCAN_BLOCK_SIZE
