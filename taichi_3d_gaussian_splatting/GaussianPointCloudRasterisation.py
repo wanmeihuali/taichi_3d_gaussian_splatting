@@ -374,7 +374,7 @@ def gaussian_point_rasterisation(
                 tile_point_uv_conic[0, thread_id] = point_uv_conic[to_load_point_offset, 0]
                 tile_point_uv_conic[1, thread_id] = point_uv_conic[to_load_point_offset, 1]
                 tile_point_uv_conic[2, thread_id] = point_uv_conic[to_load_point_offset, 2]
-                if rgb_only:
+                if not rgb_only:
                     tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
                 tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
 
