@@ -47,11 +47,18 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             T_pointcloud_camera)
         camera_intrinsics = self._pandas_field_to_tensor(
             self.df.iloc[idx]["camera_intrinsics"])
-        camera_height = self.df.iloc[idx]["camera_height"]
-        camera_width = self.df.iloc[idx]["camera_width"]
+        base_camera_height = self.df.iloc[idx]["camera_height"]
+        base_camera_width = self.df.iloc[idx]["camera_width"]
         camera_id = self.df.iloc[idx]["camera_id"]
         image = PIL.Image.open(image_path)
         image = torchvision.transforms.functional.to_tensor(image)
+        # use real image size instead of camera_height and camera_width from colmap
+        camera_height = image.shape[1]
+        camera_width = image.shape[2]
+        camera_intrinsics[0, :] = camera_intrinsics[0, :] * \
+            camera_width / base_camera_width
+        camera_intrinsics[1, :] = camera_intrinsics[1, :] * \
+            camera_height / base_camera_height
         # we want image width and height to be always divisible by 16
         # so we crop the image
         camera_width = camera_width - camera_width % 16

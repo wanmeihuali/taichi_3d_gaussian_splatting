@@ -34,9 +34,6 @@ class GaussianPointCloudScene(torch.nn.Module):
         # convert point_cloud to float32
         if isinstance(point_cloud, np.ndarray):
             point_cloud = torch.tensor(point_cloud, dtype=torch.float32)
-        # remove duplicated points
-        if point_cloud_features is None:
-            point_cloud = torch.unique(point_cloud, dim=0)
 
         if config.max_num_points_ratio is not None:
             num_points = point_cloud.shape[0]
@@ -53,14 +50,16 @@ class GaussianPointCloudScene(torch.nn.Module):
             self.point_cloud_features = nn.Parameter(point_cloud_features)
         else:
             self.point_cloud_features = nn.Parameter(
-                torch.zeros(self.point_cloud.shape[0], self.config.num_of_features)
+                torch.zeros(
+                    self.point_cloud.shape[0], self.config.num_of_features)
             )
         self.register_buffer(
             "point_invalid_mask",
             torch.zeros(self.point_cloud.shape[0], dtype=torch.int8)
         )
         if point_object_id is None:
-            point_object_id = torch.zeros(self.point_cloud.shape[0], dtype=torch.int32)
+            point_object_id = torch.zeros(
+                self.point_cloud.shape[0], dtype=torch.int32)
         self.register_buffer(
             "point_object_id",
             point_object_id
@@ -71,7 +70,7 @@ class GaussianPointCloudScene(torch.nn.Module):
     def forward(self):
         return self.point_cloud, self.point_cloud_features
 
-    def initialize(self):
+    def initialize(self, point_cloud_rgb: Optional[torch.Tensor] = None):
         with torch.no_grad():
             """
             estimate the initial covariance matrix as an isotropic Gaussian
@@ -81,11 +80,12 @@ class GaussianPointCloudScene(torch.nn.Module):
             ).cpu().numpy()  # shape: [num_points, 3]
             nearest_neighbor_tree = cKDTree(valid_point_cloud_np)
             nearest_three_neighbor_distance, _ = nearest_neighbor_tree.query(
-                valid_point_cloud_np, k = 3 + 1)
+                valid_point_cloud_np, k=3 + 1)
             initial_covariance = np.mean(nearest_three_neighbor_distance[:, 1:], axis=1) * \
                 self.config.initial_covariance_ratio
             # clip the initial covariance to [1e-6, inf]
-            initial_covariance = np.clip(initial_covariance, 1e-6, self.config.max_initial_covariance)
+            initial_covariance = np.clip(
+                initial_covariance, 1e-6, self.config.max_initial_covariance)
             # s is log of the covariance, so we take log of the initial covariance
             self.point_cloud_features[(self.point_invalid_mask == 0), 4:7] = torch.tensor(
                 np.log(initial_covariance), dtype=torch.float32).unsqueeze(1)
@@ -96,9 +96,11 @@ class GaussianPointCloudScene(torch.nn.Module):
             self.point_cloud_features[:, 0:3] = 0.0
             """
             # for rotation quaternion(x,y,z,w), we set it to random normalized value
-            self.point_cloud_features[:, 0:4] = torch.rand_like(self.point_cloud_features[:, 0:4])
+            self.point_cloud_features[:, 0:4] = torch.rand_like(
+                self.point_cloud_features[:, 0:4])
             self.point_cloud_features[:, 0:4] = self.point_cloud_features[:, 0:4] / \
-                torch.norm(self.point_cloud_features[:, 0:4], dim=1, keepdim=True)
+                torch.norm(
+                    self.point_cloud_features[:, 0:4], dim=1, keepdim=True)
 
             # for alpha before sigmoid, we set it to 0.0, so sigmoid(alpha) is 0.5
             # self.point_cloud_features[:, 7] = 0.0
@@ -110,7 +112,21 @@ class GaussianPointCloudScene(torch.nn.Module):
             self.point_cloud_features[:, 25:40] = 0.0
             self.point_cloud_features[:, 40] = 1.0
             self.point_cloud_features[:, 41:56] = 0.0
+            if point_cloud_rgb is not None:
+                point_cloud_rgb = torch.tensor(
+                    point_cloud_rgb, dtype=torch.float32, requires_grad=False, device=self.point_cloud_features.device)
+                point_cloud_rgb = point_cloud_rgb / 255.0
+                point_cloud_rgb = torch.clamp(point_cloud_rgb, 0.0, 0.99)
+                c0 = 0.28209479177387814
+                self.point_cloud_features[(self.point_invalid_mask == 0), 8] = \
+                    self._logit(point_cloud_rgb[:, 0]) / c0
+                self.point_cloud_features[(self.point_invalid_mask == 0), 24] = \
+                    self._logit(point_cloud_rgb[:, 1]) / c0
+                self.point_cloud_features[(self.point_invalid_mask == 0), 40] = \
+                    self._logit(point_cloud_rgb[:, 2]) / c0
 
+    def _logit(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.log(x / (1.0 - x))
 
     def to_parquet(self, path: str):
         valid_point_cloud = self.point_cloud[self.point_invalid_mask == 0]
@@ -141,19 +157,23 @@ class GaussianPointCloudScene(torch.nn.Module):
             scene_df = GaussianPointCloudScene._add_sphere(
                 scene_df, config.sphere_radius_factor, config.num_points_sphere)
 
+        df_has_color = "r" in scene_df.columns and "g" in scene_df.columns and "b" in scene_df.columns
         point_cloud = scene_df[["x", "y", "z"]].to_numpy()
-        
+
         if not set(feature_columns).issubset(set(scene_df.columns)):
             scene = GaussianPointCloudScene(
                 point_cloud, config)
-            scene.initialize()
+
+            point_cloud_rgb = scene_df[["r", "g", "b"]
+                                       ].to_numpy() if df_has_color else None
+            scene.initialize(point_cloud_rgb=point_cloud_rgb)
         else:
             valid_point_cloud_features = torch.from_numpy(
                 scene_df[feature_columns].to_numpy())
             scene = GaussianPointCloudScene(
                 point_cloud, config, point_cloud_features=valid_point_cloud_features)
         return scene
-    
+
     @staticmethod
     def _add_sphere(scene_df: pd.DataFrame, radius_factor: float, num_points: int):
         """ add a sphere to the scene, with radius equal to center to the farthest point * radius_factor
@@ -162,6 +182,7 @@ class GaussianPointCloudScene(torch.nn.Module):
             scene_df (pd.DataFrame): requires columns: x, y, z
             radius_factor (float): the radius of the sphere is equal to center to the farthest point * radius_factor
         """
+        df_has_color = "r" in scene_df.columns and "g" in scene_df.columns and "b" in scene_df.columns
         x_min, x_max = scene_df["x"].min(), scene_df["x"].max()
         y_min, y_max = scene_df["y"].min(), scene_df["y"].max()
         z_min, z_max = scene_df["z"].min(), scene_df["z"].max()
@@ -174,8 +195,10 @@ class GaussianPointCloudScene(torch.nn.Module):
         y = radius * np.sin(theta) * np.sin(phi)
         z = radius * np.cos(theta)
         points = np.stack([x, y, z], axis=1)
-        scene_df = pd.concat([scene_df, pd.DataFrame(points, columns=["x", "y", "z"])])
+        columns = ["x", "y", "z"]
+        if df_has_color:
+            rgb = np.ones((num_points, 3)) * (255 // 2)
+            points = np.concatenate([points, rgb], axis=1)
+            columns += ["r", "g", "b"]
+        scene_df = pd.concat([scene_df, pd.DataFrame(points, columns=columns)])
         return scene_df
-
-        
-    

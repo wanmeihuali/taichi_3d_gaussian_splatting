@@ -6,9 +6,32 @@ on:
     types: [ labeled ]
 
 jobs:
+  check-label-prefix:
+    runs-on: ubuntu-latest
+    env:
+      LABEL_NAME: ${{ github.event.label.name }}
+    outputs:
+      need_experiment: ${{ steps.check.outputs.need_experiment }}
+      label_name: ${{ env.LABEL_NAME }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - id: check
+        run: |
+          LABEL_NAME=$LABEL_NAME
+          PREFIX="need_experiment"
+          
+          if [[ "$LABEL_NAME" == "$PREFIX"* ]]; then
+            echo "need_experiment=true"
+            echo "need_experiment=true" >> $GITHUB_OUTPUT
+          else
+            echo "need_experiment=false" >> $GITHUB_OUTPUT
+          fi
   
   build:
-    if: contains(github.event.pull_request.labels.*.name, 'need_experiment') || contains(github.event.pull_request.labels.*.name, 'need_experiment_garden') || contains(github.event.pull_request.labels.*.name, 'need_experiment_tat_truck')
+    needs: check-label-prefix
+    if: needs.check-label-prefix.outputs.need_experiment == 'true'
     name: Run experiment
     runs-on: ubuntu-latest
     permissions:
@@ -66,6 +89,7 @@ jobs:
         GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
         IMAGE_URI: ${{ steps.build-image.outputs.image_uri }}
+        LABEL_NAME: ${{ needs.check-label-prefix.outputs.label_name }}
       run: |
         python3 ci/run_experiment.py
         

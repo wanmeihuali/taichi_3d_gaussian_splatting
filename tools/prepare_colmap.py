@@ -4,6 +4,8 @@ import pandas as pd
 import json
 import numpy as np
 import argparse
+import struct
+import collections
 
 # %%
 parser = argparse.ArgumentParser("Prepare dataset for 3D Gaussian Splatting from COLMAP text output")
@@ -32,6 +34,30 @@ def read_images_txt(file):
         name = " ".join(fields[9:])  # 这里处理文件名中可能包含空格的情况
         images[name] = {'qvec': qvec, 'tvec': tvec, 'camera_id': camera_id}
     return images
+
+def read_images_binary(path_to_model_file):
+    images = {}
+    with open(path_to_model_file, "rb") as fid:
+        num_reg_images = read_next_bytes(fid, 8, "Q")[0]
+        for _ in range(num_reg_images):
+            binary_image_properties = read_next_bytes(
+                fid, num_bytes=64, format_char_sequence="idddddddi")
+            image_id = binary_image_properties[0]
+            qvec = np.array(binary_image_properties[1:5])
+            tvec = np.array(binary_image_properties[5:8])
+            camera_id = binary_image_properties[8]
+            image_name = ""
+            current_char = read_next_bytes(fid, 1, "c")[0]
+            while current_char != b"\x00":   # look for the ASCII 0 entry
+                image_name += current_char.decode("utf-8")
+                current_char = read_next_bytes(fid, 1, "c")[0]
+            num_points2D = read_next_bytes(fid, num_bytes=8,
+                                           format_char_sequence="Q")[0]
+            x_y_id_s = read_next_bytes(fid, num_bytes=24*num_points2D,
+                                       format_char_sequence="ddq"*num_points2D)
+            images[image_name] = {'qvec': qvec, 'tvec': tvec, 'camera_id': camera_id}
+    return images
+            
 
 def parse_parameters_dict(row):
     params = row['params']
@@ -83,6 +109,49 @@ def read_cameras_txt(file):
     df['K'] = df['params_dict'].apply(get_intrinsic_matrix)
     return df
 
+CameraModel = collections.namedtuple(
+    "CameraModel", ["model_id", "model_name", "num_params"])
+CAMERA_MODELS = {
+    CameraModel(model_id=0, model_name="SIMPLE_PINHOLE", num_params=3),
+    CameraModel(model_id=1, model_name="PINHOLE", num_params=4),
+    CameraModel(model_id=2, model_name="SIMPLE_RADIAL", num_params=4),
+    CameraModel(model_id=3, model_name="RADIAL", num_params=5),
+    CameraModel(model_id=4, model_name="OPENCV", num_params=8),
+    CameraModel(model_id=5, model_name="OPENCV_FISHEYE", num_params=8),
+    CameraModel(model_id=6, model_name="FULL_OPENCV", num_params=12),
+    CameraModel(model_id=7, model_name="FOV", num_params=5),
+    CameraModel(model_id=8, model_name="SIMPLE_RADIAL_FISHEYE", num_params=4),
+    CameraModel(model_id=9, model_name="RADIAL_FISHEYE", num_params=5),
+    CameraModel(model_id=10, model_name="THIN_PRISM_FISHEYE", num_params=12)
+}
+CAMERA_MODEL_IDS = dict([(camera_model.model_id, camera_model)
+                         for camera_model in CAMERA_MODELS])
+
+def read_cameras_binary(path_to_model_file):
+    """
+    from original code for gaussian splatting
+    """
+    data = {}
+    with open(path_to_model_file, "rb") as fid:
+        num_cameras = read_next_bytes(fid, 8, "Q")[0]
+        for _ in range(num_cameras):
+            camera_properties = read_next_bytes(
+                fid, num_bytes=24, format_char_sequence="iiQQ")
+            camera_id = camera_properties[0]
+            model_id = camera_properties[1]
+            model_name = CAMERA_MODEL_IDS[camera_properties[1]].model_name
+            width = camera_properties[2]
+            height = camera_properties[3]
+            num_params = CAMERA_MODEL_IDS[model_id].num_params
+            params = read_next_bytes(fid, num_bytes=8*num_params,
+                                     format_char_sequence="d"*num_params)
+            data[camera_id] = {'model': model_name, 'width': width, 'height': height, 'params': params}
+            
+        assert len(data) == num_cameras
+    df = pd.DataFrame.from_dict(data, orient='index')
+    df['params_dict'] = df.apply(parse_parameters_dict, axis=1)
+    df['K'] = df['params_dict'].apply(get_intrinsic_matrix)
+    return df
 
 def read_points3D_txt(file):
     with open(file, 'r') as f:
@@ -104,6 +173,52 @@ def read_points3D_txt(file):
 
     return pd.DataFrame.from_dict(data, orient='index')
 
+
+def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
+    """Read and unpack the next bytes from a binary file.
+    :param fid:
+    :param num_bytes: Sum of combination of {2, 4, 8}, e.g. 2, 6, 16, 30, etc.
+    :param format_char_sequence: List of {c, e, f, d, h, H, i, I, l, L, q, Q}.
+    :param endian_character: Any of {@, =, <, >, !}
+    :return: Tuple of read and unpacked values.
+    """
+    data = fid.read(num_bytes)
+    return struct.unpack(endian_character + format_char_sequence, data) 
+
+def read_points3D_binary(path_to_model_file):
+    """
+    see: src/base/reconstruction.cc
+        void Reconstruction::ReadPoints3DBinary(const std::string& path)
+        void Reconstruction::WritePoints3DBinary(const std::string& path)
+    """
+
+
+    with open(path_to_model_file, "rb") as fid:
+        num_points = read_next_bytes(fid, 8, "Q")[0]
+
+        """
+        xyzs = np.empty((num_points, 3))
+        rgbs = np.empty((num_points, 3))
+        errors = np.empty((num_points, 1))
+        """
+
+        data = {}
+        for p_id in range(num_points):
+            binary_point_line_properties = read_next_bytes(
+                fid, num_bytes=43, format_char_sequence="QdddBBBd")
+            xyz = binary_point_line_properties[1:4]
+            rgb = binary_point_line_properties[4:7]
+            error = binary_point_line_properties[7]
+            track_length = read_next_bytes(
+                fid, num_bytes=8, format_char_sequence="Q")[0]
+            track_elems = read_next_bytes(
+                fid, num_bytes=8*track_length,
+                format_char_sequence="ii"*track_length)
+
+            data[p_id] = {'x': xyz[0], 'y': xyz[1], 'z': xyz[2], 'r': rgb[0], 'g': rgb[1], 'b': rgb[2], 'error': error, 'track': track_elems}
+    return pd.DataFrame.from_dict(data, orient='index')
+
+
 def quaternion_to_rotation_matrix(q):
     w, x, y, z = q
     return np.array([
@@ -112,9 +227,23 @@ def quaternion_to_rotation_matrix(q):
         [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x**2 - 2*y**2]
     ])
 
-images = read_images_txt(os.path.join(base_path, 'images.txt'))
-cameras = read_cameras_txt(os.path.join(base_path, 'cameras.txt'))
-points = read_points3D_txt(os.path.join(base_path, 'points3D.txt'))
+# if binary exists, read binary, otherwise read txt
+if os.path.exists(os.path.join(base_path, 'images.bin')):
+    images = read_images_binary(os.path.join(base_path, 'images.bin'))
+else:
+    images = read_images_txt(os.path.join(base_path, 'images.txt'))
+if os.path.exists(os.path.join(base_path, 'cameras.bin')):
+    cameras = read_cameras_binary(os.path.join(base_path, 'cameras.bin'))
+else:
+    cameras = read_cameras_txt(os.path.join(base_path, 'cameras.txt'))
+if os.path.exists(os.path.join(base_path, 'points3D.bin')):
+    points = read_points3D_binary(os.path.join(base_path, 'points3D.bin'))
+elif os.path.exists(os.path.join(base_path, 'points3d.bin')):
+    points = read_points3D_binary(os.path.join(base_path, 'points3d.bin'))
+elif os.path.exists(os.path.join(base_path, 'points3D.txt')):
+    points = read_points3D_txt(os.path.join(base_path, 'points3D.txt'))
+else:
+    points = read_points3D_txt(os.path.join(base_path, 'points3d.txt'))
 
 point_cloud = points[['x', 'y', 'z']].values
 point_cloud = point_cloud.T

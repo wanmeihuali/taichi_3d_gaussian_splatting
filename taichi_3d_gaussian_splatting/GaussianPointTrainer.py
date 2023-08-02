@@ -29,6 +29,7 @@ def cycle(dataloader):
         for data in dataloader:
             yield data
 
+
 class GaussianPointCloudTrainer:
     @dataclass
     class TrainConfig(YAMLWizard):
@@ -78,7 +79,8 @@ class GaussianPointCloudTrainer:
             dataset_json_path=self.config.val_dataset_json_path)
         self.scene = GaussianPointCloudScene.from_parquet(
             self.config.pointcloud_parquet_path, config=self.config.gaussian_point_cloud_scene_config)
-        self.camera_poses = CameraPoses(dataset_json_path=self.config.train_dataset_json_path)
+        self.camera_poses = CameraPoses(
+            dataset_json_path=self.config.train_dataset_json_path)
         self.scene = self.scene.cuda()
         self.camera_poses = self.camera_poses.cuda()
         self.adaptive_controller = GaussianPointAdaptiveController(
@@ -93,10 +95,10 @@ class GaussianPointCloudTrainer:
             config=self.config.rasterisation_config,
             backward_valid_point_hook=self.adaptive_controller.update,
         )
-        
+
         self.loss_function = LossFunction(
             config=self.config.loss_function_config)
-        
+
         self.best_psnr_score = 0.
 
         # move scene to GPU
@@ -105,7 +107,8 @@ class GaussianPointCloudTrainer:
     def _downsample_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo, downsample_factor: int):
         camera_height = camera_info.camera_height // downsample_factor
         camera_width = camera_info.camera_width // downsample_factor
-        image = transforms.functional.resize(image, size=(camera_height, camera_width))
+        image = transforms.functional.resize(
+            image, size=(camera_height, camera_width))
         camera_width = camera_width - camera_width % 16
         camera_height = camera_height - camera_height % 16
         image = image[:3, :camera_height, :camera_width].contiguous()
@@ -123,16 +126,18 @@ class GaussianPointCloudTrainer:
         return image, resized_camera_info
 
     def train(self):
-        ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
+        # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
+        ti.init(arch=ti.cuda, device_memory_GB=0.1,
+                kernel_profiler=self.config.enable_taichi_kernel_profiler)
         train_data_loader = torch.utils.data.DataLoader(
             self.train_dataset, batch_size=None, shuffle=True, pin_memory=True, num_workers=4)
         val_data_loader = torch.utils.data.DataLoader(
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
-        
-        optimizer = torch.optim.AdamW(
+
+        optimizer = torch.optim.Adam(
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
-        position_optimizer = torch.optim.AdamW(
+        position_optimizer = torch.optim.Adam(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
         camera_pose_optimizer = torch.optim.AdamW(
             self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate, betas=(0.9, 0.999))
@@ -144,7 +149,7 @@ class GaussianPointCloudTrainer:
         downsample_factor = self.config.initial_downsample_factor
 
         recent_losses = deque(maxlen=100)
-            
+
         previous_problematic_iteration = -1000
         for iteration in tqdm(range(self.config.num_iterations)):
             if iteration % self.config.half_downsample_factor_interval == 0 and iteration > 0 and downsample_factor > 1:
@@ -153,12 +158,13 @@ class GaussianPointCloudTrainer:
             optimizer.zero_grad()
             position_optimizer.zero_grad()
             if iteration > self.config.iteration_start_camera_pose_optimization and \
-                iteration % self.config.camera_pose_optimization_batch_size == 0:
+                    iteration % self.config.camera_pose_optimization_batch_size == 0:
                 camera_pose_optimizer.zero_grad()
-            
+
             image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = next(
                 train_data_loader_iter)
-            trained_q_pointcloud_camera, trained_t_pointcloud_camera = self.camera_poses(camera_pose_indices)
+            trained_q_pointcloud_camera, trained_t_pointcloud_camera = self.camera_poses(
+                camera_pose_indices)
             if downsample_factor > 1:
                 image_gt, camera_info = GaussianPointCloudTrainer._downsample_image_and_camera_info(
                     image_gt, camera_info, downsample_factor=downsample_factor)
@@ -187,26 +193,25 @@ class GaussianPointCloudTrainer:
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
             loss, l1_loss, ssim_loss = self.loss_function(
-                image_pred, 
-                image_gt, 
+                image_pred,
+                image_gt,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 pointcloud_features=self.scene.point_cloud_features)
             loss.backward()
             optimizer.step()
             position_optimizer.step()
             if iteration > self.config.iteration_start_camera_pose_optimization and \
-                iteration % self.config.camera_pose_optimization_batch_size == self.config.camera_pose_optimization_batch_size - 1:
+                    iteration % self.config.camera_pose_optimization_batch_size == self.config.camera_pose_optimization_batch_size - 1:
                 camera_pose_optimizer.step()
                 self.camera_poses.normalize_quaternion()
 
             recent_losses.append(loss.item())
-            
 
             if iteration % self.config.position_learning_rate_decay_interval == 0:
                 scheduler.step()
             if iteration > self.config.iteration_start_camera_pose_optimization and \
-                iteration % self.config.camera_pose_optimization_batch_size == 0 and \
-                iteration % self.config.position_learning_rate_decay_interval == 0:    
+                    iteration % self.config.camera_pose_optimization_batch_size == 0 and \
+                    iteration % self.config.position_learning_rate_decay_interval == 0:
                 camera_pose_scheduler.step()
             magnitude_grad_viewspace_on_image = None
             if self.adaptive_controller.input_data is not None:
@@ -268,37 +273,43 @@ class GaussianPointCloudTrainer:
                 image_depth = self._easy_cmap(image_depth)
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / \
                     pixel_valid_point_count.max()
-                image_list = [image_pred, image_gt, image_depth, pixel_valid_point_count]
+                image_list = [image_pred, image_gt,
+                              image_depth, pixel_valid_point_count]
                 if magnitude_grad_viewspace_on_image is not None:
-                    magnitude_grad_viewspace_on_image = magnitude_grad_viewspace_on_image.permute(2, 0, 1)
+                    magnitude_grad_viewspace_on_image = magnitude_grad_viewspace_on_image.permute(
+                        2, 0, 1)
                     magnitude_grad_u_viewspace_on_image = magnitude_grad_viewspace_on_image[0]
                     magnitude_grad_v_viewspace_on_image = magnitude_grad_viewspace_on_image[1]
                     magnitude_grad_u_viewspace_on_image /= magnitude_grad_u_viewspace_on_image.max()
                     magnitude_grad_v_viewspace_on_image /= magnitude_grad_v_viewspace_on_image.max()
                     image_diff = torch.abs(image_pred - image_gt)
-                    image_list.append(magnitude_grad_u_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
-                    image_list.append(magnitude_grad_v_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
+                    image_list.append(
+                        magnitude_grad_u_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
+                    image_list.append(
+                        magnitude_grad_v_viewspace_on_image.unsqueeze(0).repeat(3, 1, 1))
                     image_list.append(image_diff)
                 grid = make_grid(image_list, nrow=2)
-                
-                self.writer.add_image(
-                    "train/image", grid, iteration)
+
                 if is_problematic:
                     self.writer.add_image(
                         "train/image_problematic", grid, iteration)
-                
-            del image_gt, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
-            if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000 or iteration == 5000: # they use 7000 in paper, it's hard to set a interval so hard code it here
+                else:
+                    self.writer.add_image(
+                        "train/image", grid, iteration)
+
+            del image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
+            # they use 7000 in paper, it's hard to set a interval so hard code it here
+            if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000 or iteration == 5000:
                 self.validation(val_data_loader, iteration)
-    
+
     @staticmethod
     def _easy_cmap(x: torch.Tensor):
-        x_rgb = torch.zeros((3, x.shape[0], x.shape[1]), dtype=torch.float32, device=x.device)
+        x_rgb = torch.zeros(
+            (3, x.shape[0], x.shape[1]), dtype=torch.float32, device=x.device)
         x_rgb[0] = torch.clamp(x, 0, 10) / 10.
         x_rgb[1] = torch.clamp(x - 10, 0, 50) / 50.
         x_rgb[2] = torch.clamp(x - 60, 0, 200) / 200.
         return 1. - x_rgb
-        
 
     @staticmethod
     def _compute_pnsr_and_ssim(image_pred, image_gt):
@@ -333,11 +344,14 @@ class GaussianPointCloudTrainer:
             writer.add_histogram("grad/r_grad", r_grad, iteration)
             writer.add_histogram("grad/g_grad", g_grad, iteration)
             writer.add_histogram("grad/b_grad", b_grad, iteration)
-            writer.add_histogram("value/num_overlap_tiles", num_overlap_tiles, iteration)
-            writer.add_histogram("value/num_affected_pixels", num_affected_pixels, iteration)
-            writer.add_histogram("grad/grad_q_camera_pointcloud", grad_q_camera_pointcloud, iteration)
-            writer.add_histogram("grad/grad_t_camera_pointcloud", grad_t_camera_pointcloud, iteration)
-
+            writer.add_histogram("value/num_overlap_tiles",
+                                 num_overlap_tiles, iteration)
+            writer.add_histogram("value/num_affected_pixels",
+                                 num_affected_pixels, iteration)
+            writer.add_histogram(
+                "grad/grad_q_camera_pointcloud", grad_q_camera_pointcloud, iteration)
+            writer.add_histogram(
+                "grad/grad_t_camera_pointcloud", grad_t_camera_pointcloud, iteration)
 
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
@@ -351,11 +365,14 @@ class GaussianPointCloudTrainer:
             r = valid_point_cloud_features[:, 8:24]
             g = valid_point_cloud_features[:, 24:40]
             b = valid_point_cloud_features[:, 40:56]
-            writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
+            writer.add_scalar("value/num_valid_points",
+                              num_valid_points, iteration)
             print(f"num_valid_points={num_valid_points};")
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)
+            writer.add_histogram("value/sigmoid_alpha",
+                                 torch.sigmoid(alpha), iteration)
             writer.add_histogram("value/r", r, iteration)
             writer.add_histogram("value/g", g, iteration)
             writer.add_histogram("value/b", b, iteration)
@@ -400,7 +417,8 @@ class GaussianPointCloudTrainer:
                 image_pred = torch.clamp(image_pred, 0, 1)
                 image_pred = image_pred.permute(2, 0, 1)
                 image_depth = self._easy_cmap(image_depth)
-                pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
+                pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(
+                    0).repeat(3, 1, 1) / pixel_valid_point_count.max()
                 loss, _, _ = self.loss_function(image_pred, image_gt)
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
                     image_pred=image_pred, image_gt=image_gt)
@@ -408,7 +426,8 @@ class GaussianPointCloudTrainer:
                 total_loss += loss.item()
                 total_psnr_score += psnr_score.item()
                 total_ssim_score += ssim_score.item()
-                grid = make_grid([image_pred, image_gt, image_depth, pixel_valid_point_count, image_diff], nrow=2)
+                grid = make_grid(
+                    [image_pred, image_gt, image_depth, pixel_valid_point_count, image_diff], nrow=2)
                 if self.config.log_validation_image:
                     self.writer.add_image(
                         f"val/image {idx}", grid, iteration)
@@ -416,7 +435,8 @@ class GaussianPointCloudTrainer:
             if self.config.enable_taichi_kernel_profiler:
                 ti.profiler.print_kernel_profiler_info("count")
                 ti.profiler.clear_kernel_profiler_info()
-            average_inference_time = total_inference_time / len(val_data_loader)
+            average_inference_time = total_inference_time / \
+                len(val_data_loader)
 
             mean_loss = total_loss / len(val_data_loader)
             mean_psnr_score = total_psnr_score / len(val_data_loader)

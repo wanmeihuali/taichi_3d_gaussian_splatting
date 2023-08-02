@@ -66,7 +66,8 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         "train:num_valid_points"
     }
     kv_pairs = {}
-    for concern_latest_metric_name in concern_latest_metric_names:
+    # for concern_latest_metric_name in concern_latest_metric_names:
+    for concern_latest_metric_name in sorted(list(concern_latest_metric_names)):
         if concern_latest_metric_name not in train_job_metrics[train_job_name] \
             or len(train_job_metrics[train_job_name][concern_latest_metric_name]) == 0:
             continue
@@ -78,7 +79,7 @@ def comment_all_metrics(train_job_name, train_job_metrics):
         comment += kv_pairs_to_markdown(kv_pairs)
         comment += "\n"
     kv_pairs = {}
-    for concern_max_metric_name in concern_max_metric_names:
+    for concern_max_metric_name in sorted(list(concern_max_metric_names)):
         if concern_max_metric_name not in train_job_metrics[train_job_name] \
             or len(train_job_metrics[train_job_name][concern_max_metric_name]) == 0:
             continue
@@ -115,6 +116,7 @@ if __name__ == "__main__":
     repo_folder_name = git_repo.split("/")[-1]
     git_sha = os.environ["GITHUB_SHA"]
     image_uri = os.environ["IMAGE_URI"]
+    label_name = os.environ["LABEL_NAME"]
 
     short_sha = git_sha[:7]
 
@@ -130,19 +132,24 @@ if __name__ == "__main__":
     print(f"Getting pull request {pull_request_number} from {git_repo}")
     github_repo = github_client.get_repo(f"{git_repo}")
     pull_request = github_repo.get_pull(int(pull_request_number))
-    labels = [label.name for label in pull_request.labels]
+    # labels = [label.name for label in pull_request.labels]
     # replace "_" with "-" in labels
-    labels = [label.replace("_", "-") for label in labels]
+    # labels = [label.replace("_", "-") for label in labels]
+    label_name = label_name.replace("_", "-")
     pull_request.create_issue_comment(f"Running experiment on sagemaker with git sha {git_sha}")
     
     datasets = {
         "tat-truck": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/truck/", "MaxRuntimeInSeconds": 4*3600},
+        "tat-truck-baseline": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/truck_baseline/", "MaxRuntimeInSeconds": 4*3600},
+        "tat-train-baseline": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/train_baseline/", "MaxRuntimeInSeconds": 4*3600},
         "tat-train": {"S3Uri": "s3://nerf-dataset-collection/tanks_and_temples/train/", "MaxRuntimeInSeconds": 4*3600},
         "garden": {"S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/garden_4/", "MaxRuntimeInSeconds": 4*3600},
+        "stump": {"S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/stump/", "MaxRuntimeInSeconds": 4*3600},
+        "bicycle": {"S3Uri": "s3://nerf-dataset-collection/Mip-NeRF360/bicycle/", "MaxRuntimeInSeconds": 4*3600},
     }
-    if "need-experiment" not in labels:
+    if label_name != "need-experiment":
         # if the pull request does not have "need-experiment" label, it must have "need-experiment-<dataset>" label
-        selected_datasets = [label[len("need-experiment-"):] for label in labels if label.startswith("need-experiment-")]
+        selected_datasets = [label_name[len("need-experiment-"):]]
         datasets = {dataset: datasets[dataset] for dataset in selected_datasets}
 
     sagemaker_client = boto3.client("sagemaker", region_name="us-east-2")

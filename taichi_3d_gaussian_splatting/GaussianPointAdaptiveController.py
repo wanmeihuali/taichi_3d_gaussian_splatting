@@ -132,8 +132,7 @@ class GaussianPointAdaptiveController:
         with torch.no_grad():
             self.accumulated_num_in_camera[input_data.point_id_in_camera_list] += 1
             self.accumulated_num_pixels[input_data.point_id_in_camera_list] += input_data.num_affected_pixels
-            grad_viewspace = input_data.magnitude_grad_viewspace
-            grad_viewspace_norm = grad_viewspace.norm(dim=1)   
+            grad_viewspace_norm = input_data.magnitude_grad_viewspace
             self.accumulated_view_space_position_gradients[input_data.point_id_in_camera_list] += grad_viewspace_norm
             avg_grad_viewspace_norm = grad_viewspace_norm / input_data.num_affected_pixels
             avg_grad_viewspace_norm[torch.isnan(avg_grad_viewspace_norm)] = 0
@@ -214,10 +213,9 @@ class GaussianPointAdaptiveController:
         # point_features_in_camera = pointcloud_features[point_id_in_camera_list]
         in_camera_will_be_remove_mask = floater_mask_in_camera | transparent_point_mask[point_id_in_camera_list]
         # shape: [num_points_in_camera, 2]
-        grad_viewspace = input_data.magnitude_grad_viewspace
+        grad_viewspace_norm = input_data.magnitude_grad_viewspace
         # shape: [num_points_in_camera, num_features]
         # all these three masks are on num_points_in_camera, not num_points
-        grad_viewspace_norm = grad_viewspace.norm(dim=1)
         in_camera_to_densify_mask = (grad_viewspace_norm > self.config.densification_view_space_position_gradients_threshold) 
         in_camera_to_densify_mask &= (~in_camera_will_be_remove_mask) # don't densify floater or transparent points
         num_to_densify_by_viewspace = in_camera_to_densify_mask.sum().item()
