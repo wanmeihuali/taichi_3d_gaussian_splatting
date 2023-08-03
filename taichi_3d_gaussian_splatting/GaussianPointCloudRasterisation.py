@@ -419,12 +419,12 @@ def gaussian_point_rasterisation(
                 next_T_i = T_i * (1 - alpha)
                 if next_T_i < 0.0001:
                     pixel_saturated = True
-                    continue # 就是快，就不直接break
+                    continue # somehow faster than directly breaking
                 offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
                 accumulated_color += color * alpha * T_i
 
                 if not rgb_only:
-                    # 所有有效点的带权重平均深度
+                    # Weighted depth for all valid points.
                     depth = tile_point_depth[point_group_offset]
                     accumulated_depth += depth * alpha * T_i
                     depth_normalization_factor += alpha * T_i
@@ -855,24 +855,24 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_width=camera_info.camera_width,
                     camera_height=camera_info.camera_height,
                 )
-                # 前缀和
+                # Calculate pre-sum of number_overlap_tiles
                 accumulated_num_overlap_tiles = torch.cumsum(
                     num_overlap_tiles, dim=0)
                 if len(accumulated_num_overlap_tiles) > 0:
                     total_num_overlap_tiles = accumulated_num_overlap_tiles[-1]
                 else:
                     total_num_overlap_tiles = 0
-                # 每个点对应的空间
+                # The space of each point.
                 accumulated_num_overlap_tiles = torch.cat(
                     (torch.zeros(size=(1,), dtype=torch.int32, device=pointcloud.device),
                      accumulated_num_overlap_tiles[:-1]))
                 
                 # del num_overlap_tiles
 
-                # 64位的key
+                # 64-bits key
                 point_in_camera_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
-                # 对应回原来的位置，记录的是在视锥内的点 offset（工程优化）
+                # Corresponding to the original position, the record is the point offset in the frustum (engineering optimization)
                 point_offset_with_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int32, device=pointcloud.device)
                 
@@ -901,7 +901,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
                 tile_points_end = torch.zeros(size=(
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
-                # 找tile的start and end.
+                # Find tile's start and end.
                 if point_in_camera_sort_key.shape[0] > 0:
                     find_tile_start_and_end(
                         point_in_camera_sort_key=point_in_camera_sort_key,
@@ -909,7 +909,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         tile_points_end=tile_points_end,
                     )
 
-                # 开图片空间
+                # Allocate space for the image.
                 rasterized_image = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
                 rasterized_depth = torch.empty(
