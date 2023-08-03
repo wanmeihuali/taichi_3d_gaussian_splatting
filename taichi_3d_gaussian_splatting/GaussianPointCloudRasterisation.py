@@ -335,7 +335,7 @@ def gaussian_point_rasterisation(
         pixel_v = tile_v * 16 + pixel_offset_in_tile // 16
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
-        T_i = 1.0 # 累计alpha的初始值 （累乘的初值）
+        T_i = 1.0 # The initial value of accumulated alpha (initial value of accumulated multiplication)
         accumulated_color = ti.math.vec3([0., 0., 0.])
         accumulated_depth = 0.
         depth_normalization_factor = 0.
