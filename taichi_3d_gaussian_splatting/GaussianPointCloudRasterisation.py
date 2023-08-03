@@ -683,9 +683,9 @@ def gaussian_point_rasterisation_backward(
     for idx in range(point_id_in_camera_list.shape[0]):
         thread_id = idx % 256
         tile_camera_pose_q_grad = ti.simt.block.SharedArray(
-            (256, 4), dtype=ti.f32)  # 2KB shared memory
+            (4, 256), dtype=ti.f32)  # 2KB shared memory
         tile_camera_pose_t_grad = ti.simt.block.SharedArray(
-            (256, 3), dtype=ti.f32)  # 2KB shared memory
+            (3, 256), dtype=ti.f32)  # 2KB shared memory
 
         point_id = point_id_in_camera_list[idx]
         gaussian_point_3d = load_point_cloud_row_into_gaussian_point_3d(
@@ -758,16 +758,16 @@ def gaussian_point_rasterisation_backward(
         for object_id in range(q_camera_pointcloud.shape[0]):
             if point_object_id[point_id] == object_id:
                 for i in ti.static(range(4)):
-                    tile_camera_pose_q_grad[thread_id,
-                                            i] = point_camera_pose_q_grad[i]
+                    tile_camera_pose_q_grad[i,
+                                            thread_id] = point_camera_pose_q_grad[i]
                 for i in ti.static(range(3)):
-                    tile_camera_pose_t_grad[thread_id,
-                                            i] = point_camera_pose_t_grad[i]
+                    tile_camera_pose_t_grad[i, 
+                                            thread_id] = point_camera_pose_t_grad[i]
             else:
                 for i in ti.static(range(4)):
-                    tile_camera_pose_q_grad[thread_id, i] = 0.
+                    tile_camera_pose_q_grad[i, thread_id] = 0.
                 for i in ti.static(range(3)):
-                    tile_camera_pose_t_grad[thread_id, i] = 0.
+                    tile_camera_pose_t_grad[i, thread_id] = 0.
 
             # do reduction, for jth each round, s[i] += s[i + 2^j]
             for i in ti.static(range(8)):
@@ -775,19 +775,19 @@ def gaussian_point_rasterisation_backward(
                 thread_selector = offset << 1
                 if thread_id % thread_selector == 0 and idx + offset < point_id_in_camera_list.shape[0]:
                     for j in ti.static(range(4)):
-                        tile_camera_pose_q_grad[thread_id,
-                                                j] += tile_camera_pose_q_grad[thread_id + offset, j]
+                        tile_camera_pose_q_grad[j,
+                                                thread_id] += tile_camera_pose_q_grad[j, thread_id + offset]
                     for j in ti.static(range(3)):
-                        tile_camera_pose_t_grad[thread_id,
-                                                j] += tile_camera_pose_t_grad[thread_id + offset, j]
+                        tile_camera_pose_t_grad[j,
+                                                thread_id] += tile_camera_pose_t_grad[j, thread_id + offset]
                 ti.simt.block.sync()
             if thread_id == 0:
                 for i in ti.static(range(4)):
                     ti.atomic_add(
-                        grad_q_camera_pointcloud[object_id, i], tile_camera_pose_q_grad[0, i])
+                        grad_q_camera_pointcloud[object_id, i], tile_camera_pose_q_grad[i, 0])
                 for i in ti.static(range(3)):
                     ti.atomic_add(
-                        grad_t_camera_pointcloud[object_id, i], tile_camera_pose_t_grad[0, i])
+                        grad_t_camera_pointcloud[object_id, i], tile_camera_pose_t_grad[i, 0])
             ti.simt.block.sync()
 
 
@@ -856,6 +856,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_object_id,
                         q_camera_pointcloud,
                         t_camera_pointcloud,
+                        t_pointcloud_camera,
                         camera_info,
                         color_max_sh_band,
                         ):
@@ -1009,6 +1010,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_object_id,
                     q_camera_pointcloud,
                     t_camera_pointcloud,
+                    t_pointcloud_camera,
                     point_uv,
                     point_in_camera,
                     point_uv_conic,
@@ -1036,6 +1038,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_object_id, \
                         q_camera_pointcloud, \
                         t_camera_pointcloud, \
+                        t_pointcloud_camera, \
                         point_uv, \
                         point_in_camera, \
                         point_uv_conic, \
@@ -1164,6 +1167,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     None, \
                     grad_q_camera_pointcloud, \
                     grad_t_camera_pointcloud, \
+                    None, \
                     None, None
 
         self._module_function = _module_function
@@ -1205,6 +1209,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             point_object_id,
             q_camera_pointcloud,
             t_camera_pointcloud,
+            t_pointcloud_camera,
             camera_info,
             color_max_sh_band,
         )
