@@ -67,3 +67,30 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             camera_id=camera_id,
         )
         return image, q_pointcloud_camera ,t_pointcloud_camera, camera_info
+
+    def get_nerf_pp_norm(self):
+        """
+        Get the normalization factor, modified from the original implementation
+        """
+        def get_center_and_diag(cam_centers):
+            cam_centers = np.hstack(cam_centers)
+            avg_cam_center = np.mean(cam_centers, axis=1, keepdims=True)
+            center = avg_cam_center
+            dist = np.linalg.norm(cam_centers - center, axis=0, keepdims=True)
+            diagonal = np.max(dist)
+            return center.flatten(), diagonal
+
+        cam_centers = []
+        cam_centers = []
+        for idx in range(len(self)):
+            T_pointcloud_camera = self._pandas_field_to_tensor(
+                self.df.iloc[idx]["T_pointcloud_camera"]).numpy()
+            cam_centers.append(T_pointcloud_camera[:3, 3:4])
+
+        center, diagonal = get_center_and_diag(cam_centers)
+        radius = diagonal * 1.1
+
+        translate = -center
+
+        return {"translate": translate, "radius": radius}
+       

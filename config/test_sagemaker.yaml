@@ -3,7 +3,7 @@ adaptive-controller-config:
   densification_view_avg_space_position_gradients_threshold: 1e3
   densification_multi_frame_view_space_position_gradients_threshold: 1e3
   densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: 4e3
-  densification_multi_frame_position_gradients_threshold: 1e3
+  densification_multi_frame_position_gradients_threshold: 1e-2
   gaussian-split-factor-phi: 1.6
   num-iterations-densify: 100
   num-iterations-reset-alpha: 4000
@@ -13,7 +13,7 @@ adaptive-controller-config:
   floater_num_pixels_threshold: 400000
   floater_near_camrea_num_pixels_threshold: 300000
   iteration_start_remove_floater: 2000
-  under_reconstructed_num_pixels_threshold: 32
+  under_reconstructed_size_threshold: 0.001
   enable_sample_from_point: True
 gaussian-point-cloud-scene-config:
   max-num-points-ratio: 10.0

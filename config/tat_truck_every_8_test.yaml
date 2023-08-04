@@ -13,7 +13,7 @@ adaptive-controller-config:
   floater_num_pixels_threshold: 400000
   floater_near_camrea_num_pixels_threshold: 300000
   iteration_start_remove_floater: 2000
-  under_reconstructed_num_pixels_threshold: 32
+  under_reconstructed_size_threshold: 0.01
   enable_sample_from_point: True
   under_reconstructed_move_factor: 10.
 gaussian-point-cloud-scene-config:
@@ -24,9 +24,9 @@ gaussian-point-cloud-scene-config:
   max_initial_covariance: 3000.0
   initial_covariance_ratio: 0.1
 increase-color-max-sh-band-interval: 1000.0
-log-image-interval: 200
-log-loss-interval: 10
-log-metrics-interval: 100
+log-image-interval: 1000
+log-loss-interval: 100
+log-metrics-interval: 1000
 print-metrics-to-console: False
 enable_taichi_kernel_profiler: True
 log_taichi_kernel_profile_interval: 3000
@@ -45,8 +45,8 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_truck_every_8_experiment
-output-model-dir: logs/tat_truck_every_8_experiment
+summary-writer-log-dir: logs/tat_truck_every_8_experiment_3
+output-model-dir: logs/tat_truck_every_8_experiment_3
 train-dataset-json-path: 'data/tat_truck_every_8_test/train.json'
 val-dataset-json-path: 'data/tat_truck_every_8_test/val.json'
 val-interval: 1000
