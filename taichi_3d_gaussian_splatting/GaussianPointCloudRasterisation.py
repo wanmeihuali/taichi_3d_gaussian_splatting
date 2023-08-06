@@ -330,7 +330,7 @@ def gaussian_point_rasterisation(
         thread_id = pixel_offset % 256 # can wait for other threads in the same group, also have a shared memory.
         tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32) # tile position
         tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
-        pixel_offset_in_tile = pixel_offset - tile_id * 256 # pixel position in tile (pixel在tile里的相对位置)
+        pixel_offset_in_tile = pixel_offset - tile_id * 256 # pixel position in tile (The relative position of the pixel in the tile)
         pixel_u = tile_u * 16 + pixel_offset_in_tile % 16
         pixel_v = tile_v * 16 + pixel_offset_in_tile // 16
         start_offset = tile_points_start[tile_id]
