@@ -4,9 +4,9 @@ import taichi as ti
 import torch
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import (
     find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d, GaussianPointCloudRasterisation)
-from taichi_3d_gaussian_splatting.GaussianPoint3D import GaussianPoint3D, mat2x3f
-from taichi_3d_gaussian_splatting.SphericalHarmonics import SphericalHarmonics
-from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized, se3_to_quaternion_and_translation_torch
+from taichi_3d_gaussian_splatting.GaussianPoint3D import GaussianPoint3D
+# from taichi_3d_gaussian_splatting.SphericalHarmonics import SphericalHarmonics
+from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, get_point_probability_density_from_2d_gaussian_normalized, se3_to_quaternion_and_translation_torch
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from tqdm import tqdm
 
@@ -51,6 +51,7 @@ class TestFindTileStartAndEnd(unittest.TestCase):
         )
 
 
+# TODO(yp): modify this test.
 class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
     def setUp(self) -> None:
         ti.init(ti.gpu, debug=True)
@@ -85,9 +86,11 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
             cov_rotation=pointcloud_features[point_id, :4],
             cov_scale=pointcloud_features[point_id, 4:7],
             alpha=pointcloud_features[point_id, 7],
-            color_r=pointcloud_features[point_id, 8:24],
-            color_g=pointcloud_features[point_id, 24:40],
-            color_b=pointcloud_features[point_id, 40:56],
+            # color_r=pointcloud_features[point_id, 8:24],
+            # color_g=pointcloud_features[point_id, 24:40],
+            # color_b=pointcloud_features[point_id, 40:56],
+            color_w1=pointcloud_features[point_id, 8:32],
+            color_w2=pointcloud_features[point_id, 32:56],
         )
 
         self.assertTrue(
@@ -100,6 +103,10 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
         )
         self.assertTrue(
             np.allclose(result.cov_scale, expected.cov_scale),
+            f"Expected: {expected.cov_scale}, Actual: {result.cov_scale}",
+        )
+        self.assertTrue(
+            np.allclose(result.color_w2, expected.color_w2),
             f"Expected: {expected.cov_scale}, Actual: {result.cov_scale}",
         )
 
@@ -136,6 +143,8 @@ class TestRasterisation(unittest.TestCase):
             T_pointcloud_to_camera[2, 3] = -0.5
             q_pointcloud_to_camera, t_pointcloud_to_camera = se3_to_quaternion_and_translation_torch(
                 T_pointcloud_to_camera.unsqueeze(0))
+            q_pointcloud_to_camera = q_pointcloud_to_camera.contiguous()
+            t_pointcloud_to_camera = t_pointcloud_to_camera.contiguous()
 
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
@@ -148,7 +157,7 @@ class TestRasterisation(unittest.TestCase):
             image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
-        
+
     def test_rasterisation_two_points(self):
         """
         test two points, both at the center of the image with different covariances and depth
@@ -160,22 +169,25 @@ class TestRasterisation(unittest.TestCase):
             ))
         image_size = (16, 16)
         point_cloud = torch.nn.Parameter(torch.tensor(
-            [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))       
+            [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))
         point_cloud_features = torch.zeros(
             size=(2, 56), dtype=torch.float32, device=torch.device("cuda:0"))
         point_cloud_features[:, 3] = 1.0
         point_cloud_features[0, 4:7] = 1.0
         point_cloud_features[1, 4:7] = 4.0
         point_cloud_features[:, 7] = 0.0
-        point_cloud_features[:, 8] = 5.0
-        point_cloud_features[:, 9:24] = 0.0
-        point_cloud_features[:, 24] = 1.0
-        point_cloud_features[:, 25:40] = 0.0
-        point_cloud_features[:, 40] = 1.0
-        point_cloud_features[:, 41:56] = 0.0
+        # point_cloud_features[:, 8] = 5.0
+        # point_cloud_features[:, 9:24] = 0.0
+        # point_cloud_features[:, 24] = 1.0
+        # point_cloud_features[:, 25:40] = 0.0
+        # point_cloud_features[:, 40] = 1.0
+        # point_cloud_features[:, 41:56] = 0.0
+        point_cloud_features[:, 8:32] = 1.5
+        point_cloud_features[:, 32:56] = 2.2
 
         point_cloud_features = torch.nn.Parameter(point_cloud_features)
-        point_object_id = torch.zeros(point_cloud.shape[0], dtype=torch.int32, device=torch.device("cuda:0"))
+        point_object_id = torch.zeros(
+            point_cloud.shape[0], dtype=torch.int32, device=torch.device("cuda:0"))
         point_invalid_mask = torch.zeros(
             size=(2,), dtype=torch.int8, device=torch.device("cuda:0"))
         point_invalid_mask[0] = 1
@@ -203,8 +215,6 @@ class TestRasterisation(unittest.TestCase):
         pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
         print(pred_image)
 
-        
-
     def test_backward_hook(self):
         """ use a fake image, and test if gradient descent can have a good coverage
         """
@@ -231,6 +241,7 @@ class TestRasterisation(unittest.TestCase):
         tmp[:, 4:7] = -4.60517018599
         tmp[:, 7] = 0.5
         point_cloud_features = torch.nn.Parameter(tmp)
+
         camera_info = CameraInfo(
             camera_height=image_size[0],
             camera_width=image_size[1],
@@ -243,6 +254,8 @@ class TestRasterisation(unittest.TestCase):
         T_camera_world[2, 3] = -2
         q_pointcloud_to_camera, t_pointcloud_to_camera = se3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
+        q_pointcloud_to_camera = q_pointcloud_to_camera.contiguous()
+        t_pointcloud_to_camera = t_pointcloud_to_camera.contiguous()
 
         def backward_valid_point_hook(input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
             num_points_in_camera = input_data.point_id_in_camera_list.shape[0]
@@ -277,6 +290,7 @@ class TestRasterisation(unittest.TestCase):
             q_pointcloud_camera=q_pointcloud_to_camera,
             t_pointcloud_camera=t_pointcloud_to_camera)
         pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
+        print("pred_image: ", pred_image)
         loss = ((pred_image - fake_image)**2).sum()
         loss.backward()
         optimizer.step()
@@ -320,7 +334,9 @@ class TestRasterisation(unittest.TestCase):
         T_camera_world[2, 3] = -2
         q_camera_world, t_camera_world = se3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
-    
+        q_camera_world = q_camera_world.contiguous()
+        t_camera_world = t_camera_world.contiguous()
+
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
                 near_plane=1.,
@@ -547,3 +563,10 @@ class TestRasterisation(unittest.TestCase):
         self.assertTrue(np.allclose(
             pointcloud_features_grad[:8].detach().cpu().numpy(), xyz_feature_grad[:8].detach().cpu().numpy(), atol=1e-2),
             msg=f"Expected: {pointcloud_features_grad[:8].detach().cpu().numpy()}, Actual: {xyz_feature_grad[:8].detach().cpu().numpy()}")
+
+
+if __name__ == '__main__':
+    suite = unittest.TestSuite()
+    suite.addTest(TestRasterisation('test_backward_hook'))
+    # unittest.main()
+    unittest.TextTestRunner(verbosity=3).run(suite)

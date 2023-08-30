@@ -335,6 +335,14 @@ def ti_sigmoid(x):
     return 1 / (1 + ti.exp(-x))
 
 @ti.func
+def ti_relu(x: ti.f32) -> ti.f32:
+    return max(x, 0)
+
+@ti.func
+def ti_drelu(x: ti.f32) -> ti.f32:
+    return 1 if x > 0 else 0
+
+@ti.func
 def ti_sigmoid_with_jacobian(x):
     s = ti_sigmoid(x)
     return s, s * (1 - s)

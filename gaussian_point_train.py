@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 import argparse
 from taichi_3d_gaussian_splatting.GaussianPointTrainer import GaussianPointCloudTrainer
+import os
 
 if __name__ == "__main__":
+    os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
     plt.switch_backend("agg")
     parser = argparse.ArgumentParser("Train a Gaussian Point Cloud Scene")
     parser.add_argument("--train_config", type=str, required=True)
