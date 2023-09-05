@@ -58,7 +58,7 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
 
     def test_load_point_cloud_row_into_gaussian_point_3d(self):
         N = 5
-        M = 56
+        M = 67
         # pointcloud = np.random.rand(N, 3).astype(np.float32)
         # pointcloud_features = np.random.rand(N, M).astype(np.float32)
         pointcloud = torch.rand(N, 3, dtype=torch.float32,
@@ -90,7 +90,9 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
             # color_g=pointcloud_features[point_id, 24:40],
             # color_b=pointcloud_features[point_id, 40:56],
             color_w1=pointcloud_features[point_id, 8:32],
-            color_w2=pointcloud_features[point_id, 32:56],
+            color_b1=pointcloud_features[point_id, 32:40],
+            color_w2=pointcloud_features[point_id, 40:64],
+            color_b2=pointcloud_features[point_id, 64:67],
         )
 
         self.assertTrue(
@@ -107,8 +109,13 @@ class TestLoadPointCloudRowIntoGaussianPoint3D(unittest.TestCase):
         )
         self.assertTrue(
             np.allclose(result.color_w2, expected.color_w2),
-            f"Expected: {expected.cov_scale}, Actual: {result.cov_scale}",
+            f"Expected color_w2: {expected.color_w2}, Actual: {result.color_w2}",
         )
+        self.assertTrue(
+            np.allclose(result.color_b2, expected.color_b2),
+            f"Expected color_b2: {expected.color_b2}, Actual: {result.color_b2}",
+        )
+
 
 
 class TestRasterisation(unittest.TestCase):
@@ -171,7 +178,7 @@ class TestRasterisation(unittest.TestCase):
         point_cloud = torch.nn.Parameter(torch.tensor(
             [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))
         point_cloud_features = torch.zeros(
-            size=(2, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+            size=(2, 67), dtype=torch.float32, device=torch.device("cuda:0"))
         point_cloud_features[:, 3] = 1.0
         point_cloud_features[0, 4:7] = 1.0
         point_cloud_features[1, 4:7] = 4.0
@@ -183,7 +190,9 @@ class TestRasterisation(unittest.TestCase):
         # point_cloud_features[:, 40] = 1.0
         # point_cloud_features[:, 41:56] = 0.0
         point_cloud_features[:, 8:32] = 1.5
-        point_cloud_features[:, 32:56] = 2.2
+        point_cloud_features[:, 32:40] = 3.3
+        point_cloud_features[:, 40:64] = 2.2
+        point_cloud_features[:, 64:67] = 1.1
 
         point_cloud_features = torch.nn.Parameter(point_cloud_features)
         point_object_id = torch.zeros(
@@ -237,7 +246,7 @@ class TestRasterisation(unittest.TestCase):
         point_object_id = torch.zeros(num_points, dtype=torch.int32, device=torch.device(
             "cuda:0"))
         tmp = torch.rand(size=(
-            num_points, 56), dtype=torch.float32, device=torch.device("cuda:0"))
+            num_points, 67), dtype=torch.float32, device=torch.device("cuda:0"))
         tmp[:, 4:7] = -4.60517018599
         tmp[:, 7] = 0.5
         point_cloud_features = torch.nn.Parameter(tmp)
@@ -267,7 +276,7 @@ class TestRasterisation(unittest.TestCase):
                              input_data.grad_viewspace.shape[0])
             self.assertEqual(input_data.grad_point_in_camera.shape[1], 3)
             self.assertEqual(
-                input_data.grad_pointfeatures_in_camera.shape[1], 56)
+                input_data.grad_pointfeatures_in_camera.shape[1], 67)
             self.assertEqual(input_data.grad_viewspace.shape[1], 2)
             print(
                 f"grad_viewspace mean: {input_data.grad_viewspace.abs().mean()}, grad_viewspace std: {input_data.grad_viewspace.std()}")
@@ -567,6 +576,6 @@ class TestRasterisation(unittest.TestCase):
 
 if __name__ == '__main__':
     suite = unittest.TestSuite()
-    suite.addTest(TestRasterisation('test_backward_hook'))
+    suite.addTest(TestRasterisation('test_rasterisation_two_points'))
     # unittest.main()
     unittest.TextTestRunner(verbosity=3).run(suite)

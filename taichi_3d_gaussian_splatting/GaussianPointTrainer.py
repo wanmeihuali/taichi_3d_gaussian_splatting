@@ -21,6 +21,7 @@ from matplotlib import cm
 from collections import deque
 import numpy as np
 from typing import Optional
+from datetime import datetime
 
 
 def cycle(dataloader):
@@ -65,12 +66,13 @@ class GaussianPointCloudTrainer:
     def __init__(self, config: TrainConfig):
         self.config = config
         # create the log directory if it doesn't exist
-        os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
+        log_dir = self.config.summary_writer_log_dir+datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs(log_dir, exist_ok=True)
         if self.config.output_model_dir is None:
-            self.config.output_model_dir = self.config.summary_writer_log_dir
+            self.config.output_model_dir = log_dir
             os.makedirs(self.config.output_model_dir, exist_ok=True)
         self.writer = SummaryWriter(
-            log_dir=self.config.summary_writer_log_dir)
+            log_dir=log_dir)
 
         self.train_dataset = ImagePoseDataset(
             dataset_json_path=self.config.train_dataset_json_path)

@@ -12,6 +12,14 @@ mat9x4f = ti.types.matrix(n=9, m=4, dtype=ti.f32)
 COLOR_INPUT_SIZE: int = 3
 COLOR_HIDDEN_SIZE: int = 8
 COLOR_OUTPUT_SIZE: int = 3
+COLOR_W1_SIZE = COLOR_INPUT_SIZE * COLOR_HIDDEN_SIZE
+COLOR_B1_SIZE = COLOR_HIDDEN_SIZE
+COLOR_W2_SIZE = COLOR_HIDDEN_SIZE * COLOR_OUTPUT_SIZE
+COLOR_B2_SIZE = COLOR_OUTPUT_SIZE
+COLOR_MLP_SIZE_PREFIX_SUM = [COLOR_W1_SIZE,
+                             COLOR_W1_SIZE + COLOR_B1_SIZE,
+                             COLOR_W1_SIZE + COLOR_B1_SIZE + COLOR_W2_SIZE,
+                             COLOR_W1_SIZE + COLOR_B1_SIZE + COLOR_W2_SIZE + COLOR_B2_SIZE]
 
 
 @ti.func
@@ -110,12 +118,12 @@ class GaussianPoint3D:
     # color_g: vec16f  # color of the point, g
     # color_b: vec16f  # color of the point, b
 
-    # TODO(yp): Consider add the bias term (will potencially add more parameters)
     color_w1: ti.types.matrix(
         COLOR_HIDDEN_SIZE, COLOR_INPUT_SIZE, dtype=ti.f32)
-    # b1 = ti.Matrix(color_hidden, 1, dt=ti.f32, shape=COLOR_HIDDEN_SIZE)
+    color_b1: ti.types.vector(COLOR_HIDDEN_SIZE, dtype=ti.f32)
     color_w2: ti.types.matrix(
         COLOR_OUTPUT_SIZE, COLOR_HIDDEN_SIZE, dtype=ti.f32)
+    color_b2: ti.types.vector(COLOR_OUTPUT_SIZE, dtype=ti.f32)
 
     @ti.func
     def project_to_camera_position(
@@ -360,10 +368,10 @@ class GaussianPoint3D:
 
     @ti.func
     def get_color_by_ray_mlp(self, ray_direction: ti.math.vec3) -> ti.math.vec3:
-        hidden = self.color_w1 @ ray_direction
+        hidden = self.color_w1 @ ray_direction + self.color_b1
         for i in ti.static(range(COLOR_HIDDEN_SIZE)):
             hidden[i] = ti_relu(hidden[i])
-        output = self.color_w2 @ hidden
+        output = self.color_w2 @ hidden + self.color_b2
         for i in ti.static(range(COLOR_OUTPUT_SIZE)):
             output[i] = ti_relu(output[i])
         return output
@@ -397,28 +405,33 @@ class GaussianPoint3D:
             self,
             ray_direction: ti.math.vec3,
             point_color_grad: ti.math.vec3) -> ti.math.vec3:
-        hidden = self.color_w1 @ ray_direction
+        hidden = self.color_w1 @ ray_direction + self.color_b1
         for i in ti.static(range(COLOR_HIDDEN_SIZE)):
             hidden[i] = ti_relu(hidden[i])
-        output = self.color_w2 @ hidden
+        output = self.color_w2 @ hidden + self.color_b2
         for i in ti.static(range(COLOR_OUTPUT_SIZE)):
             output[i] = ti_relu(output[i])
 
         delta_2 = ti.Vector(
             [0.0 for _ in ti.static(range(COLOR_OUTPUT_SIZE))], ti.f32)
         for i in ti.static(range(COLOR_OUTPUT_SIZE)):
-            delta_2[i] = ti_drelu(point_color_grad[i])
-        color_w2_grad = hidden.outer_product(delta_2)
+            delta_2[i] = point_color_grad[i] * ti_drelu(output[i])
+        # color_w2_grad = hidden.outer_product(delta_2)
+        color_w2_grad = delta_2.outer_product(hidden)
+        color_b2_grad = delta_2
 
         delta_1 = delta_2 @ self.color_w2
         for i in ti.static(range(COLOR_HIDDEN_SIZE)):
-            delta_1[i] = ti_drelu(hidden[i])
+            delta_1[i] *= ti_drelu(hidden[i])
         color_w1_grad = delta_1.outer_product(ray_direction)
+        color_b1_grad = delta_1
 
-        return ti.Vector([color_w1_grad[row, col] for col in ti.static(range(COLOR_INPUT_SIZE))
-                          for row in ti.static(range(COLOR_HIDDEN_SIZE))]), \
-            ti.Vector([color_w2_grad[row, col] for col in ti.static(range(COLOR_HIDDEN_SIZE))
-                       for row in ti.static(range(COLOR_OUTPUT_SIZE))])
+        return ti.Vector([color_w1_grad[row, col] for row in ti.static(range(COLOR_HIDDEN_SIZE)) for col in ti.static(range(COLOR_INPUT_SIZE))
+                          ]), \
+            color_b1_grad,\
+            ti.Vector([color_w2_grad[row, col] for row in ti.static(range(COLOR_OUTPUT_SIZE)) for col in ti.static(range(COLOR_HIDDEN_SIZE))
+                       ]),\
+            color_b2_grad
 
     @ti.func
     def get_ellipsoid_foci_vector(self) -> ti.math.vec3:

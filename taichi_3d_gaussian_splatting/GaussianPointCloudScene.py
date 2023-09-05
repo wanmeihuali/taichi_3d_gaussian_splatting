@@ -112,7 +112,7 @@ class GaussianPointCloudScene(torch.nn.Module):
             # self.point_cloud_features[:, 25:40] = 0.0
             # self.point_cloud_features[:, 40] = 1.0
             # self.point_cloud_features[:, 41:56] = 0.0
-            self.point_cloud_features[:, 8:56] = torch.rand_like(self.point_cloud_features[:, 8:56])
+            self.point_cloud_features[:, 8:67] = torch.rand_like(self.point_cloud_features[:, 8:67])
             if point_cloud_rgb is not None:
                 point_cloud_rgb = torch.tensor(
                     point_cloud_rgb, dtype=torch.float32, requires_grad=False, device=self.point_cloud_features.device)
@@ -138,8 +138,10 @@ class GaussianPointCloudScene(torch.nn.Module):
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
             [f"color_w1{i}" for i in range(24)] + \
-            [f"color_w2{i}" for i in range(24)]
-            # [f"r_sh{i}" for i in range(16)] + \
+            [f"color_b1{i}" for i in range(8)] + \
+            [f"color_w2{i}" for i in range(24)] + \
+            [f"color_b2{i}" for i in range(3)]
+            # [f"r_sh{i}" for i in range(16)] + \ 
             # [f"g_sh{i}" for i in range(16)] + \
             # [f"b_sh{i}" for i in range(16)]
         point_cloud_features_df = pd.DataFrame(
@@ -154,7 +156,9 @@ class GaussianPointCloudScene(torch.nn.Module):
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
             [f"color_w1{i}" for i in range(24)] + \
-            [f"color_w2{i}" for i in range(24)]
+            [f"color_b1{i}" for i in range(8)] + \
+            [f"color_w2{i}" for i in range(24)] + \
+            [f"color_b2{i}" for i in range(3)]
             # [f"r_sh{i}" for i in range(16)] + \
             # [f"g_sh{i}" for i in range(16)] + \
             # [f"b_sh{i}" for i in range(16)]

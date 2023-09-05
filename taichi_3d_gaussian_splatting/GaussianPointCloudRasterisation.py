@@ -14,9 +14,7 @@ from .utils import (torch_type, data_type, ti2torch, torch2ti,
                     get_point_probability_density_from_conic,
                     grad_point_probability_density_from_conic,
                     inverse_se3)
-from .GaussianPoint3D import (GaussianPoint3D, project_point_to_camera,
-                              tranform_matrix_from_quaternion_and_translation,
-                              COLOR_INPUT_SIZE, COLOR_HIDDEN_SIZE, COLOR_OUTPUT_SIZE)
+from .GaussianPoint3D import *
 from typing import List, Tuple, Optional, Callable, Union
 from dataclass_wizard import YAMLWizard
 
@@ -228,10 +226,15 @@ def load_point_cloud_row_into_gaussian_point_3d(
     #                     for offset in ti.static(range(8, 8 + 24))])
     # color_w2 = ti.Vector([pointcloud_features[point_id, offset]
     #                       for offset in ti.static(range(32, 32 + 24))])
+
     color_w1 = ti.Matrix([[pointcloud_features[point_id, col+row*COLOR_INPUT_SIZE+8]
                          for col in range(COLOR_INPUT_SIZE)] for row in range(COLOR_HIDDEN_SIZE)], dt=ti.f32)
-    color_w2 = ti.Matrix([[pointcloud_features[point_id, col+row*COLOR_HIDDEN_SIZE+32]
+    color_b1 = ti.Matrix([pointcloud_features[point_id, offset] for offset in ti.static(
+        range(8+COLOR_MLP_SIZE_PREFIX_SUM[0], COLOR_MLP_SIZE_PREFIX_SUM[1]+8))], dt=ti.f32)
+    color_w2 = ti.Matrix([[pointcloud_features[point_id, col+row*COLOR_HIDDEN_SIZE+COLOR_MLP_SIZE_PREFIX_SUM[1]+8]
                          for col in range(COLOR_HIDDEN_SIZE)] for row in range(COLOR_OUTPUT_SIZE)], dt=ti.f32)
+    color_b2 = ti.Matrix([pointcloud_features[point_id, offset] for offset in ti.static(
+        range(8+COLOR_MLP_SIZE_PREFIX_SUM[2], COLOR_MLP_SIZE_PREFIX_SUM[3]+8))], dt=ti.f32)
     gaussian_point_3d = GaussianPoint3D(
         translation=translation,
         cov_rotation=cov_rotation,
@@ -241,7 +244,9 @@ def load_point_cloud_row_into_gaussian_point_3d(
         # color_g=g_feature,
         # color_b=b_feature,
         color_w1=color_w1,
-        color_w2=color_w2
+        color_b1=color_b1,
+        color_w2=color_w2,
+        color_b2=color_b2
     )
     return gaussian_point_3d
 
@@ -761,7 +766,7 @@ def gaussian_point_rasterisation_backward(
         # color_b_grad = point_grad_color[2] * b_jacobian
 
         # Calculate grad for the color mlp
-        color_w1_grad_flatten, color_w2_grad_flatten = gaussian_point_3d.get_color_with_flatten_grad_by_ray_mlp(
+        color_w1_grad_flatten, color_b1_grad, color_w2_grad_flatten, color_b2_grad = gaussian_point_3d.get_color_with_flatten_grad_by_ray_mlp(
             ray_direction, point_grad_color)
 
         translation_grad = point_grad_uv @ d_uv_d_translation
@@ -780,11 +785,19 @@ def gaussian_point_rasterisation_backward(
         #     grad_pointcloud_features[point_id, i + 8] = color_r_grad[i]
         #     grad_pointcloud_features[point_id, i + 24] = color_g_grad[i]
         #     grad_pointcloud_features[point_id, i + 40] = color_b_grad[i]
-        for i in ti.static(range(24)):
-            grad_pointcloud_features[point_id,
-                                     i + 8] = color_w1_grad_flatten[i]
-            grad_pointcloud_features[point_id,
-                                     i + 32] = color_w2_grad_flatten[i]
+        # for i in ti.static(range(24)):
+        #     grad_pointcloud_features[point_id,
+        #                              i + 8] = color_w1_grad_flatten[i]
+        #     grad_pointcloud_features[point_id,
+        #                              i + 32] = color_w2_grad_flatten[i]
+        for i in ti.static(range(COLOR_W1_SIZE)):
+            grad_pointcloud_features[point_id, i + 8] = color_w1_grad_flatten[i]
+        for i in ti.static(range(COLOR_B1_SIZE)):
+            grad_pointcloud_features[point_id, i + 8 + COLOR_MLP_SIZE_PREFIX_SUM[0]] = color_b1_grad[i]
+        for i in ti.static(range(COLOR_W2_SIZE)):
+            grad_pointcloud_features[point_id, i + 8 + COLOR_MLP_SIZE_PREFIX_SUM[1]] = color_w2_grad_flatten[i]
+        for i in ti.static(range(COLOR_B2_SIZE)):
+            grad_pointcloud_features[point_id, i + 8 + COLOR_MLP_SIZE_PREFIX_SUM[2]] = color_b2_grad[i]
 
 
 class GaussianPointCloudRasterisation(torch.nn.Module):
