@@ -416,7 +416,6 @@ class GaussianPoint3D:
             [0.0 for _ in ti.static(range(COLOR_OUTPUT_SIZE))], ti.f32)
         for i in ti.static(range(COLOR_OUTPUT_SIZE)):
             delta_2[i] = point_color_grad[i] * ti_drelu(output[i])
-        # color_w2_grad = hidden.outer_product(delta_2)
         color_w2_grad = delta_2.outer_product(hidden)
         color_b2_grad = delta_2
 
