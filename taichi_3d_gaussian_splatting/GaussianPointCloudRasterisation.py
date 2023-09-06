@@ -222,10 +222,6 @@ def load_point_cloud_row_into_gaussian_point_3d(
     #                    for offset in ti.static(range(24, 24 + 16))])
     # b_feature = vec16f([pointcloud_features[point_id, offset]
     #                    for offset in ti.static(range(40, 40 + 16))])
-    # color_w1 = ti.Vector([pointcloud_features[point_id, offset]
-    #                     for offset in ti.static(range(8, 8 + 24))])
-    # color_w2 = ti.Vector([pointcloud_features[point_id, offset]
-    #                       for offset in ti.static(range(32, 32 + 24))])
 
     color_w1 = ti.Matrix([[pointcloud_features[point_id, col+row*COLOR_INPUT_SIZE+8]
                          for col in range(COLOR_INPUT_SIZE)] for row in range(COLOR_HIDDEN_SIZE)], dt=ti.f32)
