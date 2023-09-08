@@ -159,6 +159,15 @@ class GaussianPoint3D:
         return d_uv_d_translation
 
     @ti.func
+    def depth_jacobian(
+        self,
+        T_camera_world: ti.math.mat4,
+    ):
+        T = T_camera_world
+        return ti.math.vec3([T[2, 0], T[2, 1], T[2, 2]])
+
+
+    @ti.func
     def project_to_camera_covariance(
         self,
         T_camera_world: ti.math.mat4,
