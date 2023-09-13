@@ -10,7 +10,7 @@ mat9x3f = ti.types.matrix(n=9, m=3, dtype=ti.f32)
 mat4x9f = ti.types.matrix(n=4, m=9, dtype=ti.f32)
 mat9x4f = ti.types.matrix(n=9, m=4, dtype=ti.f32)
 COLOR_INPUT_SIZE: int = 3
-COLOR_HIDDEN_SIZE: int = 8
+COLOR_HIDDEN_SIZE: int = 16
 COLOR_OUTPUT_SIZE: int = 3
 COLOR_W1_SIZE = COLOR_INPUT_SIZE * COLOR_HIDDEN_SIZE
 COLOR_B1_SIZE = COLOR_HIDDEN_SIZE

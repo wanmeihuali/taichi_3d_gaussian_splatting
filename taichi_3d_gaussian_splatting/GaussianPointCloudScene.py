@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from scipy.spatial.ckdtree import cKDTree
 from typing import Optional, Union
 from dataclass_wizard import YAMLWizard
+from .GaussianPoint3D import COLOR_INPUT_SIZE, COLOR_HIDDEN_SIZE, COLOR_OUTPUT_SIZE
 
 
 class GaussianPointCloudScene(torch.nn.Module):
@@ -112,7 +113,7 @@ class GaussianPointCloudScene(torch.nn.Module):
             # self.point_cloud_features[:, 25:40] = 0.0
             # self.point_cloud_features[:, 40] = 1.0
             # self.point_cloud_features[:, 41:56] = 0.0
-            self.point_cloud_features[:, 8:67] = torch.rand_like(self.point_cloud_features[:, 8:67])
+            self.point_cloud_features[:, 8:123] = torch.rand_like(self.point_cloud_features[:, 8:123])
             if point_cloud_rgb is not None:
                 point_cloud_rgb = torch.tensor(
                     point_cloud_rgb, dtype=torch.float32, requires_grad=False, device=self.point_cloud_features.device)
@@ -137,10 +138,10 @@ class GaussianPointCloudScene(torch.nn.Module):
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
-            [f"color_w1{i}" for i in range(24)] + \
-            [f"color_b1{i}" for i in range(8)] + \
-            [f"color_w2{i}" for i in range(24)] + \
-            [f"color_b2{i}" for i in range(3)]
+            [f"color_w1{i}" for i in range(COLOR_INPUT_SIZE*COLOR_HIDDEN_SIZE)] + \
+            [f"color_b1{i}" for i in range(COLOR_HIDDEN_SIZE)] + \
+            [f"color_w2{i}" for i in range(COLOR_INPUT_SIZE*COLOR_HIDDEN_SIZE)] + \
+            [f"color_b2{i}" for i in range(COLOR_OUTPUT_SIZE)]
             # [f"r_sh{i}" for i in range(16)] + \ 
             # [f"g_sh{i}" for i in range(16)] + \
             # [f"b_sh{i}" for i in range(16)]
@@ -155,10 +156,10 @@ class GaussianPointCloudScene(torch.nn.Module):
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
             [f"alpha{i}" for i in range(1)] + \
-            [f"color_w1{i}" for i in range(24)] + \
-            [f"color_b1{i}" for i in range(8)] + \
-            [f"color_w2{i}" for i in range(24)] + \
-            [f"color_b2{i}" for i in range(3)]
+            [f"color_w1{i}" for i in range(COLOR_INPUT_SIZE*COLOR_HIDDEN_SIZE)] + \
+            [f"color_b1{i}" for i in range(COLOR_HIDDEN_SIZE)] + \
+            [f"color_w2{i}" for i in range(COLOR_INPUT_SIZE*COLOR_HIDDEN_SIZE)] + \
+            [f"color_b2{i}" for i in range(COLOR_OUTPUT_SIZE)]
             # [f"r_sh{i}" for i in range(16)] + \
             # [f"g_sh{i}" for i in range(16)] + \
             # [f"b_sh{i}" for i in range(16)]
