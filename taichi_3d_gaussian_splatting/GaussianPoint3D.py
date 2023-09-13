@@ -2,7 +2,7 @@
 import taichi as ti
 import taichi.math
 from .SphericalHarmonics import SphericalHarmonics, vec16f
-from .utils import ti_sigmoid, ti_sigmoid_with_jacobian, quaternion_rotate, ti_relu, ti_drelu
+from .utils import ti_sigmoid, ti_sigmoid_with_jacobian, quaternion_rotate, ti_relu, ti_drelu, get_point_to_line_vector
 
 mat2x3f = ti.types.matrix(n=2, m=3, dtype=ti.f32)
 mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
@@ -10,7 +10,7 @@ mat9x3f = ti.types.matrix(n=9, m=3, dtype=ti.f32)
 mat4x9f = ti.types.matrix(n=4, m=9, dtype=ti.f32)
 mat9x4f = ti.types.matrix(n=9, m=4, dtype=ti.f32)
 COLOR_INPUT_SIZE: int = 3
-COLOR_HIDDEN_SIZE: int = 8
+COLOR_HIDDEN_SIZE: int = 16
 COLOR_OUTPUT_SIZE: int = 3
 COLOR_W1_SIZE = COLOR_INPUT_SIZE * COLOR_HIDDEN_SIZE
 COLOR_B1_SIZE = COLOR_HIDDEN_SIZE
@@ -367,8 +367,15 @@ class GaussianPoint3D:
         return ti.math.vec3(r_normalized, g_normalized, b_normalized)
 
     @ti.func
-    def get_color_by_ray_mlp(self, ray_direction: ti.math.vec3) -> ti.math.vec3:
-        hidden = self.color_w1 @ ray_direction + self.color_b1
+    def get_color_by_ray_mlp(self, 
+            ray_origin: ti.math.vec3,
+            ray_direction: ti.math.vec3) -> ti.math.vec3:
+        relative_direction = get_point_to_line_vector(
+            point=self.translation,
+            line_origin=ray_origin,
+            line_direction=ray_direction,
+        )
+        hidden = self.color_w1 @ relative_direction + self.color_b1
         for i in ti.static(range(COLOR_HIDDEN_SIZE)):
             hidden[i] = ti_relu(hidden[i])
         output = self.color_w2 @ hidden + self.color_b2
@@ -403,9 +410,15 @@ class GaussianPoint3D:
     @ti.func
     def get_color_with_flatten_grad_by_ray_mlp(
             self,
+            ray_origin: ti.math.vec3,
             ray_direction: ti.math.vec3,
             point_color_grad: ti.math.vec3) -> ti.math.vec3:
-        hidden = self.color_w1 @ ray_direction + self.color_b1
+        relative_direction = get_point_to_line_vector(
+            point=self.translation,
+            line_origin=ray_origin,
+            line_direction=ray_direction,
+        )
+        hidden = self.color_w1 @ relative_direction + self.color_b1
         for i in ti.static(range(COLOR_HIDDEN_SIZE)):
             hidden[i] = ti_relu(hidden[i])
         output = self.color_w2 @ hidden + self.color_b2
