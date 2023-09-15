@@ -55,6 +55,8 @@ print(latex(D_translation_camrea_D_T))
 pprint(D_translation_camrea_D_T, use_unicode=True)
 
 # %%
+import sympy
+from sympy import latex, pprint
 x = sympy.Symbol('qx')
 y = sympy.Symbol('qy')
 z = sympy.Symbol('qz')
@@ -81,9 +83,12 @@ T = sympy.Matrix([
     [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy), tz],
     [0, 0, 0, 1]
 ])
+print(T.shape)
 translation = sympy.MatrixSymbol('t', 3, 1)
 homogeneous_translation_camera = T @ sympy.Matrix(
-    [translation[0, 0], translation[1, 0], translation[2, 0], 1])
+    [[translation[0, 0]], [translation[1, 0]], [translation[2, 0]], [1]])
+print(homogeneous_translation_camera.shape)
+# %%
 translation_camera = sympy.Matrix([homogeneous_translation_camera[0, 0],
                                   homogeneous_translation_camera[1, 0], homogeneous_translation_camera[2, 0]])
 

@@ -7,3 +7,8 @@ Data/
 *.egg-info
 imgui.ini
 image/
+build/
+*.nsys-rep
+*.sqlite
+*.qdstrm
+*.ll

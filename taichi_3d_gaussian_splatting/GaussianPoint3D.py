@@ -2,7 +2,7 @@
 import taichi as ti
 import taichi.math
 from .SphericalHarmonics import SphericalHarmonics, vec16f
-from .utils import ti_sigmoid, ti_sigmoid_with_jacobian, quaternion_rotate
+from .utils import ti_sigmoid, ti_sigmoid_with_jacobian, quaternion_rotate, ti_skew
 
 mat2x3f = ti.types.matrix(n=2, m=3, dtype=ti.f32)
 mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
@@ -61,6 +61,17 @@ def tranform_matrix_from_quaternion_and_translation(q: ti.math.vec4, t: ti.math.
         [R[2, 0], R[2, 1], R[2, 2], t[2]],
         [0, 0, 0, 1]
     ])
+
+
+
+@ti.func
+def transform_matrix_from_quaternion_and_translation_with_delta(
+    q: ti.math.vec4,
+    t: ti.math.vec3,
+    xi: ti.types.vector(6)
+) -> ti.math.mat4:
+    T = tranform_matrix_from_quaternion_and_translation(q, t)
+    
 
 
 @ti.func
@@ -220,6 +231,66 @@ class GaussianPoint3D:
         d_uv_d_t = d_uv_d_translation_camera @ d_translation_camera_d_t
         return d_uv_d_translation, d_uv_d_q, d_uv_d_t
 
+    @ti.func
+    def project_to_camera_position_delta_jacobian(
+        self,
+        T_camera_world_with_delta: ti.math.mat4,
+        projective_transform: ti.math.mat3,
+    ):
+        """ 
+        Given a camera pose with delta, compute the jacobian of the projected position with respect to the delta
+        T' = \delta T T = Exp(\delta \xi) T
+        p: translation_world
+        translation_camera = T' translation_world
+        the gaussian point p is projected to [u, v, 1] = K translation_camera / translation_camera.z
+        
+        compute the following jacobian:
+        \frac{\partial uv}{\partial translation_world}
+        \frac{\partial uv}{\partial \delta \xi}
+
+        From <<14 lectures on visual SLAM>> 4.3.5:
+        \frac{\partial (Tp)}{\partial \delta \xi} = 
+        \begin{bmatrix}
+        I & -(Rp+t)^\wedge \\
+        0 & 0
+        \end{bmatrix} \in \mathbb{R}^{4 \times 6}
+
+        Args:
+            T_camera_world (ti.math.mat4): Transform matrix from world to camera
+            projective_transform (ti.math.mat3): K matrix, [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
+
+        Returns:
+            ti.math.mat2x3, ti.math.mat2x6: jacobian of uv with respect to translation_world, jacobian of uv with respect to delta
+        """
+        T = T_camera_world_with_delta
+        W = ti.math.mat3([
+            [T[0, 0], T[0, 1], T[0, 2]],
+            [T[1, 0], T[1, 1], T[1, 2]],
+            [T[2, 0], T[2, 1], T[2, 2]]
+        ])
+
+        # the forward output is uv, cov_uv, the backward input is d_uv, d_cov_uv
+        # jacobian: d_uv / d_translation, d_cov_uv / d_cov_rotation, d_cov_uv / d_cov_scale
+        # in paper, d_cov_uv / d_cov_rotation is called d_Sigma' / dq, d_cov_uv / d_cov_scale is called d_Sigma' / ds
+        # t = self.translation
+        t = T @ ti.math.vec4(
+            [self.translation.x, self.translation.y, self.translation.z, 1])
+        K = projective_transform
+        # d_uv_d_translation_camera = \left[\begin{matrix}\frac{K_{0, 0}}{t_{2, 0}} & \frac{K_{0, 1}}{t_{2, 0}} & \frac{- K_{0, 0} t_{0, 0} - K_{0, 1} t_{1, 0}}{t_{2, 0}^{2}}\\\frac{K_{1, 0}}{t_{2, 0}} & \frac{K_{1, 1}}{t_{2, 0}} & \frac{- K_{1, 0} t_{0, 0} - K_{1, 1} t_{1, 0}}{t_{2, 0}^{2}}\end{matrix}\right]
+        d_uv_d_translation_camera = mat2x3f([
+            [K[0, 0] / t.z, K[0, 1] / t.z,
+                (-K[0, 0] * t.x - K[0, 1] * t.y) / (t.z * t.z)],
+            [K[1, 0] / t.z, K[1, 1] / t.z, (-K[1, 0] * t.x - K[1, 1] * t.y) / (t.z * t.z)]])
+        d_translation_camera_d_translation = W
+        d_uv_d_translation = d_uv_d_translation_camera @ d_translation_camera_d_translation  # 2 x 3
+
+        translation_camera = ti.math.vec3(t.x, t.y, t.z) # Rp + t
+        d_translation_camera_d_xi = ti.Matrix([
+            [1, 0, 0, 0, translation_camera.z, -translation_camera.y],
+            [0, 1, 0, -translation_camera.z, 0, translation_camera.x],
+            [0, 0, 1, translation_camera.y, -translation_camera.x, 0]])
+        d_uv_d_xi = d_uv_d_translation_camera @ d_translation_camera_d_xi
+        return d_uv_d_translation, d_uv_d_xi
 
 
     @ti.func

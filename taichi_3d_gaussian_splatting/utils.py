@@ -122,7 +122,7 @@ def get_ray_origin_and_direction_from_camera(
     Returns:
         (torch.Tensor, torch.Tensor): the ray origin and direction for each ray, ray_origin: (3,), direction: (H, W, 3)
     """
-    T_camera_pointcloud = inverse_se3(T_pointcloud_camera)
+    T_camera_pointcloud = inverse_SE3(T_pointcloud_camera)
     ray_origin = T_pointcloud_camera[:3, 3]
     """ consider how we get a point(x, y, z)'s position in the camera frame:
     p_in_camera_frame = T_camera_pointcloud * [x, y, z, 1]^T
@@ -196,6 +196,7 @@ def get_ray_origin_and_direction_by_uv(
     ray_direction = ti.math.normalize(ray_direction)
     return ray_origin, ray_direction
 
+
 @ti.func
 def quaternion_multiply(q1: ti.math.vec4, q2: ti.math.vec4) -> ti.math.vec4:
     return ti.math.vec4([
@@ -205,15 +206,19 @@ def quaternion_multiply(q1: ti.math.vec4, q2: ti.math.vec4) -> ti.math.vec4:
         q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z,
     ])
 
+
 @ti.func
 def quaternion_conjugate(q: ti.math.vec4) -> ti.math.vec4:
     return ti.math.vec4([-q.x, -q.y, -q.z, q.w])
 
+
 @ti.func
 def quaternion_rotate(q: ti.math.vec4, v: ti.math.vec3) -> ti.math.vec3:
     qv = ti.math.vec4([v.x, v.y, v.z, 0.0])
-    ret4 = quaternion_multiply(q, quaternion_multiply(qv, quaternion_conjugate(q)))
+    ret4 = quaternion_multiply(
+        q, quaternion_multiply(qv, quaternion_conjugate(q)))
     return ti.math.vec3([ret4.x, ret4.y, ret4.z])
+
 
 @ti.func
 def get_point_probability_density_from_2d_gaussian(
@@ -231,6 +236,7 @@ def get_point_probability_density_from_2d_gaussian(
     exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
     return ti.exp(exponent) / (2 * np.pi * ti.sqrt(det_cov))
 
+
 @ti.func
 def get_point_probability_density_from_2d_gaussian_normalized(
     xy: ti.math.vec2,
@@ -247,6 +253,7 @@ def get_point_probability_density_from_2d_gaussian_normalized(
     exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
     return ti.exp(exponent)
 
+
 @ti.func
 def get_point_conic(
     gaussian_covariance: ti.math.mat2,
@@ -258,16 +265,18 @@ def get_point_conic(
     conic = ti.math.vec3([inv_cov[0, 0], inv_cov[0, 1], inv_cov[1, 1]])
     return conic
 
+
 @ti.func
 def get_point_probability_density_from_conic(
     xy: ti.math.vec2,
     gaussian_mean: ti.math.vec2,
-    conic : ti.math.vec3,
+    conic: ti.math.vec3,
 ) -> ti.f32:
     xy_mean = xy - gaussian_mean
     exponent = -0.5 * (xy_mean.x * xy_mean.x * conic.x + xy_mean.y * xy_mean.y * conic.z) \
         - xy_mean.x * xy_mean.y * conic.y
     return ti.exp(exponent)
+
 
 @ti.func
 def grad_point_probability_density_2d(
@@ -290,6 +299,7 @@ def grad_point_probability_density_2d(
                             xy_mean_outer_xy_mean @ inv_cov)
     return p, d_p_d_mean, d_p_d_cov
 
+
 @ti.func
 def grad_point_probability_density_2d_normalized(
     xy: ti.math.vec2,
@@ -308,14 +318,15 @@ def grad_point_probability_density_2d_normalized(
     d_p_d_mean = p * cov_inv_xy_mean
     xy_mean_outer_xy_mean = xy_mean.outer_product(xy_mean)
     d_p_d_cov = 0.5 * p * (inv_cov @
-                            xy_mean_outer_xy_mean @ inv_cov)
+                           xy_mean_outer_xy_mean @ inv_cov)
     return p, d_p_d_mean, d_p_d_cov
+
 
 @ti.func
 def grad_point_probability_density_from_conic(
     xy: ti.math.vec2,
     gaussian_mean: ti.math.vec2,
-    conic : ti.math.vec3,
+    conic: ti.math.vec3,
 ):
     xy_mean = xy - gaussian_mean
     inv_cov = ti.math.mat2([[conic.x, conic.y], [conic.y, conic.z]])
@@ -326,19 +337,19 @@ def grad_point_probability_density_from_conic(
     d_p_d_mean = p * cov_inv_xy_mean
     xy_mean_outer_xy_mean = xy_mean.outer_product(xy_mean)
     d_p_d_cov = 0.5 * p * (inv_cov @
-                            xy_mean_outer_xy_mean @ inv_cov)
+                           xy_mean_outer_xy_mean @ inv_cov)
     return p, d_p_d_mean, d_p_d_cov
 
-        
+
 @ti.func
 def ti_sigmoid(x):
     return 1 / (1 + ti.exp(-x))
+
 
 @ti.func
 def ti_sigmoid_with_jacobian(x):
     s = ti_sigmoid(x)
     return s, s * (1 - s)
-    
 
 
 @ti.kernel
@@ -365,23 +376,102 @@ def torch2ti_grad(field: ti.template(), grad: ti.types.ndarray()):
         field.grad[I] = grad[I]
 
 
-def inverse_se3(transform: torch.Tensor):
-    R = transform[:3, :3]
-    t = transform[:3, 3]
-    inverse_transform = torch.zeros_like(transform)
-    inverse_transform[:3, :3] = R.T
-    inverse_transform[:3, 3] = -R.T @ t
-    inverse_transform[3, 3] = 1
+@ti.func
+def ti_skew(v: ti.math.vec3) -> ti.math.mat3:
+    return ti.Matrix([[0, -v[2], v[1]],
+                      [v[2], 0, -v[0]],
+                      [-v[1], v[0], 0]])
+
+
+@ti.func
+def ti_exp_map_SE3(xi: ti.template()) -> ti.math.mat4:
+    """Compute the exponential map of se3: Exp(se3)->SE3
+    se3: (\phi, \rho) \in R^6
+    theta = ||\phi||
+    axis = \phi / theta
+    Exp(\phi) = cos(theta) * I + (1 - cos(theta)) * axis * axis.T + sin(theta) * skew(axis)
+
+    Args:
+        xi (ti.template): vector of 6, se3
+    Returns:
+        SE3 (ti.template): matrix of 4x4
+    """
+    theta2 = xi[0] * xi[0] + xi[1] * xi[1] + xi[2] * xi[2]
+    theta = ti.math.sqrt(theta2)
+    if theta < 1e-5:  # small angle approximation
+        R = ti.math.eye(3) + ti_skew(ti.Vector([xi[0], xi[1], xi[2]])) * theta
+        t = ti.Vector([xi[3], xi[4], xi[5]])
+        return ti.Matrix([[R[0, 0], R[0, 1], R[0, 2], t[0]],
+                          [R[1, 0], R[1, 1], R[1, 2], t[1]],
+                          [R[2, 0], R[2, 1], R[2, 2], t[2]],
+                          [0, 0, 0, 1]])
+    else:
+        axis = ti.Vector([xi[0], xi[1], xi[2]]) / theta
+        cosine = ti.math.cos(theta)
+        sine = ti.math.sin(theta)
+        skew_axis = ti_skew(axis)
+        axis_outer_axis = axis.outer_product(axis)
+        R = ti.math.eye(3) * cosine + (1 - cosine) * \
+            axis_outer_axis + sine * skew_axis
+        J = ti.math.eye(3) * sine / theta + (1 - sine / theta) * \
+            axis_outer_axis + (1 - cosine) / theta * skew_axis
+        t = J @ ti.Vector([xi[3], xi[4], xi[5]])
+        return ti.Matrix([[R[0, 0], R[0, 1], R[0, 2], t[0]],
+                          [R[1, 0], R[1, 1], R[1, 2], t[1]],
+                          [R[2, 0], R[2, 1], R[2, 2], t[2]],
+                          [0, 0, 0, 1]])
+
+
+
+def batch_inverse_SE3(transform: torch.Tensor):
+    # Assume transform has shape (batch_size, 4, 4)
+
+    # Extract rotation and translation for the entire batch
+    R = transform[:, :3, :3]
+    # Keep the last dimension for matrix multiplication
+    t = transform[:, :3, 3].unsqueeze(-1)
+
+    # Compute inverse rotation for the entire batch
+    R_inv = R.transpose(1, 2)
+
+    # Compute inverse translation for the entire batch
+    # Remove the last dimension after multiplication
+    t_inv = -torch.matmul(R_inv, t).squeeze(-1)
+
+    # Create the inverse transform matrix for the entire batch
+    batch_size = transform.size(0)
+    inverse_transform = torch.eye(4).to(
+        transform.device).unsqueeze(0).repeat(batch_size, 1, 1)
+
+    # Place R_inv and t_inv in the right positions
+    inverse_transform[:, :3, :3] = R_inv
+    inverse_transform[:, :3, 3] = t_inv
+
     return inverse_transform
 
+def inverse_SE3(transform: torch.Tensor):
+    if len(transform.shape) == 2:
+        R = transform[:3, :3]
+        t = transform[:3, 3]
+        inverse_transform = torch.zeros_like(transform)
+        inverse_transform[:3, :3] = R.T
+        inverse_transform[:3, 3] = -R.T @ t
+        inverse_transform[3, 3] = 1
+        return inverse_transform
+    elif len(transform.shape) == 3:
+        return batch_inverse_SE3(transform)
+    else:
+        raise ValueError("Invalid transform shape")
+
 def quaternion_conjugate_torch(
-    q: torch.Tensor, # (batch_size, 4), (x, y, z, w)
+    q: torch.Tensor,  # (batch_size, 4), (x, y, z, w)
 ):
     return torch.cat([-q[..., 0:3], q[..., 3:4]], dim=-1)
 
+
 def quaternion_multiply_torch(
-    q0: torch.Tensor, # (batch_size, 4)
-    q1: torch.Tensor, # (batch_size, 4)
+    q0: torch.Tensor,  # (batch_size, 4)
+    q1: torch.Tensor,  # (batch_size, 4)
 ):
     x0, y0, z0, w0 = q0[..., 0], q0[..., 1], q0[..., 2], q0[..., 3]
     x1, y1, z1, w1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
@@ -391,32 +481,36 @@ def quaternion_multiply_torch(
     w = w0 * w1 - x0 * x1 - y0 * y1 - z0 * z1
     return torch.stack([x, y, z, w], dim=-1)
 
+
 def quaternion_rotate_torch(
-    q: torch.Tensor, # (batch_size, 4)
-    v: torch.Tensor, # (batch_size, 3)
+    q: torch.Tensor,  # (batch_size, 4)
+    v: torch.Tensor,  # (batch_size, 3)
 ):
     q = q / torch.norm(q, dim=-1, keepdim=True)
     v = torch.cat([v, torch.zeros_like(v[..., :1])], dim=-1)
     q_conj = quaternion_conjugate_torch(q)
     return quaternion_multiply_torch(
         quaternion_multiply_torch(q, v), q_conj)[..., :3]
-    
+
 
 def inverse_se3_qt_torch(
-    q: torch.Tensor, # (batch_size, 4)
-    t: torch.Tensor, # (batch_size, 3)
-)->Tuple[torch.Tensor, torch.Tensor]:
+    q: torch.Tensor,  # (batch_size, 4)
+    t: torch.Tensor,  # (batch_size, 3)
+) -> Tuple[torch.Tensor, torch.Tensor]:
     q_inv = quaternion_conjugate_torch(q)
     t_inv = -quaternion_rotate_torch(q_inv, t)
     return q_inv, t_inv
 
+
 def rotation_matrix_to_quaternion_torch(
-    R: torch.Tensor # (batch_size, 3, 3)
-)->torch.Tensor:
-    q = torch.zeros(R.shape[0], 4, device=R.device, dtype=R.dtype) # (batch_size, 4) x, y, z, w
+    R: torch.Tensor  # (batch_size, 3, 3)
+) -> torch.Tensor:
+    q = torch.zeros(R.shape[0], 4, device=R.device,
+                    dtype=R.dtype)  # (batch_size, 4) x, y, z, w
     trace = R[..., 0, 0] + R[..., 1, 1] + R[..., 2, 2]
     q0_mask = trace > 0
-    q1_mask = (R[..., 0, 0] > R[..., 1, 1]) & (R[..., 0, 0] > R[..., 2, 2]) & ~q0_mask
+    q1_mask = (R[..., 0, 0] > R[..., 1, 1]) & (
+        R[..., 0, 0] > R[..., 2, 2]) & ~q0_mask
     q2_mask = (R[..., 1, 1] > R[..., 2, 2]) & ~q0_mask & ~q1_mask
     q3_mask = ~q0_mask & ~q1_mask & ~q2_mask
     if q0_mask.any():
@@ -426,36 +520,42 @@ def rotation_matrix_to_quaternion_torch(
         q[q0_mask, 0] = (R_for_q0[..., 2, 1] - R_for_q0[..., 1, 2]) * S_for_q0
         q[q0_mask, 1] = (R_for_q0[..., 0, 2] - R_for_q0[..., 2, 0]) * S_for_q0
         q[q0_mask, 2] = (R_for_q0[..., 1, 0] - R_for_q0[..., 0, 1]) * S_for_q0
-    
+
     if q1_mask.any():
         R_for_q1 = R[q1_mask]
-        S_for_q1 = 2.0 * torch.sqrt(1 + R_for_q1[..., 0, 0] - R_for_q1[..., 1, 1] - R_for_q1[..., 2, 2])
+        S_for_q1 = 2.0 * \
+            torch.sqrt(1 + R_for_q1[..., 0, 0] -
+                       R_for_q1[..., 1, 1] - R_for_q1[..., 2, 2])
         q[q1_mask, 0] = 0.25 * S_for_q1
         q[q1_mask, 1] = (R_for_q1[..., 0, 1] + R_for_q1[..., 1, 0]) / S_for_q1
         q[q1_mask, 2] = (R_for_q1[..., 0, 2] + R_for_q1[..., 2, 0]) / S_for_q1
         q[q1_mask, 3] = (R_for_q1[..., 2, 1] - R_for_q1[..., 1, 2]) / S_for_q1
-    
+
     if q2_mask.any():
         R_for_q2 = R[q2_mask]
-        S_for_q2 = 2.0 * torch.sqrt(1 + R_for_q2[..., 1, 1] - R_for_q2[..., 0, 0] - R_for_q2[..., 2, 2])
+        S_for_q2 = 2.0 * \
+            torch.sqrt(1 + R_for_q2[..., 1, 1] -
+                       R_for_q2[..., 0, 0] - R_for_q2[..., 2, 2])
         q[q2_mask, 0] = (R_for_q2[..., 0, 1] + R_for_q2[..., 1, 0]) / S_for_q2
         q[q2_mask, 1] = 0.25 * S_for_q2
         q[q2_mask, 2] = (R_for_q2[..., 1, 2] + R_for_q2[..., 2, 1]) / S_for_q2
         q[q2_mask, 3] = (R_for_q2[..., 0, 2] - R_for_q2[..., 2, 0]) / S_for_q2
-    
+
     if q3_mask.any():
         R_for_q3 = R[q3_mask]
-        S_for_q3 = 2.0 * torch.sqrt(1 + R_for_q3[..., 2, 2] - R_for_q3[..., 0, 0] - R_for_q3[..., 1, 1])
+        S_for_q3 = 2.0 * \
+            torch.sqrt(1 + R_for_q3[..., 2, 2] -
+                       R_for_q3[..., 0, 0] - R_for_q3[..., 1, 1])
         q[q3_mask, 0] = (R_for_q3[..., 0, 2] + R_for_q3[..., 2, 0]) / S_for_q3
         q[q3_mask, 1] = (R_for_q3[..., 1, 2] + R_for_q3[..., 2, 1]) / S_for_q3
         q[q3_mask, 2] = 0.25 * S_for_q3
         q[q3_mask, 3] = (R_for_q3[..., 1, 0] - R_for_q3[..., 0, 1]) / S_for_q3
     return q
-    
+
 
 def se3_to_quaternion_and_translation_torch(
-    transform: torch.Tensor, # (batch_size, 4, 4)
-)->Tuple[torch.Tensor, torch.Tensor]:
+    transform: torch.Tensor,  # (batch_size, 4, 4)
+) -> Tuple[torch.Tensor, torch.Tensor]:
     R = transform[..., :3, :3]
     t = transform[..., :3, 3]
     q = rotation_matrix_to_quaternion_torch(R)
@@ -625,4 +725,3 @@ def get_spherical_harmonic_from_xyz_torch(
     l3p3 = 0.59004358992664352 * x * (-x * x + 3.0 * y * y)
     return torch.tensor([
         l0m0, l1m1, l1m0, l1p1, l2m2, l2m1, l2m0, l2p1, l2p2, l3m3, l3m2, l3m1, l3m0, l3p1, l3p2, l3p3])
-

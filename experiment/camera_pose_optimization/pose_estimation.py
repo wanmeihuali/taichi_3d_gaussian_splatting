@@ -1,3 +1,7 @@
+# %%
+import taichi as ti
+from taichi_3d_gaussian_splatting.Camera import CameraInfo
+# %%
 import argparse
 import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
@@ -15,8 +19,10 @@ from scipy.spatial.transform import Rotation as R
 import pandas as pd
 import matplotlib.pyplot as plt
 # %%
-DELTA_T_RANGE = 0.1
-DELTA_ANGLE_RANGE = 0.2
+DELTA_T_RANGE = 0.4
+DELTA_ANGLE_RANGE = 0.000001
+# set seed
+np.random.seed(0)
 
 def add_delta_to_se3(se3_matrix: np.ndarray):
     delta_t = np.random.uniform(-DELTA_T_RANGE, DELTA_T_RANGE, size=(3,))
@@ -66,16 +72,25 @@ with_noise_dataset_json_path = "/tmp/temp.json"
 
 camera_poses = CameraPoses(dataset_json_path=with_noise_dataset_json_path)
 camera_poses = camera_poses.cuda()
+"""
 camera_pose_optimizer = torch.optim.AdamW(
-    camera_poses.parameters(), lr=1e-3, betas=(0.9, 0.999))
+    camera_poses.parameters(), lr=1e-5, betas=(0.9, 0.999))
+"""
+camera_pose_optimizer = torch.optim.SGD(
+    [camera_poses.t_pointcloud_camera_table], lr=1e-4)
 
 distance_list = []
 angle_list = []
 loss_list = []
 
-for i in range(200):
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+
+for i in range(800):
     camera_pose_optimizer.zero_grad()
-    image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = train_dataset[0]
+    # image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = train_dataset[200]
+    image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = train_dataset[151]
 
     trained_q_pointcloud_camera, trained_t_pointcloud_camera = camera_poses(camera_pose_indices)
     print(f"trained_q_pointcloud_camera: {trained_q_pointcloud_camera.detach().cpu().numpy()}")
@@ -115,6 +130,12 @@ for i in range(200):
     image_pred = torch.clamp(image_pred, min=0, max=1)
     # hxwx3->3xhxw
     image_pred = image_pred.permute(2, 0, 1)
+    image_merged = torch.cat([image_gt, image_pred], dim=1)
+    image_np = image_merged.detach().cpu().numpy().transpose(1, 2, 0)
+    ax.imshow(image_np)
+    plt.pause(0.01)
+    ax.cla()
+    
     loss, l1_loss, ssim_loss = loss_function(
         image_pred, 
         image_gt, 

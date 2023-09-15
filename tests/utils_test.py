@@ -4,6 +4,7 @@ import unittest
 from taichi_3d_gaussian_splatting.utils import (intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera,
                    get_point_probability_density_from_2d_gaussian, grad_point_probability_density_2d,
                     quaternion_to_rotation_matrix_torch,
+                    batch_inverse_SE3,
                    get_ray_origin_and_direction_by_uv, inverse_se3_qt_torch, rotation_matrix_to_quaternion_torch)
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 import torch
@@ -155,8 +156,21 @@ class TestUtils(unittest.TestCase):
         se3_inv_torch[:, :3, 3] = t_inv_torch
         self.assertTrue(np.allclose(se3_inv_np, se3_inv_torch.numpy()))
         
-        
-
+    def test_batch_inverse_SE3(self):
+        # generate random quaternion for rotation
+        q_list = np.random.rand(100, 4)
+        q_list = q_list / np.linalg.norm(q_list, axis=1, keepdims=True)
+        rotations = Rotation.from_quat(q_list)
+        matrix_list = rotations.as_matrix()
+        # generate random translation
+        t_list = np.random.rand(100, 3)
+        SE3_np = np.eye(4).reshape(1, 4, 4).repeat(100, axis=0)
+        SE3_np[:, :3, :3] = matrix_list
+        SE3_np[:, :3, 3] = t_list
+        SE3_torch = torch.tensor(SE3_np)
+        SE3_inv_np = np.linalg.inv(SE3_np)
+        SE3_inv_torch = batch_inverse_SE3(SE3_torch)
+        self.assertTrue(np.allclose(SE3_inv_np, SE3_inv_torch.numpy()))
 
 class TestGetRayOriginAndDirectionFromCamera(unittest.TestCase):
 
@@ -347,3 +361,5 @@ class Test2DGaussianPDF(unittest.TestCase):
                         msg=f"Expected: {np_d_pdf_d_mean}, Actual: {ti_d_pdf_d_mean[None].to_numpy()}")
         self.assertTrue(np.allclose(ti_d_pdf_d_cov[None].to_numpy(), np_d_pdf_d_cov, atol=1e-5),
                         msg=f"Expected: {np_d_pdf_d_cov}, Actual: {ti_d_pdf_d_cov[None].to_numpy()}")
+
+
