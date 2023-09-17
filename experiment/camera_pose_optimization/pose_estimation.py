@@ -19,7 +19,7 @@ from scipy.spatial.transform import Rotation as R
 import pandas as pd
 import matplotlib.pyplot as plt
 # %%
-DELTA_T_RANGE = 0.4
+DELTA_T_RANGE = 0.2
 DELTA_ANGLE_RANGE = 0.000001
 # set seed
 np.random.seed(0)
@@ -72,12 +72,12 @@ with_noise_dataset_json_path = "/tmp/temp.json"
 
 camera_poses = CameraPoses(dataset_json_path=with_noise_dataset_json_path)
 camera_poses = camera_poses.cuda()
-"""
 camera_pose_optimizer = torch.optim.AdamW(
     camera_poses.parameters(), lr=1e-5, betas=(0.9, 0.999))
 """
 camera_pose_optimizer = torch.optim.SGD(
-    [camera_poses.t_pointcloud_camera_table], lr=1e-4)
+    camera_poses.parameters(), lr=1e-2)
+"""
 
 distance_list = []
 angle_list = []
@@ -90,13 +90,14 @@ fig, ax = plt.subplots()
 for i in range(800):
     camera_pose_optimizer.zero_grad()
     # image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = train_dataset[200]
-    image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = train_dataset[151]
+    image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = train_dataset[0]
 
-    trained_q_pointcloud_camera, trained_t_pointcloud_camera = camera_poses(camera_pose_indices)
+    trained_q_pointcloud_camera, trained_t_pointcloud_camera, xi_camera_pointcloud = camera_poses(camera_pose_indices)
     print(f"trained_q_pointcloud_camera: {trained_q_pointcloud_camera.detach().cpu().numpy()}")
     print(f"input_q_pointcloud_camera: {input_q_pointcloud_camera.detach().cpu().numpy()}")
     print(f"trained_t_pointcloud_camera: {trained_t_pointcloud_camera.detach().cpu().numpy()}")
     print(f"input_t_pointcloud_camera: {input_t_pointcloud_camera.detach().cpu().numpy()}")
+    print(f"xi_camera_pointcloud: {xi_camera_pointcloud.detach().cpu().numpy()}")
     
 
     image_gt = image_gt.cuda()
@@ -104,6 +105,7 @@ for i in range(800):
     input_t_pointcloud_camera = input_t_pointcloud_camera.cuda()
     trained_q_pointcloud_camera = trained_q_pointcloud_camera.cuda()
     trained_t_pointcloud_camera = trained_t_pointcloud_camera.cuda()
+    xi_camera_pointcloud = xi_camera_pointcloud.cuda()
     camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
 
     delta_t = input_t_pointcloud_camera - trained_t_pointcloud_camera
@@ -122,6 +124,7 @@ for i in range(800):
         camera_info=camera_info,
         q_pointcloud_camera=trained_q_pointcloud_camera.contiguous(),
         t_pointcloud_camera=trained_t_pointcloud_camera.contiguous(),
+        xi_camera_pointcloud=xi_camera_pointcloud.contiguous(),
         color_max_sh_band=3,
     )
     image_pred, image_depth, pixel_valid_point_count = rasterisation(
@@ -143,7 +146,7 @@ for i in range(800):
         pointcloud_features=scene.point_cloud_features)
     loss.backward()
     camera_pose_optimizer.step()
-    camera_poses.normalize_quaternion()
+    # camera_poses.normalize_quaternion()
     loss_list.append(loss.item())
     
 iteration = np.arange(len(distance_list))

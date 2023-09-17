@@ -398,10 +398,11 @@ def ti_exp_map_SE3(xi: ti.template()) -> ti.math.mat4:
     """
     theta2 = xi[0] * xi[0] + xi[1] * xi[1] + xi[2] * xi[2]
     theta = ti.math.sqrt(theta2)
-    if theta < 1e-5:  # small angle approximation
+    T = ti.math.eye(4)
+    if theta < 1e-2:  # small angle approximation
         R = ti.math.eye(3) + ti_skew(ti.Vector([xi[0], xi[1], xi[2]])) * theta
         t = ti.Vector([xi[3], xi[4], xi[5]])
-        return ti.Matrix([[R[0, 0], R[0, 1], R[0, 2], t[0]],
+        T = ti.Matrix([[R[0, 0], R[0, 1], R[0, 2], t[0]],
                           [R[1, 0], R[1, 1], R[1, 2], t[1]],
                           [R[2, 0], R[2, 1], R[2, 2], t[2]],
                           [0, 0, 0, 1]])
@@ -416,10 +417,74 @@ def ti_exp_map_SE3(xi: ti.template()) -> ti.math.mat4:
         J = ti.math.eye(3) * sine / theta + (1 - sine / theta) * \
             axis_outer_axis + (1 - cosine) / theta * skew_axis
         t = J @ ti.Vector([xi[3], xi[4], xi[5]])
-        return ti.Matrix([[R[0, 0], R[0, 1], R[0, 2], t[0]],
+        T = ti.Matrix([[R[0, 0], R[0, 1], R[0, 2], t[0]],
                           [R[1, 0], R[1, 1], R[1, 2], t[1]],
                           [R[2, 0], R[2, 1], R[2, 2], t[2]],
                           [0, 0, 0, 1]])
+    return T
+
+def torch_exp_map_SE3(tangent_vector: torch.Tensor) -> torch.Tensor:
+    """
+    This function is copied from nerfstudio, please refer to https://github.com/nerfstudio-project/nerfstudio/blob/main/nerfstudio/cameras/lie_groups.py
+    Please notify me if there is any problem for using this function.
+
+    Note that the input is modified from [t|w] to [w|t] to be consistent with the input of ti_exp_map_SE3
+    Compute the exponential map `se(3) -> SE(3)`. 
+
+    This can be used for learning pose deltas on `SE(3)`.
+
+    Args:
+        tangent_vector: A tangent vector from `se(3)`.
+
+    Returns:
+        [R|t] transformation matrices.
+    """
+
+    tangent_vector_lin = tangent_vector[:, 3:].view(-1, 3, 1)
+    tangent_vector_ang = tangent_vector[:, :3].view(-1, 3, 1)
+
+    theta = torch.linalg.norm(tangent_vector_ang, dim=1).unsqueeze(1)
+    theta2 = theta**2
+    theta3 = theta**3
+
+    near_zero = theta < 1e-2
+    non_zero = torch.ones(1, dtype=tangent_vector.dtype, device=tangent_vector.device)
+    theta_nz = torch.where(near_zero, non_zero, theta)
+    theta2_nz = torch.where(near_zero, non_zero, theta2)
+    theta3_nz = torch.where(near_zero, non_zero, theta3)
+
+    # Compute the rotation
+    sine = theta.sin()
+    cosine = torch.where(near_zero, 8 / (4 + theta2) - 1, theta.cos())
+    sine_by_theta = torch.where(near_zero, 0.5 * cosine + 0.5, sine / theta_nz)
+    one_minus_cosine_by_theta2 = torch.where(near_zero, 0.5 * sine_by_theta, (1 - cosine) / theta2_nz)
+    ret = torch.zeros(tangent_vector.shape[0], 3, 4).to(dtype=tangent_vector.dtype, device=tangent_vector.device)
+    ret[:, :3, :3] = one_minus_cosine_by_theta2 * tangent_vector_ang @ tangent_vector_ang.transpose(1, 2)
+
+    ret[:, 0, 0] += cosine.view(-1)
+    ret[:, 1, 1] += cosine.view(-1)
+    ret[:, 2, 2] += cosine.view(-1)
+    temp = sine_by_theta.view(-1, 1) * tangent_vector_ang.view(-1, 3)
+    ret[:, 0, 1] -= temp[:, 2]
+    ret[:, 1, 0] += temp[:, 2]
+    ret[:, 0, 2] += temp[:, 1]
+    ret[:, 2, 0] -= temp[:, 1]
+    ret[:, 1, 2] -= temp[:, 0]
+    ret[:, 2, 1] += temp[:, 0]
+
+    # Compute the translation
+    sine_by_theta = torch.where(near_zero, 1 - theta2 / 6, sine_by_theta)
+    one_minus_cosine_by_theta2 = torch.where(near_zero, 0.5 - theta2 / 24, one_minus_cosine_by_theta2)
+    theta_minus_sine_by_theta3_t = torch.where(near_zero, 1.0 / 6 - theta2 / 120, (theta - sine) / theta3_nz)
+
+    ret[:, :, 3:] = sine_by_theta * tangent_vector_lin
+    ret[:, :, 3:] += one_minus_cosine_by_theta2 * torch.cross(tangent_vector_ang, tangent_vector_lin, dim=1)
+    ret[:, :, 3:] += theta_minus_sine_by_theta3_t * (
+        tangent_vector_ang @ (tangent_vector_ang.transpose(1, 2) @ tangent_vector_lin)
+    )
+    return ret
+    
+ 
 
 
 
@@ -701,6 +766,25 @@ def quaternion_to_rotation_matrix_torch(q):
 
     return rot_matrix
 
+def quaternion_and_translation_to_transformation_matrix_torch(
+    q: torch.Tensor, 
+    t: torch.Tensor) -> torch.Tensor:
+    """
+    Convert a quaternion and translation vector into a full three-dimensional transformation matrix.
+    
+    Input:
+    :param q: A tensor of size (B, 4), where B is batch size and quaternion is in format (x, y, z, w).
+    :param t: A tensor of size (B, 3), where B is batch size and translation vector is in format (x, y, z).
+    
+    Output:
+    :return: A tensor of size (B, 4, 4), where B is batch size.
+    """
+    R = quaternion_to_rotation_matrix_torch(q)
+    T = torch.cat([R, t.unsqueeze(-1)], dim=-1) # (B, 3, 4)
+    T = torch.cat([T, torch.tensor([[[0, 0, 0, 1]]], dtype=T.dtype, device=T.device).repeat(T.shape[0], 1, 1)], dim=1) # (B, 4, 4)
+    return T
+
+   
 
 def get_spherical_harmonic_from_xyz_torch(
     xyz: torch.Tensor  # (3,)

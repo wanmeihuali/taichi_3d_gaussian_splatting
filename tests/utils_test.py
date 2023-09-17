@@ -4,6 +4,9 @@ import unittest
 from taichi_3d_gaussian_splatting.utils import (intersect_ray_with_ellipsoid, get_ray_origin_and_direction_from_camera,
                    get_point_probability_density_from_2d_gaussian, grad_point_probability_density_2d,
                     quaternion_to_rotation_matrix_torch,
+                    quaternion_and_translation_to_transformation_matrix_torch,
+                    torch_exp_map_SE3,
+                    ti_exp_map_SE3,
                     batch_inverse_SE3,
                    get_ray_origin_and_direction_by_uv, inverse_se3_qt_torch, rotation_matrix_to_quaternion_torch)
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
@@ -171,6 +174,41 @@ class TestUtils(unittest.TestCase):
         SE3_inv_np = np.linalg.inv(SE3_np)
         SE3_inv_torch = batch_inverse_SE3(SE3_torch)
         self.assertTrue(np.allclose(SE3_inv_np, SE3_inv_torch.numpy()))
+
+    def test_quaternion_and_translation_to_transformation_matrix_torch(self):
+        num_samples = 100
+        q_list = np.random.rand(num_samples, 4)
+        q_list = q_list / np.linalg.norm(q_list, axis=1, keepdims=True)
+        rotations = Rotation.from_quat(q_list)
+        matrix_list = rotations.as_matrix()
+        t_list = np.random.rand(num_samples, 3)
+        SE3_np = np.eye(4).reshape(1, 4, 4).repeat(100, axis=0)
+        SE3_np[:, :3, :3] = matrix_list
+        SE3_np[:, :3, 3] = t_list
+        SE3_torch = quaternion_and_translation_to_transformation_matrix_torch(
+            q=torch.tensor(q_list),
+            t=torch.tensor(t_list)
+        )
+        self.assertTrue(np.allclose(SE3_np, SE3_torch.numpy()), msg=f"SE3_np={SE3_np}, SE3_torch={SE3_torch}")
+
+    def test_exp_map_SE3(self):
+        num_samples = 1
+        xi = np.random.rand(num_samples, 6).astype(np.float32)
+        xi_torch = torch.tensor(xi)
+        @ti.kernel
+        def ti_exp_map_SE3_test(xi: ti.types.ndarray(ti.f32, ndim=2),
+                                SE3: ti.types.ndarray(ti.f32, ndim=3)):
+            for i in range(num_samples):
+                xi_vec = ti.Vector([xi[i, 0], xi[i, 1], xi[i, 2], xi[i, 3], xi[i, 4], xi[i, 5]])
+                T = ti_exp_map_SE3(xi_vec)
+                for j in range(3):
+                    for k in range(4):
+                        SE3[i, j, k] = T[j, k]
+        SE3_taichi = torch.zeros((num_samples, 3, 4))
+        ti_exp_map_SE3_test(xi_torch, SE3_taichi)
+        SE3_torch = torch_exp_map_SE3(xi_torch)
+        self.assertTrue(np.allclose(SE3_taichi.numpy(), SE3_torch.numpy()), msg=f"SE3_taichi={SE3_taichi}, SE3_torch={SE3_torch}")
+        
 
 class TestGetRayOriginAndDirectionFromCamera(unittest.TestCase):
 

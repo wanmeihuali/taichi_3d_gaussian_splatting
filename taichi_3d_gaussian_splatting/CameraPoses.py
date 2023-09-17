@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from .utils import se3_to_quaternion_and_translation_torch
+from .utils import (se3_to_quaternion_and_translation_torch, 
+                    torch_exp_map_SE3,
+                    quaternion_and_translation_to_transformation_matrix_torch)
 from typing import Any
 
 
@@ -17,18 +19,36 @@ class CameraPoses(nn.Module):
         q_pointcloud_camera_table, t_pointcloud_camera_table, self.num_objects = self._get_all_camera_poses()
         self.input_q_pointcloud_camera_table = q_pointcloud_camera_table
         self.input_t_pointcloud_camera_table = t_pointcloud_camera_table
-        self.q_pointcloud_camera_table = nn.Parameter(q_pointcloud_camera_table)
-        self.t_pointcloud_camera_table = nn.Parameter(t_pointcloud_camera_table)
+        self.q_pointcloud_camera_table = q_pointcloud_camera_table
+        self.t_pointcloud_camera_table = t_pointcloud_camera_table
+        self.xi_camera_pointcloud_table = nn.Parameter(torch.zeros(self.q_pointcloud_camera_table.shape[0], 6))
         
 
     def forward(self, camera_pose_indices):
         q_pointcloud_camera = self.q_pointcloud_camera_table[camera_pose_indices].contiguous()
         t_pointcloud_camera = self.t_pointcloud_camera_table[camera_pose_indices].contiguous()
-        return q_pointcloud_camera, t_pointcloud_camera
+        xi_camera_pointcloud = self.xi_camera_pointcloud_table[camera_pose_indices].contiguous()
+        return q_pointcloud_camera, t_pointcloud_camera, xi_camera_pointcloud
 
     def normalize_quaternion(self):
         with torch.no_grad():
             self.q_pointcloud_camera_table /= torch.norm(self.q_pointcloud_camera_table, dim=-1, keepdim=True)
+
+    def update_camera_poses(self):
+        with torch.no_grad():
+            T_pointcloud_camera = quaternion_and_translation_to_transformation_matrix_torch(
+                q=self.q_pointcloud_camera_table,
+                t=self.t_pointcloud_camera_table
+            )
+            T_camera_pointcloud_to_optimize = torch.inverse(T_pointcloud_camera)
+            delta_T_camera_pointcloud = torch_exp_map_SE3(self.xi_camera_pointcloud_table)
+            T_camera_pointcloud_optimized = torch.einsum("bij,bjk->bik", delta_T_camera_pointcloud, T_camera_pointcloud_to_optimize)
+            T_pointcloud_camera_optimized = torch.inverse(T_camera_pointcloud_optimized)
+            q_pointcloud_camera_optimized, t_pointcloud_camera_optimized = se3_to_quaternion_and_translation_torch(
+                transform=T_pointcloud_camera_optimized)
+            self.q_pointcloud_camera_table = q_pointcloud_camera_optimized
+            self.t_pointcloud_camera_table = t_pointcloud_camera_optimized
+
 
     def to_parquet(self, path):
         with torch.no_grad():

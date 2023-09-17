@@ -237,31 +237,6 @@ class GaussianPoint3D:
         T_camera_world_with_delta: ti.math.mat4,
         projective_transform: ti.math.mat3,
     ):
-        """ 
-        Given a camera pose with delta, compute the jacobian of the projected position with respect to the delta
-        T' = \delta T T = Exp(\delta \xi) T
-        p: translation_world
-        translation_camera = T' translation_world
-        the gaussian point p is projected to [u, v, 1] = K translation_camera / translation_camera.z
-        
-        compute the following jacobian:
-        \frac{\partial uv}{\partial translation_world}
-        \frac{\partial uv}{\partial \delta \xi}
-
-        From <<14 lectures on visual SLAM>> 4.3.5:
-        \frac{\partial (Tp)}{\partial \delta \xi} = 
-        \begin{bmatrix}
-        I & -(Rp+t)^\wedge \\
-        0 & 0
-        \end{bmatrix} \in \mathbb{R}^{4 \times 6}
-
-        Args:
-            T_camera_world (ti.math.mat4): Transform matrix from world to camera
-            projective_transform (ti.math.mat3): K matrix, [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
-
-        Returns:
-            ti.math.mat2x3, ti.math.mat2x6: jacobian of uv with respect to translation_world, jacobian of uv with respect to delta
-        """
         T = T_camera_world_with_delta
         W = ti.math.mat3([
             [T[0, 0], T[0, 1], T[0, 2]],

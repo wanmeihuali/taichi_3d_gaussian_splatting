@@ -41,21 +41,27 @@ def SE3_from_quaternion_translation_with_delta(
     t_pointcloud_camera_optimized: ti.types.ndarray(ti.f32, ndim=2),
 ):
     for pose_idx in range(q_pointcloud_camera.shape[0]):
+        q_pointcloud_camera_vec = ti.math.vec4(
+            [q_pointcloud_camera[pose_idx, col] for col in ti.static(range(4))])
+        t_pointcloud_camera_vec = ti.math.vec3(
+            [t_pointcloud_camera[pose_idx, col] for col in ti.static(range(3))])
+        xi_camera_pointcloud_vec = ti.Vector(
+            [xi_camera_pointcloud[pose_idx, col] for col in ti.static(range(6))])
         T_pointcloud_camera_original = tranform_matrix_from_quaternion_and_translation(
-            q=q_pointcloud_camera[pose_idx],
-            t=t_pointcloud_camera[pose_idx],
+            q=q_pointcloud_camera_vec,
+            t=t_pointcloud_camera_vec,
         )
         T_camera_pointcloud_original = taichi_inverse_se3(T_pointcloud_camera_original)
         T_camera_pointcloud_delta = ti_exp_map_SE3(
-            xi_camera_pointcloud[pose_idx])
-        T_camera_pointcloud_optimized = T_camera_pointcloud_delta @ T_camera_pointcloud_original
-        T_pointcloud_camera_optimized = taichi_inverse_se3(T_camera_pointcloud_optimized)
+            xi_camera_pointcloud_vec)
+        T_camera_pointcloud_optimized_mat = T_camera_pointcloud_delta @ T_camera_pointcloud_original
+        T_pointcloud_camera_optimized_mat = taichi_inverse_se3(T_camera_pointcloud_optimized_mat)
         for row in ti.static(range(3)):
             for col in ti.static(range(4)):
                 T_camera_pointcloud_optimized[pose_idx, row,
-                                    col] = T_camera_pointcloud_optimized[row, col]
+                                    col] = T_camera_pointcloud_optimized_mat[row, col]
         for col in ti.static(range(3)):
-            t_pointcloud_camera_optimized[pose_idx, col] = T_pointcloud_camera_optimized[3, col]
+            t_pointcloud_camera_optimized[pose_idx, col] = T_pointcloud_camera_optimized_mat[3, col]
 
 @ti.kernel
 def filter_point_in_camera(
@@ -81,11 +87,10 @@ def filter_point_in_camera(
         point_xyz = ti.Vector(
             [pointcloud[point_id, 0], pointcloud[point_id, 1], pointcloud[point_id, 2]])
         o_id = point_object_id[point_id]
-        T = T_camera_pointcloud  # name alias
         T_camera_pointcloud_mat = ti.Matrix([
-            [T[o_id, 0, 0], T[o_id, 0, 1], T[o_id, 0, 2], T[o_id, 0, 3]],
-            [T[o_id, 1, 0], T[o_id, 1, 1], T[o_id, 1, 2], T[o_id, 1, 3]],
-            [T[o_id, 2, 0], T[o_id, 2, 1], T[o_id, 2, 2], T[o_id, 2, 3]],
+            [T_camera_pointcloud[o_id, 0, 0], T_camera_pointcloud[o_id, 0, 1], T_camera_pointcloud[o_id, 0, 2], T_camera_pointcloud[o_id, 0, 3]],
+            [T_camera_pointcloud[o_id, 1, 0], T_camera_pointcloud[o_id, 1, 1], T_camera_pointcloud[o_id, 1, 2], T_camera_pointcloud[o_id, 1, 3]],
+            [T_camera_pointcloud[o_id, 2, 0], T_camera_pointcloud[o_id, 2, 1], T_camera_pointcloud[o_id, 2, 2], T_camera_pointcloud[o_id, 2, 3]],
             [0, 0, 0, 1]
         ])
         pixel_uv, point_in_camera = project_point_to_camera(
@@ -289,11 +294,10 @@ def generate_point_attributes_in_camera_plane(
             point_id=point_id)
 
         o_id = point_object_id[point_id]
-        T = T_camera_pointcloud  # name alias
         T_camera_pointcloud_mat = ti.Matrix([
-            [T[o_id, 0, 0], T[o_id, 0, 1], T[o_id, 0, 2], T[o_id, 0, 3]],
-            [T[o_id, 1, 0], T[o_id, 1, 1], T[o_id, 1, 2], T[o_id, 1, 3]],
-            [T[o_id, 2, 0], T[o_id, 2, 1], T[o_id, 2, 2], T[o_id, 2, 3]],
+            [T_camera_pointcloud[o_id, 0, 0], T_camera_pointcloud[o_id, 0, 1], T_camera_pointcloud[o_id, 0, 2], T_camera_pointcloud[o_id, 0, 3]],
+            [T_camera_pointcloud[o_id, 1, 0], T_camera_pointcloud[o_id, 1, 1], T_camera_pointcloud[o_id, 1, 2], T_camera_pointcloud[o_id, 1, 3]],
+            [T_camera_pointcloud[o_id, 2, 0], T_camera_pointcloud[o_id, 2, 1], T_camera_pointcloud[o_id, 2, 2], T_camera_pointcloud[o_id, 2, 3]],
             [0, 0, 0, 1]
         ])
 
@@ -498,7 +502,7 @@ def gaussian_point_rasterisation_backward(
     point_object_id: ti.types.ndarray(ti.i32, ndim=1),  # (N)
     # q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4)
     # t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
-    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3, 4)
+    T_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=3),  # (K, 3, 4)
     t_pointcloud_camera_optimized: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
     # (tiles_per_row * tiles_per_col)
     tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
@@ -735,11 +739,10 @@ def gaussian_point_rasterisation_backward(
         )
         
         oid = point_object_id[point_id]
-        T = T_camera_pointcloud
         T_camera_pointcloud_mat = ti.Matrix([
-            [T[oid, 0, 0], T[oid, 0, 1], T[oid, 0, 2], T[oid, 0, 3]],
-            [T[oid, 1, 0], T[oid, 1, 1], T[oid, 1, 2], T[oid, 1, 3]],
-            [T[oid, 2, 0], T[oid, 2, 1], T[oid, 2, 2], T[oid, 2, 3]],
+            [T_camera_pointcloud[oid, 0, 0], T_camera_pointcloud[oid, 0, 1], T_camera_pointcloud[oid, 0, 2], T_camera_pointcloud[oid, 0, 3]],
+            [T_camera_pointcloud[oid, 1, 0], T_camera_pointcloud[oid, 1, 1], T_camera_pointcloud[oid, 1, 2], T_camera_pointcloud[oid, 1, 3]],
+            [T_camera_pointcloud[oid, 2, 0], T_camera_pointcloud[oid, 2, 1], T_camera_pointcloud[oid, 2, 2], T_camera_pointcloud[oid, 2, 3]],
             [0, 0, 0, 1],
         ])
         
@@ -748,7 +751,7 @@ def gaussian_point_rasterisation_backward(
         translation_camera = ti.Vector([
             point_in_camera[idx, j] for j in ti.static(range(3))])
         d_uv_d_translation, d_uv_d_xi = gaussian_point_3d.project_to_camera_position_delta_jacobian(
-            T_camera_pointcloud=T_camera_pointcloud_mat,
+            T_camera_world_with_delta=T_camera_pointcloud_mat,
             projective_transform=camera_intrinsics_mat,
         )  # (2, 3), (2, 6)
         d_Sigma_prime_d_q, d_Sigma_prime_d_s = gaussian_point_3d.project_to_camera_covariance_jacobian(
