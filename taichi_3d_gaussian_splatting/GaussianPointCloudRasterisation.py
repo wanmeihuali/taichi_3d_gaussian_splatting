@@ -774,7 +774,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         grad_s_factor = 0.5
         grad_q_factor = 1.
         grad_alpha_factor = 20.
-        enable_depth_grad = False
+        enable_depth_grad = True
 
     @dataclass
     class GaussianPointCloudRasterisationInput:
