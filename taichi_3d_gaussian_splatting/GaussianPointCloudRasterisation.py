@@ -466,7 +466,9 @@ def gaussian_point_rasterisation_backward(
     rasterized_image_grad: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
     enable_depth_grad: ti.template(),
     rasterized_depth_grad: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
+    accumulated_alpha_grad: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
+    rasterized_depth: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
     # (H, W)
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
     grad_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
@@ -522,7 +524,10 @@ def gaussian_point_rasterisation_backward(
         pixel_u = tile_u * 16 + pixel_offset_u_in_tile
         pixel_v = tile_v * 16 + pixel_offset_v_in_tile
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
+        org_accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]+0
         accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
+        _accumulated_alpha_grad: ti.f32 = accumulated_alpha_grad[pixel_v, pixel_u]
+        d_pixel: ti.f32 = rasterized_depth[pixel_v, pixel_u]
         T_i = 1.0 - accumulated_alpha  # T_i = \prod_{j=1}^{i-1} (1 - a_j)
         # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} \sum_{j=i+1}^{n} c_j a_j T(j)
         # let w_i = \sum_{j=i+1}^{n} c_j a_j T(j)
@@ -530,6 +535,7 @@ def gaussian_point_rasterisation_backward(
         # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
         w_i = ti.math.vec3(0.0, 0.0, 0.0)
         depth_w_i = 0.0
+        acc_alpha_w_i = 0.0
 
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
@@ -602,8 +608,9 @@ def gaussian_point_rasterisation_backward(
                         tile_point_color[1, idx_point_offset_with_sort_key_in_block],
                         tile_point_color[2, idx_point_offset_with_sort_key_in_block]])
 
-                    T_i = T_i / (1. - alpha)
-                    accumulated_alpha = 1. - T_i
+                    # accumulated_alpha_i = 1. - T_i #alpha after passing current point
+                    T_i = T_i / (1. - alpha) # Transmittance before passing current point
+                    accumulated_alpha = 1. - T_i  #accumulated alha before passing current point
 
                     # print(
                     #     f"({pixel_v}, {pixel_u}, {point_offset}, {point_offset - start_offset}), accumulated_alpha: {accumulated_alpha}")
@@ -619,10 +626,14 @@ def gaussian_point_rasterisation_backward(
                     alpha_grad: ti.f32 = alpha_grad_from_rgb.sum()
                     if enable_depth_grad:
                         depth_i = tile_point_depth[idx_point_offset_with_sort_key_in_block]
-                        alpha_grad_from_depth = (depth_i * T_i - depth_w_i / (1. - alpha)) \
-                            * pixel_depth_grad
+                        alpha_grad_from_depth = (T_i * (depth_i-d_pixel) + 1.0/(1.0-alpha) * \
+                                                 (depth_w_i -  acc_alpha_w_i* d_pixel))  / \
+                        (org_accumulated_alpha+0.00001) * pixel_depth_grad
+                        alpha_grad_from_accumulated_alpha = (T_i- 1.0/(1.0-alpha) * acc_alpha_w_i) *                        _accumulated_alpha_grad
                         depth_w_i += depth_i * alpha * T_i
+                        acc_alpha_w_i +=  alpha * T_i
                         alpha_grad += alpha_grad_from_depth
+                        alpha_grad+= alpha_grad_from_accumulated_alpha
                         
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
@@ -650,7 +661,7 @@ def gaussian_point_rasterisation_backward(
                     ti.atomic_add(in_camera_grad_uv_cov_buffer[point_offset, 2],
                                   point_uv_cov_grad[1, 1])
                     if enable_depth_grad:
-                        point_depth_grad = alpha * T_i * pixel_depth_grad
+                        point_depth_grad = alpha * T_i * pixel_depth_grad / (org_accumulated_alpha+0.00001)
                         ti.atomic_add(in_camera_grad_depth_buffer[point_offset], point_depth_grad)
                     
                     for i in ti.static(range(3)):
@@ -956,6 +967,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 
                 # Step 5: render
                 if point_in_camera_sort_key.shape[0] > 0:
+                    # import ipdb;ipdb.set_trace()
                     gaussian_point_rasterisation(
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
@@ -982,6 +994,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     tile_points_start,
                     tile_points_end,
                     pixel_accumulated_alpha,
+                    rasterized_depth,
                     pixel_offset_of_last_effective_point,
                     num_overlap_tiles,
                     point_object_id,
@@ -998,10 +1011,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
                 # rasterized_image.requires_grad_(True)
-                return rasterized_image, rasterized_depth, pixel_valid_point_count
+                return rasterized_image, rasterized_depth, pixel_valid_point_count, pixel_accumulated_alpha
+
 
             @staticmethod
-            def backward(ctx, grad_rasterized_image, grad_rasterized_depth, grad_pixel_valid_point_count):
+            def backward(ctx, grad_rasterized_image, grad_rasterized_depth,
+                         grad_pixel_valid_point_count, grad_pixel_accumulated_alpha):
                 grad_pointcloud = grad_pointcloud_features = grad_q_pointcloud_camera = grad_t_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, \
@@ -1011,6 +1026,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         tile_points_start, \
                         tile_points_end, \
                         pixel_accumulated_alpha, \
+                        rasterized_depth, \
                         pixel_offset_of_last_effective_point, \
                         num_overlap_tiles, \
                         point_object_id, \
@@ -1061,7 +1077,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         point_object_id=point_object_id,
                         q_camera_pointcloud=q_camera_pointcloud,
                         t_camera_pointcloud=t_camera_pointcloud,
-                        t_pointcloud_camera=t_pointcloud_camera,
+                        t_pointcloud_camera=t_pointcloud_camera.contiguous(),
                         pointcloud=pointcloud,
                         pointcloud_features=pointcloud_features,
                         tile_points_start=tile_points_start,
@@ -1071,7 +1087,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         rasterized_image_grad=grad_rasterized_image,
                         enable_depth_grad=enable_depth_grad,
                         rasterized_depth_grad=grad_rasterized_depth,
+                        accumulated_alpha_grad=grad_pixel_accumulated_alpha,
                         pixel_accumulated_alpha=pixel_accumulated_alpha,
+                        rasterized_depth=rasterized_depth,
                         pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
                         grad_pointcloud=grad_pointcloud,
                         grad_pointcloud_features=grad_pointcloud_features,
@@ -1111,9 +1129,10 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     
 
                     if backward_valid_point_hook is not None:
+                        point_id_in_camera_list=point_id_in_camera_list.contiguous().long()
                         backward_valid_point_hook_input = GaussianPointCloudRasterisation.BackwardValidPointHookInput(
                             point_id_in_camera_list=point_id_in_camera_list,
-                            grad_point_in_camera=grad_pointcloud[point_id_in_camera_list],
+                            grad_point_in_camera=grad_pointcloud[point_id_in_camera_list.long()],
                             grad_pointfeatures_in_camera=grad_pointcloud_features[
                                 point_id_in_camera_list],
                             grad_viewspace=grad_viewspace[point_id_in_camera_list],
