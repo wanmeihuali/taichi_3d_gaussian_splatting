@@ -524,9 +524,9 @@ def gaussian_point_rasterisation_backward(
         pixel_u = tile_u * 16 + pixel_offset_u_in_tile
         pixel_v = tile_v * 16 + pixel_offset_v_in_tile
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
-        org_accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]+0
+        org_accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
         accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
-        _accumulated_alpha_grad: ti.f32 = accumulated_alpha_grad[pixel_v, pixel_u]
+        accumulated_alpha_grad_value: ti.f32 = accumulated_alpha_grad[pixel_v, pixel_u]
         d_pixel: ti.f32 = rasterized_depth[pixel_v, pixel_u]
         T_i = 1.0 - accumulated_alpha  # T_i = \prod_{j=1}^{i-1} (1 - a_j)
         # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} \sum_{j=i+1}^{n} c_j a_j T(j)
@@ -626,10 +626,14 @@ def gaussian_point_rasterisation_backward(
                     alpha_grad: ti.f32 = alpha_grad_from_rgb.sum()
                     if enable_depth_grad:
                         depth_i = tile_point_depth[idx_point_offset_with_sort_key_in_block]
-                        alpha_grad_from_depth = (T_i * (depth_i-d_pixel) + 1.0/(1.0-alpha) * \
-                                                 (depth_w_i -  acc_alpha_w_i* d_pixel))  / \
-                        (org_accumulated_alpha+0.00001) * pixel_depth_grad
-                        alpha_grad_from_accumulated_alpha = (T_i- 1.0/(1.0-alpha) * acc_alpha_w_i) *                        _accumulated_alpha_grad
+                        d_depth_d_alpha = (
+                            T_i * (depth_i - d_pixel)
+                            + 1.0 / (1.0 - alpha) * (depth_w_i - acc_alpha_w_i * d_pixel)
+                        ) / (org_accumulated_alpha + 0.00001)
+                        alpha_grad_from_depth = d_depth_d_alpha * pixel_depth_grad
+                        alpha_grad_from_accumulated_alpha = (
+                            T_i - 1.0 / (1.0 - alpha) * acc_alpha_w_i
+                        ) * accumulated_alpha_grad_value
                         depth_w_i += depth_i * alpha * T_i
                         acc_alpha_w_i +=  alpha * T_i
                         alpha_grad += alpha_grad_from_depth
