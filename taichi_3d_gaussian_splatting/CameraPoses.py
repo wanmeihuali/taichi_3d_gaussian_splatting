@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from .utils import (se3_to_quaternion_and_translation_torch, 
                     torch_exp_map_SE3,
+                    inverse_SE3,
                     quaternion_and_translation_to_transformation_matrix_torch)
 from typing import Any
 
@@ -40,14 +41,17 @@ class CameraPoses(nn.Module):
                 q=self.q_pointcloud_camera_table,
                 t=self.t_pointcloud_camera_table
             )
-            T_camera_pointcloud_to_optimize = torch.inverse(T_pointcloud_camera)
+            original_device = T_pointcloud_camera.device
+            T_pointcloud_camera = T_pointcloud_camera.to(self.xi_camera_pointcloud_table.device)
+            T_camera_pointcloud_to_optimize = inverse_SE3(T_pointcloud_camera)
             delta_T_camera_pointcloud = torch_exp_map_SE3(self.xi_camera_pointcloud_table)
+            print("delta_T_camera_pointcloud", delta_T_camera_pointcloud[151])
             T_camera_pointcloud_optimized = torch.einsum("bij,bjk->bik", delta_T_camera_pointcloud, T_camera_pointcloud_to_optimize)
-            T_pointcloud_camera_optimized = torch.inverse(T_camera_pointcloud_optimized)
+            T_pointcloud_camera_optimized = inverse_SE3(T_camera_pointcloud_optimized)
             q_pointcloud_camera_optimized, t_pointcloud_camera_optimized = se3_to_quaternion_and_translation_torch(
                 transform=T_pointcloud_camera_optimized)
-            self.q_pointcloud_camera_table = q_pointcloud_camera_optimized
-            self.t_pointcloud_camera_table = t_pointcloud_camera_optimized
+            self.q_pointcloud_camera_table = q_pointcloud_camera_optimized.to(original_device)
+            self.t_pointcloud_camera_table = t_pointcloud_camera_optimized.to(original_device)
 
 
     def to_parquet(self, path):
