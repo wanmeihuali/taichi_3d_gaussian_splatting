@@ -315,7 +315,6 @@ def generate_point_attributes_in_camera_plane(  # from 3d gaussian to 2d feature
         radii = ti.sqrt(large_eigen_values) * 3.0
         point_radii[idx] = radii
 
-
 @ti.kernel
 def gaussian_point_rasterisation(
     camera_height: ti.i32,
@@ -367,109 +366,52 @@ def gaussian_point_rasterisation(
         offset_of_last_effective_point = start_offset
         valid_point_count: ti.i32 = 0
 
-        # open the shared memory
-        tile_point_uv = ti.simt.block.SharedArray(
-            (2, ti.static(TILE_WIDTH * TILE_HEIGHT)), dtype=ti.f32)
-        tile_point_uv_conic = ti.simt.block.SharedArray(
-            (3, ti.static(TILE_WIDTH * TILE_HEIGHT)), dtype=ti.f32)
-        tile_point_alpha = ti.simt.block.SharedArray(
-            ti.static(TILE_WIDTH * TILE_HEIGHT), dtype=ti.f32)
-        tile_point_color = ti.simt.block.SharedArray(
-            (3, ti.static(TILE_WIDTH * TILE_HEIGHT)), dtype=ti.f32)
-        tile_point_depth = ti.simt.block.SharedArray(
-            ti.static(TILE_WIDTH * TILE_HEIGHT), dtype=ti.f32)
-
-        num_points_in_tile = end_offset - start_offset
-        num_point_groups = (num_points_in_tile + ti.static(TILE_WIDTH *
-                            TILE_HEIGHT - 1)) // ti.static(TILE_WIDTH * TILE_HEIGHT)
         pixel_saturated = False
-        # for idx_point_offset_with_sort_key in range(start_offset, end_offset):
-        for point_group_id in range(num_point_groups):
-            # The original implementation uses a predicate block the next update for shared memory until all threads finish the current update
-            # but it is not supported by Taichi yet, and experiments show that it does not affect the performance
-            """
-            tile_saturated = ti.simt.block.sync_all_nonzero(predicate=ti.cast(
-                pixel_saturated, ti.i32))
-            if tile_saturated != 0:
+        for idx_point_offset_with_sort_key in range(start_offset, end_offset):
+            if pixel_saturated:
                 break
-            """
-            ti.simt.block.sync()
-            # load point data into shared memory
-            # [start_offset, end_offset)->[0, end_offset - start_offset)
-            to_load_idx_point_offset_with_sort_key = start_offset + \
-                point_group_id * \
-                ti.static(TILE_WIDTH * TILE_HEIGHT) + thread_id
-            if to_load_idx_point_offset_with_sort_key < end_offset:
-                to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
-                tile_point_uv[0, thread_id] = point_uv[to_load_point_offset, 0]
-                tile_point_uv[1, thread_id] = point_uv[to_load_point_offset, 1]
-                tile_point_uv_conic[0,
-                                    thread_id] = point_uv_conic[to_load_point_offset, 0]
-                tile_point_uv_conic[1,
-                                    thread_id] = point_uv_conic[to_load_point_offset, 1]
-                tile_point_uv_conic[2,
-                                    thread_id] = point_uv_conic[to_load_point_offset, 2]
-                if not rgb_only:
-                    tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
-                tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
+            # forward rendering process
+            point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
 
-                tile_point_color[0,
-                                 thread_id] = point_color[to_load_point_offset, 0]
-                tile_point_color[1,
-                                 thread_id] = point_color[to_load_point_offset, 1]
-                tile_point_color[2,
-                                 thread_id] = point_color[to_load_point_offset, 2]
+            uv = ti.math.vec2([point_uv[point_offset, 0],
+                                 point_uv[point_offset, 1]])
+            uv_conic = ti.math.vec3([point_uv_conic[point_offset, 0],
+                                        point_uv_conic[point_offset, 1], point_uv_conic[point_offset, 2]])
+            point_alpha_after_activation_value = point_alpha_after_activation[point_offset]
+            color = ti.math.vec3([point_color[point_offset, 0],
+                                    point_color[point_offset, 1], point_color[point_offset, 2]])
 
-            ti.simt.block.sync()
-            max_point_group_offset: ti.i32 = ti.min(
-                ti.static(TILE_WIDTH * TILE_HEIGHT), num_points_in_tile - point_group_id * ti.static(TILE_WIDTH * TILE_HEIGHT))
-            for point_group_offset in range(max_point_group_offset):
-                if pixel_saturated:
-                    break
-                # forward rendering process
-                idx_point_offset_with_sort_key: ti.i32 = start_offset + \
-                    point_group_id * \
-                    ti.static(TILE_WIDTH * TILE_HEIGHT) + point_group_offset
+            gaussian_alpha = get_point_probability_density_from_conic(
+                xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
+                gaussian_mean=uv,
+                conic=uv_conic,
+            )
+            alpha = gaussian_alpha * point_alpha_after_activation_value
+            # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
+            # 255 ) and also clamp 𝛼 with 0.99 from above.
+            # print(
+            #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
+            if alpha < 1. / 255.:
+                continue
+            alpha = ti.min(alpha, 0.99)
+            # from paper: before a Gaussian is included in the forward rasterization
+            # pass, we compute the accumulated opacity if we were to include it
+            # and stop front-to-back blending before it can exceed 0.9999.
+            next_T_i = T_i * (1 - alpha)
+            if next_T_i < 0.0001:
+                pixel_saturated = True
+                continue  # somehow faster than directly breaking
+            offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
+            accumulated_color += color * alpha * T_i
 
-                uv = ti.math.vec2(
-                    [tile_point_uv[0, point_group_offset], tile_point_uv[1, point_group_offset]])
-                uv_conic = ti.math.vec3([tile_point_uv_conic[0, point_group_offset], tile_point_uv_conic[1, point_group_offset],
-                                         tile_point_uv_conic[2, point_group_offset]])
-                point_alpha_after_activation_value = tile_point_alpha[point_group_offset]
-                color = ti.math.vec3([tile_point_color[0, point_group_offset],
-                                     tile_point_color[1, point_group_offset], tile_point_color[2, point_group_offset]])
-
-                gaussian_alpha = get_point_probability_density_from_conic(
-                    xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
-                    gaussian_mean=uv,
-                    conic=uv_conic,
-                )
-                alpha = gaussian_alpha * point_alpha_after_activation_value
-                # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
-                # 255 ) and also clamp 𝛼 with 0.99 from above.
-                # print(
-                #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
-                if alpha < 1. / 255.:
-                    continue
-                alpha = ti.min(alpha, 0.99)
-                # from paper: before a Gaussian is included in the forward rasterization
-                # pass, we compute the accumulated opacity if we were to include it
-                # and stop front-to-back blending before it can exceed 0.9999.
-                next_T_i = T_i * (1 - alpha)
-                if next_T_i < 0.0001:
-                    pixel_saturated = True
-                    continue  # somehow faster than directly breaking
-                offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
-                accumulated_color += color * alpha * T_i
-
-                if not rgb_only:
-                    # Weighted depth for all valid points.
-                    depth = tile_point_depth[point_group_offset]
-                    accumulated_depth += depth * alpha * T_i
-                    depth_normalization_factor += alpha * T_i
-                    valid_point_count += 1
-                T_i = next_T_i
-            # end of point group loop
+            if not rgb_only:
+                # Weighted depth for all valid points.
+                depth = point_in_camera[point_offset, 2]
+                accumulated_depth += depth * alpha * T_i
+                depth_normalization_factor += alpha * T_i
+                valid_point_count += 1
+            T_i = next_T_i
+        # end of point group loop
 
         # end of point group id loop
 
