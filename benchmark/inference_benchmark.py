@@ -8,7 +8,7 @@ from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from taichi_3d_gaussian_splatting.ImagePoseDataset import ImagePoseDataset
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
-from taichi_3d_gaussian_splatting.utils import torch2ti, se3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
+from taichi_3d_gaussian_splatting.utils import torch2ti, SE3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
 # %%
 ITERATIONS = 100
 WARMUP_ITERATIONS = 1000

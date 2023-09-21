@@ -6,3 +6,6 @@ Data/
 *.egg
 *.egg-info
 imgui.ini
+*.qdstrm
+*.nsys-rep
+*.sqlite
