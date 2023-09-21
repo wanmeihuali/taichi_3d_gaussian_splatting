@@ -158,7 +158,7 @@ class TestRasterisation(unittest.TestCase):
                 near_plane=0.0,
                 far_plane=10.0,
             ))
-        image_size = (16, 16)
+        image_size = (32, 32)
         point_cloud = torch.nn.Parameter(torch.tensor(
             [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))
         point_cloud_features = torch.zeros(

@@ -24,7 +24,7 @@ mat4x4f = ti.types.matrix(n=4, m=4, dtype=ti.f32)
 mat4x3f = ti.types.matrix(n=4, m=3, dtype=ti.f32)
 
 BOUNDARY_TILES = 3
-TILE_WIDTH = 16
+TILE_WIDTH = 32
 TILE_HEIGHT = 16
 
 
