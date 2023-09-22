@@ -315,6 +315,10 @@ def generate_point_attributes_in_camera_plane(  # from 3d gaussian to 2d feature
         radii = ti.sqrt(large_eigen_values) * 3.0
         point_radii[idx] = radii
 
+PIXEL_ROW_PER_THREAD = 4
+PIXEL_COL_PER_THREAD = 2
+PIXEL_PER_THREAD = PIXEL_ROW_PER_THREAD * PIXEL_COL_PER_THREAD
+
 @ti.kernel
 def gaussian_point_rasterisation(
     camera_height: ti.i32,
@@ -341,34 +345,35 @@ def gaussian_point_rasterisation(
     pixel_valid_point_count: ti.types.ndarray(ti.i32, ndim=2),  # output
     rgb_only: ti.template(),  # input
 ):
-    ti.loop_config(block_dim=(TILE_WIDTH * TILE_HEIGHT))
-    for pixel_offset in ti.ndrange(camera_height * camera_width):  # 1920*1080
+    ti.loop_config(block_dim=256) # block_dim does not affect the result
+    for pixel_offset_base in ti.ndrange(camera_height * camera_width // PIXEL_PER_THREAD):
+        pixel_offset = pixel_offset_base * PIXEL_PER_THREAD
         # initialize
         # put each TILE_WIDTH * TILE_HEIGHT tile in the same CUDA thread group (block)
         tile_id = pixel_offset // (TILE_WIDTH * TILE_HEIGHT)
         # can wait for other threads in the same group, also have a shared memory.
-        thread_id = pixel_offset % (TILE_WIDTH * TILE_HEIGHT)
         tile_u = ti.cast(tile_id % (camera_width // TILE_WIDTH),
                          ti.i32)  # tile position
         tile_v = ti.cast(tile_id // (camera_width // TILE_WIDTH), ti.i32)
         # pixel position in tile (The relative position of the pixel in the tile)
         pixel_offset_in_tile = pixel_offset - \
             tile_id * (TILE_WIDTH * TILE_HEIGHT)
-        pixel_u = tile_u * TILE_WIDTH + pixel_offset_in_tile % TILE_WIDTH
-        pixel_v = tile_v * TILE_HEIGHT + pixel_offset_in_tile // TILE_WIDTH
+        pixel_u_base = tile_u * TILE_WIDTH + pixel_offset_in_tile % TILE_WIDTH
+        pixel_v_base = tile_v * TILE_HEIGHT + pixel_offset_in_tile // TILE_WIDTH
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
         # The initial value of accumulated alpha (initial value of accumulated multiplication)
-        T_i = 1.0
-        accumulated_color = ti.math.vec3([0., 0., 0.])
-        accumulated_depth = 0.
-        depth_normalization_factor = 0.
-        offset_of_last_effective_point = start_offset
-        valid_point_count: ti.i32 = 0
+        T_i_list = ti.Vector([1.0 for _ in range(PIXEL_PER_THREAD)])
+        accumulated_color_mat = ti.Matrix([[0., 0., 0.] for _ in range(PIXEL_PER_THREAD)])
+        accumulated_depth_list = ti.Vector([0. for _ in range(PIXEL_PER_THREAD)])
+        depth_normalization_factor_list = ti.Vector([0. for _ in range(PIXEL_PER_THREAD)])
+        offset_of_last_effective_point_list = ti.Vector([start_offset for _ in range(PIXEL_PER_THREAD)])
+        valid_point_count_list = ti.Vector([0 for _ in range(PIXEL_PER_THREAD)])
 
-        pixel_saturated = False
+
+        pixel_saturated = ti.Vector([False for _ in range(PIXEL_PER_THREAD)])
         for idx_point_offset_with_sort_key in range(start_offset, end_offset):
-            if pixel_saturated:
+            if pixel_saturated.all():
                 break
             # forward rendering process
             point_offset = point_offset_with_sort_key[idx_point_offset_with_sort_key]
@@ -381,50 +386,61 @@ def gaussian_point_rasterisation(
             color = ti.math.vec3([point_color[point_offset, 0],
                                     point_color[point_offset, 1], point_color[point_offset, 2]])
 
-            gaussian_alpha = get_point_probability_density_from_conic(
-                xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
-                gaussian_mean=uv,
-                conic=uv_conic,
-            )
-            alpha = gaussian_alpha * point_alpha_after_activation_value
-            # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
-            # 255 ) and also clamp 𝛼 with 0.99 from above.
-            # print(
-            #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
-            if alpha < 1. / 255.:
-                continue
-            alpha = ti.min(alpha, 0.99)
-            # from paper: before a Gaussian is included in the forward rasterization
-            # pass, we compute the accumulated opacity if we were to include it
-            # and stop front-to-back blending before it can exceed 0.9999.
-            next_T_i = T_i * (1 - alpha)
-            if next_T_i < 0.0001:
-                pixel_saturated = True
-                continue  # somehow faster than directly breaking
-            offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
-            accumulated_color += color * alpha * T_i
+            for pixel_uv_offset in ti.static(range(PIXEL_PER_THREAD)):
+                pixel_u_offset = pixel_uv_offset % PIXEL_COL_PER_THREAD
+                pixel_v_offset = pixel_uv_offset // PIXEL_COL_PER_THREAD
+                pixel_u = pixel_u_base + pixel_u_offset
+                pixel_v = pixel_v_base + pixel_v_offset
+                gaussian_alpha = get_point_probability_density_from_conic(
+                    xy=ti.math.vec2([pixel_u + 0.5, pixel_v + 0.5]),
+                    gaussian_mean=uv,
+                    conic=uv_conic,
+                )
+                alpha = gaussian_alpha * point_alpha_after_activation_value
+                # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
+                # 255 ) and also clamp 𝛼 with 0.99 from above.
+                # print(
+                #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
+                if alpha >= 1. / 255.:
+                    alpha = ti.min(alpha, 0.99)
+                    # from paper: before a Gaussian is included in the forward rasterization
+                    # pass, we compute the accumulated opacity if we were to include it
+                    # and stop front-to-back blending before it can exceed 0.9999.
+                    T_i = T_i_list[pixel_uv_offset]
+                    next_T_i = T_i * (1 - alpha)
+                    if next_T_i < 0.0001:
+                        # pixel_saturated = True
+                        pixel_saturated[pixel_uv_offset] = True
+                    else:
+                        offset_of_last_effective_point_list[pixel_uv_offset] = idx_point_offset_with_sort_key + 1
+                        accumulated_color_mat[pixel_uv_offset, :] += color * alpha * T_i
 
-            if not rgb_only:
-                # Weighted depth for all valid points.
-                depth = point_in_camera[point_offset, 2]
-                accumulated_depth += depth * alpha * T_i
-                depth_normalization_factor += alpha * T_i
-                valid_point_count += 1
-            T_i = next_T_i
+                        if not rgb_only:
+                            # Weighted depth for all valid points.
+                            depth = point_in_camera[point_offset, 2]
+                            accumulated_depth_list[pixel_uv_offset] += depth * alpha * T_i
+                            depth_normalization_factor_list[pixel_uv_offset] += alpha * T_i
+                            valid_point_count_list[pixel_uv_offset] += 1
+                        T_i_list[pixel_uv_offset] = next_T_i
         # end of point group loop
 
         # end of point group id loop
 
-        rasterized_image[pixel_v, pixel_u, 0] = accumulated_color[0]
-        rasterized_image[pixel_v, pixel_u, 1] = accumulated_color[1]
-        rasterized_image[pixel_v, pixel_u, 2] = accumulated_color[2]
-        if not rgb_only:
-            rasterized_depth[pixel_v, pixel_u] = accumulated_depth / \
-                ti.max(depth_normalization_factor, 1e-6)
-            pixel_accumulated_alpha[pixel_v, pixel_u] = 1. - T_i
-            pixel_offset_of_last_effective_point[pixel_v,
-                                                 pixel_u] = offset_of_last_effective_point
-            pixel_valid_point_count[pixel_v, pixel_u] = valid_point_count
+        for pixel_uv_offset in ti.static(range(PIXEL_PER_THREAD)):
+            pixel_u_offset = pixel_uv_offset % PIXEL_COL_PER_THREAD
+            pixel_v_offset = pixel_uv_offset // PIXEL_COL_PER_THREAD
+            pixel_u = pixel_u_base + pixel_u_offset
+            pixel_v = pixel_v_base + pixel_v_offset
+            rasterized_image[pixel_v, pixel_u, 0] = accumulated_color_mat[pixel_uv_offset, 0]
+            rasterized_image[pixel_v, pixel_u, 1] = accumulated_color_mat[pixel_uv_offset, 1]
+            rasterized_image[pixel_v, pixel_u, 2] = accumulated_color_mat[pixel_uv_offset, 2]
+            if not rgb_only:
+                rasterized_depth[pixel_v, pixel_u] = accumulated_depth_list[pixel_uv_offset] / \
+                    ti.max(depth_normalization_factor_list[pixel_uv_offset], 1e-6)
+                pixel_accumulated_alpha[pixel_v, pixel_u] = 1. - T_i_list[pixel_uv_offset]
+                pixel_offset_of_last_effective_point[pixel_v,
+                                                    pixel_u] = offset_of_last_effective_point_list[pixel_uv_offset]
+                pixel_valid_point_count[pixel_v, pixel_u] = valid_point_count_list[pixel_uv_offset]
     # end of pixel loop
 
 
