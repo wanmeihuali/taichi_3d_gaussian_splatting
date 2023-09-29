@@ -114,6 +114,19 @@
             "preLaunchTask": "install"
         },
         {
+            "name": "dynamic_street_0",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/dynamic_street_0.yaml",
+            ],
+            "preLaunchTask": "install"
+        },
+        {
             "name": "tat m60 training",
             "type": "python",
             "request": "launch",

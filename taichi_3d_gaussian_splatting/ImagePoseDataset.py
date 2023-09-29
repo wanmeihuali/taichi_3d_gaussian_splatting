@@ -40,8 +40,10 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         image_path = self.df.iloc[idx]["image_path"]
         T_pointcloud_camera = self._pandas_field_to_tensor(
             self.df.iloc[idx]["T_pointcloud_camera"])
+        if len(T_pointcloud_camera.shape) == 2:
+            T_pointcloud_camera = T_pointcloud_camera.unsqueeze(0)
         q_pointcloud_camera, t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
-            T_pointcloud_camera.unsqueeze(0))
+            T_pointcloud_camera)
         camera_intrinsics = self._pandas_field_to_tensor(
             self.df.iloc[idx]["camera_intrinsics"])
         base_camera_height = self.df.iloc[idx]["camera_height"]

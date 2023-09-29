@@ -159,10 +159,14 @@ class GaussianPointCloudScene(torch.nn.Module):
 
         df_has_color = "r" in scene_df.columns and "g" in scene_df.columns and "b" in scene_df.columns
         point_cloud = scene_df[["x", "y", "z"]].to_numpy()
+        point_object_id = None
+        if "object_id" in scene_df.columns:
+            point_object_id = scene_df["object_id"].to_numpy()
+            point_object_id = torch.from_numpy(point_object_id)
 
         if not set(feature_columns).issubset(set(scene_df.columns)):
             scene = GaussianPointCloudScene(
-                point_cloud, config)
+                point_cloud, config, point_object_id=point_object_id)
 
             point_cloud_rgb = scene_df[["r", "g", "b"]
                                        ].to_numpy() if df_has_color else None
@@ -171,7 +175,7 @@ class GaussianPointCloudScene(torch.nn.Module):
             valid_point_cloud_features = torch.from_numpy(
                 scene_df[feature_columns].to_numpy())
             scene = GaussianPointCloudScene(
-                point_cloud, config, point_cloud_features=valid_point_cloud_features)
+                point_cloud, config, point_cloud_features=valid_point_cloud_features, point_object_id=point_object_id)
         return scene
 
     @staticmethod
