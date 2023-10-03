@@ -205,19 +205,8 @@ class GaussianPoint3D:
              2 * q.x * t.x + 2 * q.y * t.y,
              2 * q.x * t.y - 2 * q.y * t.x]])
         
-        # \left[\begin{matrix}- 2 qy^{2} - 2 qz^{2} + 1 & - 2 qw qz + 2 qx qy & 2 qw qy + 2 qx qz\\2 qw qz + 2 qx qy & - 2 qx^{2} - 2 qz^{2} + 1 & - 2 qw qx + 2 qy qz\\- 2 qw qy + 2 qx qz & 2 qw qx + 2 qy qz & - 2 qx^{2} - 2 qy^{2} + 1\end{matrix}\right]
-        d_translation_camera_d_t = ti.math.mat3([
-            [-2 * q.y * q.y - 2 * q.z * q.z + 1, 
-             -2 * q.w * q.z + 2 * q.x * q.y, 
-             2 * q.w * q.y + 2 * q.x * q.z],
-            [2 * q.w * q.z + 2 * q.x * q.y,
-             -2 * q.x * q.x - 2 * q.z * q.z + 1,
-             -2 * q.w * q.x + 2 * q.y * q.z],
-            [-2 * q.w * q.y + 2 * q.x * q.z,
-             2 * q.w * q.x + 2 * q.y * q.z,
-             -2 * q.x * q.x - 2 * q.y * q.y + 1]])
         d_uv_d_q = d_uv_d_translation_camera @ d_translation_camera_d_q
-        d_uv_d_t = d_uv_d_translation_camera @ d_translation_camera_d_t
+        d_uv_d_t = d_uv_d_translation_camera
         return d_uv_d_translation, d_uv_d_q, d_uv_d_t
 
 

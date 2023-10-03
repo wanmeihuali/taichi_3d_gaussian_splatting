@@ -88,7 +88,7 @@ translation_camera = sympy.Matrix([homogeneous_translation_camera[0, 0],
                                   homogeneous_translation_camera[1, 0], homogeneous_translation_camera[2, 0]])
 
 D_translation_camrea_D_q = translation_camera.jacobian(q)
-D_translation_camrea_D_t = translation_camera.jacobian(translation)
+D_translation_camrea_D_t = translation_camera.jacobian(t)
 print(latex(D_translation_camrea_D_q))
 pprint(D_translation_camrea_D_q, use_unicode=True)
 print(latex(D_translation_camrea_D_t))
