@@ -50,7 +50,7 @@ def rotation_matrix_from_quaternion(q: ti.math.vec4) -> ti.math.mat3:
 
 
 @ti.func
-def tranform_matrix_from_quaternion_and_translation(q: ti.math.vec4, t: ti.math.vec3) -> ti.math.mat4:
+def transform_matrix_from_quaternion_and_translation(q: ti.math.vec4, t: ti.math.vec3) -> ti.math.mat4:
     """
     Convert a quaternion and a translation to a transformation matrix.
     """
@@ -86,6 +86,7 @@ def get_projective_transform_jacobian(
         [fx / z, 0, -(fx * x) / (z * z)],
         [0, fy / z, -(fy * y) / (z * z)]
     ])
+
 
 @ti.func
 def box_muller_transform(u1, u2):
@@ -129,7 +130,6 @@ class GaussianPoint3D:
         translation = quaternion_rotate(extra_rotation, translation)
         return project_point_to_camera(translation, T_camera_world, projective_transform)
 
-
     @ti.func
     def project_to_camera_position_jacobian(
         self,
@@ -166,7 +166,7 @@ class GaussianPoint3D:
         t_camera_world: ti.math.vec3,
         projective_transform: ti.math.mat3,
     ):
-        T = tranform_matrix_from_quaternion_and_translation(
+        T = transform_matrix_from_quaternion_and_translation(
             q=q_camera_world, t=t_camera_world
         )
         W = ti.math.mat3([
@@ -260,7 +260,7 @@ class GaussianPoint3D:
         T_camera_world: ti.math.mat4,
         projective_transform: ti.math.mat3,
         translation_camera: ti.math.vec3,
-        extra_rotation_quaternion: ti.math.vec4, 
+        extra_rotation_quaternion: ti.math.vec4,
         extra_scale: ti.math.vec3,
     ):
         """
@@ -278,7 +278,7 @@ class GaussianPoint3D:
         ])
         # covariance matrix, 3x3, equation (6) in the paper
         Sigma = R @ S @ S.transpose() @ R.transpose()
-        
+
         # for inference, we can add extra rotation and scale to the covariance matrix
         # e.g. when we want to rotate or resize point cloud for an object in the scene
         R_extra = rotation_matrix_from_quaternion(extra_rotation_quaternion)
@@ -432,7 +432,7 @@ class GaussianPoint3D:
         r_jacobian = r_normalized_jacobian * r_jacobian
         g_jacobian = g_normalized_jacobian * g_jacobian
         b_jacobian = b_normalized_jacobian * b_jacobian
-        
+
         # return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
         return ti.math.vec3(r_normalized, g_normalized, b_normalized), r_jacobian, g_jacobian, b_jacobian
 
@@ -468,7 +468,6 @@ class GaussianPoint3D:
         ])
         base = ti.math.vec3(z1, z2, z3)
         return self.translation + R @ S @ base
-        
 
 
 # %%

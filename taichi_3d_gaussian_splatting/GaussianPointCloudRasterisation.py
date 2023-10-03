@@ -8,13 +8,13 @@ from .utils import (torch_type, data_type, ti2torch, torch2ti,
                     get_ray_origin_and_direction_by_uv,
                     get_point_probability_density_from_2d_gaussian_normalized,
                     grad_point_probability_density_2d_normalized,
-                    taichi_inverse_se3,
-                    inverse_se3_qt_torch,
+                    taichi_inverse_SE3,
+                    inverse_SE3_qt_torch,
                     get_point_conic,
                     get_point_probability_density_from_conic,
                     grad_point_probability_density_from_conic,
-                    inverse_se3)
-from .GaussianPoint3D import GaussianPoint3D, project_point_to_camera, rotation_matrix_from_quaternion, tranform_matrix_from_quaternion_and_translation
+                    inverse_SE3)
+from .GaussianPoint3D import GaussianPoint3D, project_point_to_camera, rotation_matrix_from_quaternion, transform_matrix_from_quaternion_and_translation
 from .SphericalHarmonics import SphericalHarmonics, vec16f
 from typing import List, Tuple, Optional, Callable, Union
 from dataclass_wizard import YAMLWizard
@@ -24,6 +24,8 @@ mat4x4f = ti.types.matrix(n=4, m=4, dtype=ti.f32)
 mat4x3f = ti.types.matrix(n=4, m=3, dtype=ti.f32)
 
 BOUNDARY_TILES = 3
+TILE_WIDTH = 16
+TILE_HEIGHT = 16
 
 
 @ti.kernel
@@ -31,10 +33,11 @@ def filter_point_in_camera(
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     point_invalid_mask: ti.types.ndarray(ti.i8, ndim=1),  # (N)
     camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
-    point_object_id: ti.types.ndarray(ti.i32, ndim=1),  # (N)
+    # (N), every element is in [0, K-1] corresponding to the camera id
+    point_object_id: ti.types.ndarray(ti.i32, ndim=1),
     q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4)
     t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
-    point_in_camera_mask: ti.types.ndarray(ti.i8, ndim=1),  # (N)
+    point_in_camera_mask: ti.types.ndarray(ti.i8, ndim=1),  # (N), output
     near_plane: ti.f32,
     far_plane: ti.f32,
     camera_width: ti.i32,
@@ -54,7 +57,7 @@ def filter_point_in_camera(
             [q_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(4))])
         point_t_camera_pointcloud = ti.Vector(
             [t_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(3))])
-        T_camera_pointcloud_mat = tranform_matrix_from_quaternion_and_translation(
+        T_camera_pointcloud_mat = transform_matrix_from_quaternion_and_translation(
             q=point_q_camera_pointcloud,
             t=point_t_camera_pointcloud,
         )
@@ -68,11 +71,12 @@ def filter_point_in_camera(
         depth_in_camera = point_in_camera[2]
         if depth_in_camera > near_plane and \
             depth_in_camera < far_plane and \
-            pixel_u >= -16 * BOUNDARY_TILES and pixel_u < camera_width + 16 * BOUNDARY_TILES and \
-                pixel_v >= -16 * BOUNDARY_TILES and pixel_v < camera_height + 16 * BOUNDARY_TILES:
+            pixel_u >= -TILE_WIDTH * BOUNDARY_TILES and pixel_u < camera_width + TILE_WIDTH * BOUNDARY_TILES and \
+                pixel_v >= -TILE_HEIGHT * BOUNDARY_TILES and pixel_v < camera_height + TILE_HEIGHT * BOUNDARY_TILES:
             point_in_camera_mask[point_id] = ti.cast(1, ti.i8)
         else:
             point_in_camera_mask[point_id] = ti.cast(0, ti.i8)
+
 
 
 @ti.func
@@ -82,26 +86,29 @@ def get_bounding_box_by_point_and_radii(
     camera_width: ti.i32,
     camera_height: ti.i32,
 ):
-    radii = ti.max(radii, 1.0)  # avoid zero radii, at least 1 pixel
+    radii = ti.max(radii, 1.0)   # avoid zero radii, at least 1 pixel
     min_u = ti.max(0.0, uv[0] - radii)
     max_u = uv[0] + radii
     min_v = ti.max(0.0, uv[1] - radii)
     max_v = uv[1] + radii
-    min_tile_u = ti.cast(min_u // 16, ti.i32)
-    min_tile_u = ti.min(min_tile_u, camera_width // 16)
-    max_tile_u = ti.cast(max_u // 16, ti.i32) + 1
-    max_tile_u = ti.min(ti.max(max_tile_u, min_tile_u + 1), camera_width // 16)
-    min_tile_v = ti.cast(min_v // 16, ti.i32)
-    min_tile_v = ti.min(min_tile_v, camera_height // 16)
-    max_tile_v = ti.cast(max_v // 16, ti.i32) + 1
+    min_tile_u = ti.cast(min_u // TILE_WIDTH, ti.i32)
+    min_tile_u = ti.min(min_tile_u, camera_width // TILE_WIDTH)
+    max_tile_u = ti.cast(max_u // TILE_WIDTH, ti.i32) + 1
+    max_tile_u = ti.min(ti.max(max_tile_u, min_tile_u + 1),
+                        camera_width // TILE_WIDTH)
+    min_tile_v = ti.cast(min_v // TILE_HEIGHT, ti.i32)
+    min_tile_v = ti.min(min_tile_v, camera_height // TILE_HEIGHT)
+    max_tile_v = ti.cast(max_v // TILE_HEIGHT, ti.i32) + 1
     max_tile_v = ti.min(ti.max(max_tile_v, min_tile_v + 1),
-                        camera_height // 16)
+                        camera_height // TILE_HEIGHT)
     return min_tile_u, max_tile_u, min_tile_v, max_tile_v
+
 
 
 @ti.kernel
 def generate_num_overlap_tiles(
-    num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),  # (M)
+    # (M)， output，a number for each point, count how many tiles the point can be projected in.
+    num_overlap_tiles: ti.types.ndarray(ti.i32, ndim=1),
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
     point_radii: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     camera_width: ti.i32,  # required to be multiple of 16
@@ -160,7 +167,7 @@ def generate_point_sort_key_by_num_overlap_tiles(
                 key_idx = accumulated_num_overlap_tiles[point_offset] + \
                     overlap_tiles_count
                 encoded_tile_id = ti.cast(
-                    tile_u + tile_v * (camera_width // 16), ti.i32)
+                    tile_u + tile_v * (camera_width // TILE_WIDTH), ti.i32)
                 sort_key = ti.cast(encoded_projected_depth, ti.i64) + \
                     (ti.cast(encoded_tile_id, ti.i64) << 32)
                 point_in_camera_sort_key[key_idx] = sort_key
@@ -171,9 +178,9 @@ def generate_point_sort_key_by_num_overlap_tiles(
 def find_tile_start_and_end(
     point_in_camera_sort_key: ti.types.ndarray(ti.i64, ndim=1),  # (M)
     # (tiles_per_row * tiles_per_col), for output
-    tile_points_start: ti.types.ndarray(ti.i32, ndim=1),
+    tile_points_start: ti.types.ndarray(ti.i32, ndim=1),  # output
     # (tiles_per_row * tiles_per_col), for output
-    tile_points_end: ti.types.ndarray(ti.i32, ndim=1),
+    tile_points_end: ti.types.ndarray(ti.i32, ndim=1),  # output
 ):
     for idx in range(point_in_camera_sort_key.shape[0] - 1):
         sort_key = point_in_camera_sort_key[idx]
@@ -231,21 +238,27 @@ def load_point_cloud_row_into_gaussian_point_3d(
     return gaussian_point_3d
 
 
+
 @ti.kernel
-def generate_point_attributes_in_camera_plane(
+def generate_point_attributes_in_camera_plane(  # from 3d gaussian to 2d features, including color, alpha, 2d gaussion covariance
     pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
-    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, M)
+    # (N, 56) 56 features (cov_rotation, xxx, r, g, b)
+    pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),
     camera_intrinsics: ti.types.ndarray(ti.f32, ndim=2),  # (3, 3)
-    point_object_id: ti.types.ndarray(ti.i32, ndim=1),  # (N)
+    # (N) [0, K-1] camera_id
+    point_object_id: ti.types.ndarray(ti.i32, ndim=1),
     q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4)
     t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
-    point_id_list: ti.types.ndarray(ti.i32, ndim=1),  # (M)
-    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
-    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    point_uv_conic: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
-    point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    point_radii: ti.types.ndarray(ti.f32, ndim=1),  # (M)
+    # (M) the point id in the view frustum.
+    point_id_list: ti.types.ndarray(ti.i32, ndim=1),
+    point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2) # output
+    point_in_camera: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3) # output
+    point_uv_conic: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)# output
+    # (M)， output，alpha after sigmoid
+    point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),
+    point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)# output
+    # (M)# output, estimated eigenvalues, basically the size of gaussian
+    point_radii: ti.types.ndarray(ti.f32, ndim=1),
 ):
     for idx in range(point_id_list.shape[0]):
         camera_intrinsics_mat = ti.Matrix(
@@ -263,11 +276,11 @@ def generate_point_attributes_in_camera_plane(
             [q_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(4))])
         point_t_camera_pointcloud = ti.Vector(
             [t_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(3))])
-        T_camera_pointcloud_mat = tranform_matrix_from_quaternion_and_translation(
+        T_camera_pointcloud_mat = transform_matrix_from_quaternion_and_translation(
             q=point_q_camera_pointcloud,
             t=point_t_camera_pointcloud,
         )
-        T_pointcloud_camera = taichi_inverse_se3(T_camera_pointcloud_mat)
+        T_pointcloud_camera = taichi_inverse_SE3(T_camera_pointcloud_mat)
         ray_origin = ti.math.vec3(
             [T_pointcloud_camera[0, 3], T_pointcloud_camera[1, 3], T_pointcloud_camera[2, 3]])
 
@@ -321,42 +334,57 @@ def gaussian_point_rasterisation(
     point_uv_conic: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
     point_alpha_after_activation: ti.types.ndarray(ti.f32, ndim=1),  # (M)
     point_color: ti.types.ndarray(ti.f32, ndim=2),  # (M, 3)
-    rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3)
-    rasterized_depth: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
-    pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
+    rasterized_image: ti.types.ndarray(ti.f32, ndim=3),  # (H, W, 3) # output
+    # (H, W) # output, Note: think about handling the occlusion
+    rasterized_depth: ti.types.ndarray(ti.f32, ndim=2),
+    # (H, W) # output
+    pixel_accumulated_alpha: ti.types.ndarray(ti.f32, ndim=2),
     # (H, W)
+    # output
     pixel_offset_of_last_effective_point: ti.types.ndarray(ti.i32, ndim=2),
-    pixel_valid_point_count: ti.types.ndarray(ti.i32, ndim=2),
-    rgb_only: ti.template(),
+    pixel_valid_point_count: ti.types.ndarray(ti.i32, ndim=2),  # output
+    rgb_only: ti.template(),  # input
 ):
-    ti.loop_config(block_dim=256)
-    for pixel_offset in ti.ndrange(camera_height * camera_width):
-        tile_id = pixel_offset // 256
-        thread_id = pixel_offset % 256
-        tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
-        tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
-        pixel_offset_in_tile = pixel_offset - tile_id * 256
-        pixel_u = tile_u * 16 + pixel_offset_in_tile % 16
-        pixel_v = tile_v * 16 + pixel_offset_in_tile // 16
+    ti.loop_config(block_dim=(TILE_WIDTH * TILE_HEIGHT))
+    for pixel_offset in ti.ndrange(camera_height * camera_width):  # 1920*1080
+        # initialize
+        # put each TILE_WIDTH * TILE_HEIGHT tile in the same CUDA thread group (block)
+        tile_id = pixel_offset // (TILE_WIDTH * TILE_HEIGHT)
+        # can wait for other threads in the same group, also have a shared memory.
+        thread_id = pixel_offset % (TILE_WIDTH * TILE_HEIGHT)
+        tile_u = ti.cast(tile_id % (camera_width // TILE_WIDTH),
+                         ti.i32)  # tile position
+        tile_v = ti.cast(tile_id // (camera_width // TILE_WIDTH), ti.i32)
+        # pixel position in tile (The relative position of the pixel in the tile)
+        pixel_offset_in_tile = pixel_offset - \
+            tile_id * (TILE_WIDTH * TILE_HEIGHT)
+        pixel_u = tile_u * TILE_WIDTH + pixel_offset_in_tile % TILE_WIDTH
+        pixel_v = tile_v * TILE_HEIGHT + pixel_offset_in_tile // TILE_WIDTH
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
+        # The initial value of accumulated alpha (initial value of accumulated multiplication)
         T_i = 1.0
         accumulated_color = ti.math.vec3([0., 0., 0.])
         accumulated_depth = 0.
         depth_normalization_factor = 0.
         offset_of_last_effective_point = start_offset
-
         valid_point_count: ti.i32 = 0
 
-        tile_point_uv = ti.simt.block.SharedArray((2, 256), dtype=ti.f32)
+        # open the shared memory
+        tile_point_uv = ti.simt.block.SharedArray(
+            (2, ti.static(TILE_WIDTH * TILE_HEIGHT)), dtype=ti.f32)
         tile_point_uv_conic = ti.simt.block.SharedArray(
-            (3, 256), dtype=ti.f32)
-        tile_point_alpha = ti.simt.block.SharedArray(256, dtype=ti.f32)
-        tile_point_color = ti.simt.block.SharedArray((3, 256), dtype=ti.f32)
-        tile_point_depth = ti.simt.block.SharedArray(256, dtype=ti.f32)
+            (3, ti.static(TILE_WIDTH * TILE_HEIGHT)), dtype=ti.f32)
+        tile_point_alpha = ti.simt.block.SharedArray(
+            ti.static(TILE_WIDTH * TILE_HEIGHT), dtype=ti.f32)
+        tile_point_color = ti.simt.block.SharedArray(
+            (3, ti.static(TILE_WIDTH * TILE_HEIGHT)), dtype=ti.f32)
+        tile_point_depth = ti.simt.block.SharedArray(
+            ti.static(TILE_WIDTH * TILE_HEIGHT), dtype=ti.f32)
 
         num_points_in_tile = end_offset - start_offset
-        num_point_groups = (num_points_in_tile + 255) // 256
+        num_point_groups = (num_points_in_tile + ti.static(TILE_WIDTH *
+                            TILE_HEIGHT - 1)) // ti.static(TILE_WIDTH * TILE_HEIGHT)
         pixel_saturated = False
         # for idx_point_offset_with_sort_key in range(start_offset, end_offset):
         for point_group_id in range(num_point_groups):
@@ -372,7 +400,8 @@ def gaussian_point_rasterisation(
             # load point data into shared memory
             # [start_offset, end_offset)->[0, end_offset - start_offset)
             to_load_idx_point_offset_with_sort_key = start_offset + \
-                point_group_id * 256 + thread_id
+                point_group_id * \
+                ti.static(TILE_WIDTH * TILE_HEIGHT) + thread_id
             if to_load_idx_point_offset_with_sort_key < end_offset:
                 to_load_point_offset = point_offset_with_sort_key[to_load_idx_point_offset_with_sort_key]
                 tile_point_uv[0, thread_id] = point_uv[to_load_point_offset, 0]
@@ -396,13 +425,14 @@ def gaussian_point_rasterisation(
 
             ti.simt.block.sync()
             max_point_group_offset: ti.i32 = ti.min(
-                256, num_points_in_tile - point_group_id * 256)
+                ti.static(TILE_WIDTH * TILE_HEIGHT), num_points_in_tile - point_group_id * ti.static(TILE_WIDTH * TILE_HEIGHT))
             for point_group_offset in range(max_point_group_offset):
                 if pixel_saturated:
                     break
                 # forward rendering process
                 idx_point_offset_with_sort_key: ti.i32 = start_offset + \
-                    point_group_id * 256 + point_group_offset
+                    point_group_id * \
+                    ti.static(TILE_WIDTH * TILE_HEIGHT) + point_group_offset
 
                 uv = ti.math.vec2(
                     [tile_point_uv[0, point_group_offset], tile_point_uv[1, point_group_offset]])
@@ -431,11 +461,12 @@ def gaussian_point_rasterisation(
                 next_T_i = T_i * (1 - alpha)
                 if next_T_i < 0.0001:
                     pixel_saturated = True
-                    continue
+                    continue  # somehow faster than directly breaking
                 offset_of_last_effective_point = idx_point_offset_with_sort_key + 1
                 accumulated_color += color * alpha * T_i
 
                 if not rgb_only:
+                    # Weighted depth for all valid points.
                     depth = tile_point_depth[point_group_offset]
                     accumulated_depth += depth * alpha * T_i
                     depth_normalization_factor += alpha * T_i
@@ -503,32 +534,33 @@ def gaussian_point_rasterisation_backward(
     camera_intrinsics_mat = ti.Matrix(
         [[camera_intrinsics[row, col] for col in ti.static(range(3))] for row in ti.static(range(3))])
 
-    ti.loop_config(block_dim=256)
+    ti.loop_config(block_dim=(TILE_HEIGHT * TILE_WIDTH))
     for pixel_offset in ti.ndrange(camera_height * camera_width):
         # each block handles one tile, so tile_id is actually block_id
-        tile_id = pixel_offset // 256
-        thread_id = pixel_offset % 256
-        tile_u = ti.cast(tile_id % (camera_width // 16), ti.i32)
-        tile_v = ti.cast(tile_id // (camera_width // 16), ti.i32)
+        tile_id = pixel_offset // (TILE_HEIGHT * TILE_WIDTH)
+        thread_id = pixel_offset % (TILE_HEIGHT * TILE_WIDTH)
+        tile_u = ti.cast(tile_id % (camera_width // TILE_WIDTH), ti.i32)
+        tile_v = ti.cast(tile_id // (camera_width // TILE_WIDTH), ti.i32)
 
         start_offset = tile_points_start[tile_id]
         end_offset = tile_points_end[tile_id]
         tile_point_count = end_offset - start_offset
 
         tile_point_uv = ti.simt.block.SharedArray(
-            (2, 256), dtype=ti.f32)  # 2KB shared memory
+            (2, ti.static(TILE_HEIGHT * TILE_WIDTH)), dtype=ti.f32)  # 2KB shared memory
         tile_point_uv_conic = ti.simt.block.SharedArray(
-            (3, 256), dtype=ti.f32)  # 4KB shared memory
+            (3, ti.static(TILE_HEIGHT * TILE_WIDTH)), dtype=ti.f32)  # 4KB shared memory
         tile_point_color = ti.simt.block.SharedArray(
-            (3, 256), dtype=ti.f32)  # 3KB shared memory
+            (3, ti.static(TILE_HEIGHT * TILE_WIDTH)), dtype=ti.f32)  # 3KB shared memory
         tile_point_alpha = ti.simt.block.SharedArray(
-            (256,), dtype=ti.f32)  # 1KB shared memory
+            (ti.static(TILE_HEIGHT * TILE_WIDTH),), dtype=ti.f32)  # 1KB shared memory
 
-        pixel_offset_in_tile = pixel_offset - tile_id * 256
-        pixel_offset_u_in_tile = pixel_offset_in_tile % 16
-        pixel_offset_v_in_tile = pixel_offset_in_tile // 16
-        pixel_u = tile_u * 16 + pixel_offset_u_in_tile
-        pixel_v = tile_v * 16 + pixel_offset_v_in_tile
+        pixel_offset_in_tile = pixel_offset - \
+            tile_id * ti.static(TILE_HEIGHT * TILE_WIDTH)
+        pixel_offset_u_in_tile = pixel_offset_in_tile % TILE_WIDTH
+        pixel_offset_v_in_tile = pixel_offset_in_tile // TILE_WIDTH
+        pixel_u = tile_u * TILE_WIDTH + pixel_offset_u_in_tile
+        pixel_v = tile_v * TILE_HEIGHT + pixel_offset_v_in_tile
         last_effective_point = pixel_offset_of_last_effective_point[pixel_v, pixel_u]
         accumulated_alpha: ti.f32 = pixel_accumulated_alpha[pixel_v, pixel_u]
         T_i = 1.0 - accumulated_alpha  # T_i = \prod_{j=1}^{i-1} (1 - a_j)
@@ -544,13 +576,15 @@ def gaussian_point_rasterisation_backward(
 
         # for inverse_point_offset in range(effective_point_count):
         # taichi only supports range() with start and end
-        # for inverse_point_offset_base in range(0, tile_point_count, 256):
-        num_point_blocks = (tile_point_count + 255) // 256
+        # for inverse_point_offset_base in range(0, tile_point_count, TILE_HEIGHT * TILE_WIDTH):
+        num_point_blocks = (tile_point_count + TILE_HEIGHT *
+                            TILE_WIDTH - 1) // (TILE_HEIGHT * TILE_WIDTH)
         for point_block_id in range(num_point_blocks):
-            inverse_point_offset_base = point_block_id * 256
+            inverse_point_offset_base = point_block_id * \
+                (TILE_HEIGHT * TILE_WIDTH)
             block_end_idx_point_offset_with_sort_key = end_offset - inverse_point_offset_base
             block_start_idx_point_offset_with_sort_key = ti.max(
-                block_end_idx_point_offset_with_sort_key - 256, 0)
+                block_end_idx_point_offset_with_sort_key - (TILE_HEIGHT * TILE_WIDTH), 0)
             # in the later loop, we will handle the points in [block_start_idx_point_offset_with_sort_key, block_end_idx_point_offset_with_sort_key)
             # so we need to load the points in [block_start_idx_point_offset_with_sort_key, block_end_idx_point_offset_with_sort_key - 1]
             to_load_idx_point_offset_with_sort_key = block_end_idx_point_offset_with_sort_key - thread_id - 1
@@ -573,7 +607,7 @@ def gaussian_point_rasterisation_backward(
 
             ti.simt.block.sync()
             max_inverse_point_offset_offset = ti.min(
-                256, tile_point_count - inverse_point_offset_base)
+                (TILE_HEIGHT * TILE_WIDTH), tile_point_count - inverse_point_offset_base)
             for inverse_point_offset_offset in range(max_inverse_point_offset_offset):
                 inverse_point_offset = inverse_point_offset_base + inverse_point_offset_offset
 
@@ -668,7 +702,7 @@ def gaussian_point_rasterisation_backward(
                             magnitude_grad_viewspace[point_id], magnitude_point_grad_viewspace)
                         ti.atomic_add(
                             in_camera_num_affected_pixels[point_offset], 1)
-            # end of the 256 block loop
+            # end of the TILE_WIDTH * TILE_HEIGHT block loop
             ti.simt.block.sync()
         # end of the backward traversal loop, from last point to first point
         if need_extra_info:
@@ -711,7 +745,7 @@ def gaussian_point_rasterisation_backward(
             [t_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(3))])
         ray_origin = ti.Vector(
             [t_pointcloud_camera[point_object_id[point_id], idx] for idx in ti.static(range(3))])
-        T_camera_pointcloud_mat = tranform_matrix_from_quaternion_and_translation(
+        T_camera_pointcloud_mat = transform_matrix_from_quaternion_and_translation(
             q=point_q_camera_pointcloud,
             t=point_t_camera_pointcloud,
         )
@@ -864,6 +898,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
                 point_id = torch.arange(
                     pointcloud.shape[0], dtype=torch.int32, device=pointcloud.device)
+                # Step 1: filter points
                 filter_point_in_camera(
                     pointcloud=pointcloud,
                     point_invalid_mask=point_invalid_mask,
@@ -878,13 +913,17 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_width=camera_info.camera_width,
                 )
                 point_in_camera_mask = point_in_camera_mask.bool()
+
+                # Get id based on the camera_mask
                 point_id_in_camera_list = point_id[point_in_camera_mask].contiguous(
                 )
                 del point_id
                 del point_in_camera_mask
 
+                # Number of points in camera
                 num_points_in_camera = point_id_in_camera_list.shape[0]
 
+                # Allocate memory
                 point_uv = torch.empty(
                     size=(num_points_in_camera, 2), dtype=torch.float32, device=pointcloud.device)
                 point_alpha_after_activation = torch.empty(
@@ -898,6 +937,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_radii = torch.empty(
                     size=(num_points_in_camera,), dtype=torch.float32, device=pointcloud.device)
 
+                # Step 2: get 2d features
                 generate_point_attributes_in_camera_plane(
                     pointcloud=pointcloud,
                     pointcloud_features=pointcloud_features,
@@ -914,6 +954,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     point_radii=point_radii,
                 )
 
+                # Step 3: get how many tiles overlapped, in order to allocate memory
                 num_overlap_tiles = torch.empty_like(point_id_in_camera_list)
                 generate_num_overlap_tiles(
                     num_overlap_tiles=num_overlap_tiles,
@@ -922,28 +963,36 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     camera_width=camera_info.camera_width,
                     camera_height=camera_info.camera_height,
                 )
+                # Calculate pre-sum of number_overlap_tiles
                 accumulated_num_overlap_tiles = torch.cumsum(
                     num_overlap_tiles, dim=0)
                 if len(accumulated_num_overlap_tiles) > 0:
                     total_num_overlap_tiles = accumulated_num_overlap_tiles[-1]
                 else:
                     total_num_overlap_tiles = 0
+                # The space of each point.
                 accumulated_num_overlap_tiles = torch.cat(
                     (torch.zeros(size=(1,), dtype=torch.int32, device=pointcloud.device),
                      accumulated_num_overlap_tiles[:-1]))
+
                 # del num_overlap_tiles
+
+                # 64-bits key
                 point_in_camera_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int64, device=pointcloud.device)
+                # Corresponding to the original position, the record is the point offset in the frustum (engineering optimization)
                 point_offset_with_sort_key = torch.empty(
                     size=(total_num_overlap_tiles,), dtype=torch.int32, device=pointcloud.device)
+
+                # Step 4: calclualte key
                 if point_in_camera_sort_key.shape[0] > 0:
                     generate_point_sort_key_by_num_overlap_tiles(
                         point_uv=point_uv,
                         point_in_camera=point_in_camera,
                         point_radii=point_radii,
-                        accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,
-                        point_offset_with_sort_key=point_offset_with_sort_key,
-                        point_in_camera_sort_key=point_in_camera_sort_key,
+                        accumulated_num_overlap_tiles=accumulated_num_overlap_tiles,  # input
+                        point_offset_with_sort_key=point_offset_with_sort_key,  # output
+                        point_in_camera_sort_key=point_in_camera_sort_key,  # output
                         camera_width=camera_info.camera_width,
                         camera_height=camera_info.camera_height,
                         depth_to_sort_key_scale=self.config.depth_to_sort_key_scale,
@@ -953,13 +1002,14 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 point_offset_with_sort_key = point_offset_with_sort_key[permutation].contiguous(
                 )  # now the point_offset_with_sort_key is sorted by the sort_key
                 del permutation
-                tiles_per_row = camera_info.camera_width // 16
-                tiles_per_col = camera_info.camera_height // 16
+
+                tiles_per_row = camera_info.camera_width // TILE_WIDTH
+                tiles_per_col = camera_info.camera_height // TILE_HEIGHT
                 tile_points_start = torch.zeros(size=(
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
                 tile_points_end = torch.zeros(size=(
                     tiles_per_row * tiles_per_col,), dtype=torch.int32, device=pointcloud.device)
-
+                # Find tile's start and end.
                 if point_in_camera_sort_key.shape[0] > 0:
                     find_tile_start_and_end(
                         point_in_camera_sort_key=point_in_camera_sort_key,
@@ -967,6 +1017,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         tile_points_end=tile_points_end,
                     )
 
+                # Allocate space for the image.
                 rasterized_image = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, 3, dtype=torch.float32, device=pointcloud.device)
                 rasterized_depth = torch.empty(
@@ -978,6 +1029,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 pixel_valid_point_count = torch.empty(
                     camera_info.camera_height, camera_info.camera_width, dtype=torch.int32, device=pointcloud.device)
                 # print(f"num_points: {pointcloud.shape[0]}, num_points_in_camera: {num_points_in_camera}, num_points_rendered: {point_in_camera_sort_key.shape[0]}")
+
+                # Step 5: render
                 if point_in_camera_sort_key.shape[0] > 0:
                     gaussian_point_rasterisation(
                         camera_height=camera_info.camera_height,
@@ -1072,36 +1125,36 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     gaussian_point_rasterisation_backward(
                         camera_height=camera_info.camera_height,
                         camera_width=camera_info.camera_width,
-                        camera_intrinsics=camera_info.camera_intrinsics,
-                        point_object_id=point_object_id,
-                        q_camera_pointcloud=q_camera_pointcloud,
-                        t_camera_pointcloud=t_camera_pointcloud,
-                        t_pointcloud_camera=t_pointcloud_camera,
-                        pointcloud=pointcloud,
-                        pointcloud_features=pointcloud_features,
-                        tile_points_start=tile_points_start,
-                        tile_points_end=tile_points_end,
-                        point_offset_with_sort_key=point_offset_with_sort_key,
-                        point_id_in_camera_list=point_id_in_camera_list,
-                        rasterized_image_grad=grad_rasterized_image,
-                        pixel_accumulated_alpha=pixel_accumulated_alpha,
-                        pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point,
-                        grad_pointcloud=grad_pointcloud,
-                        grad_pointcloud_features=grad_pointcloud_features,
-                        grad_uv=grad_viewspace,
-                        grad_q_camera_pointcloud=grad_q_camera_pointcloud,
-                        grad_t_camera_pointcloud=grad_t_camera_pointcloud,
-                        in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer,
-                        in_camera_grad_color_buffer=in_camera_grad_color_buffer,
-                        point_uv=point_uv,
-                        point_in_camera=point_in_camera,
-                        point_uv_conic=point_uv_conic,
-                        point_alpha_after_activation=point_alpha_after_activation,
-                        point_color=point_color,
+                        camera_intrinsics=camera_info.camera_intrinsics.contiguous(),
+                        point_object_id=point_object_id.contiguous(),
+                        q_camera_pointcloud=q_camera_pointcloud.contiguous(),
+                        t_camera_pointcloud=t_camera_pointcloud.contiguous(),
+                        t_pointcloud_camera=t_pointcloud_camera.contiguous(),
+                        pointcloud=pointcloud.contiguous(),
+                        pointcloud_features=pointcloud_features.contiguous(),
+                        tile_points_start=tile_points_start.contiguous(),
+                        tile_points_end=tile_points_end.contiguous(),
+                        point_offset_with_sort_key=point_offset_with_sort_key.contiguous(),
+                        point_id_in_camera_list=point_id_in_camera_list.contiguous(),
+                        rasterized_image_grad=grad_rasterized_image.contiguous(),
+                        pixel_accumulated_alpha=pixel_accumulated_alpha.contiguous(),
+                        pixel_offset_of_last_effective_point=pixel_offset_of_last_effective_point.contiguous(),
+                        grad_pointcloud=grad_pointcloud.contiguous(),
+                        grad_pointcloud_features=grad_pointcloud_features.contiguous(),
+                        grad_q_camera_pointcloud=grad_q_camera_pointcloud.contiguous(),
+                        grad_t_camera_pointcloud=grad_t_camera_pointcloud.contiguous(),
+                        grad_uv=grad_viewspace.contiguous(),
+                        in_camera_grad_uv_cov_buffer=in_camera_grad_uv_cov_buffer.contiguous(),
+                        in_camera_grad_color_buffer=in_camera_grad_color_buffer.contiguous(),
+                        point_uv=point_uv.contiguous(),
+                        point_in_camera=point_in_camera.contiguous(),
+                        point_uv_conic=point_uv_conic.contiguous(),
+                        point_alpha_after_activation=point_alpha_after_activation.contiguous(),
+                        point_color=point_color.contiguous(),
                         need_extra_info=True,
-                        magnitude_grad_viewspace=magnitude_grad_viewspace,
-                        magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image,
-                        in_camera_num_affected_pixels=in_camera_num_affected_pixels,
+                        magnitude_grad_viewspace=magnitude_grad_viewspace.contiguous(),
+                        magnitude_grad_viewspace_on_image=magnitude_grad_viewspace_on_image.contiguous(),
+                        in_camera_num_affected_pixels=in_camera_num_affected_pixels.contiguous(),
                     )
                     del tile_points_start, tile_points_end, pixel_accumulated_alpha, pixel_offset_of_last_effective_point
                     grad_pointcloud_features = self._clear_grad_by_color_max_sh_band(
@@ -1196,12 +1249,12 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_object_id = input_data.point_object_id
         q_pointcloud_camera = input_data.q_pointcloud_camera
         t_pointcloud_camera = input_data.t_pointcloud_camera
-        q_camera_pointcloud, t_camera_pointcloud = inverse_se3_qt_torch(
+        q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
             q=q_pointcloud_camera, t=t_pointcloud_camera)
         color_max_sh_band = input_data.color_max_sh_band
         camera_info = input_data.camera_info
-        assert camera_info.camera_width % 16 == 0
-        assert camera_info.camera_height % 16 == 0
+        assert camera_info.camera_width % TILE_WIDTH == 0
+        assert camera_info.camera_height % TILE_HEIGHT == 0
         return self._module_function.apply(
             pointcloud,
             pointcloud_features,

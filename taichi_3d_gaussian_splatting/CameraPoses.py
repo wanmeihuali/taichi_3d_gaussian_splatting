@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from .utils import se3_to_quaternion_and_translation_torch
+from .utils import SE3_to_quaternion_and_translation_torch
 from typing import Any
 
 
@@ -21,7 +21,7 @@ class CameraPoses(nn.Module):
         self.t_pointcloud_camera_table = nn.Parameter(t_pointcloud_camera_table)
         
 
-    def forward(self, camera_pose_indices):
+    def forward(self, camera_pose_indices, reverse=False):
         q_pointcloud_camera = self.q_pointcloud_camera_table[camera_pose_indices].contiguous()
         t_pointcloud_camera = self.t_pointcloud_camera_table[camera_pose_indices].contiguous()
         return q_pointcloud_camera, t_pointcloud_camera
@@ -57,7 +57,7 @@ class CameraPoses(nn.Module):
                 T_pointcloud_camera = T_pointcloud_camera.unsqueeze(0)
             
             # both q_pointcloud_camera and t_pointcloud_camera are of shape (K, 4), K is num of objects
-            q_pointcloud_camera, t_pointcloud_camera = se3_to_quaternion_and_translation_torch(
+            q_pointcloud_camera, t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
                 T_pointcloud_camera)
             num_objects = q_pointcloud_camera.shape[0]
             q_pointcloud_camera_list.append(q_pointcloud_camera)
