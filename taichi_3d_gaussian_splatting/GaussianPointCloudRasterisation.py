@@ -78,7 +78,6 @@ def filter_point_in_camera(
             point_in_camera_mask[point_id] = ti.cast(0, ti.i8)
 
 
-
 @ti.func
 def get_bounding_box_by_point_and_radii(
     uv: ti.math.vec2,  # (2)
@@ -102,7 +101,6 @@ def get_bounding_box_by_point_and_radii(
     max_tile_v = ti.min(ti.max(max_tile_v, min_tile_v + 1),
                         camera_height // TILE_HEIGHT)
     return min_tile_u, max_tile_u, min_tile_v, max_tile_v
-
 
 
 @ti.kernel
@@ -236,7 +234,6 @@ def load_point_cloud_row_into_gaussian_point_3d(
         color_b=b_feature,
     )
     return gaussian_point_3d
-
 
 
 @ti.kernel
@@ -795,7 +792,7 @@ def gaussian_point_rasterisation_backward(
                     tile_camera_pose_q_grad[i,
                                             thread_id] = point_camera_pose_q_grad[i]
                 for i in ti.static(range(3)):
-                    tile_camera_pose_t_grad[i, 
+                    tile_camera_pose_t_grad[i,
                                             thread_id] = point_camera_pose_t_grad[i]
             else:
                 for i in ti.static(range(4)):
@@ -851,9 +848,11 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_invalid_mask: torch.Tensor  # N
         camera_info: CameraInfo
         # Kx4, x to the right, y down, z forward, K is the number of objects
-        q_pointcloud_camera: torch.Tensor
+        # q_pointcloud_camera: torch.Tensor
+        q_camera_pointcloud: torch.Tensor
         # Kx3, x to the right, y down, z forward, K is the number of objects
-        t_pointcloud_camera: torch.Tensor
+        # t_pointcloud_camera: torch.Tensor
+        t_camera_pointcloud: torch.Tensor
         color_max_sh_band: int = 2
 
     @dataclass
@@ -1247,10 +1246,16 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         pointcloud_features = input_data.point_cloud_features
         point_invalid_mask = input_data.point_invalid_mask
         point_object_id = input_data.point_object_id
+        """
         q_pointcloud_camera = input_data.q_pointcloud_camera
         t_pointcloud_camera = input_data.t_pointcloud_camera
         q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
             q=q_pointcloud_camera, t=t_pointcloud_camera)
+        """
+        q_camera_pointcloud = input_data.q_camera_pointcloud
+        t_camera_pointcloud = input_data.t_camera_pointcloud
+        q_pointcloud_camera, t_pointcloud_camera = inverse_SE3_qt_torch(
+            q=q_camera_pointcloud, t=t_camera_pointcloud)
         color_max_sh_band = input_data.color_max_sh_band
         camera_info = input_data.camera_info
         assert camera_info.camera_width % TILE_WIDTH == 0

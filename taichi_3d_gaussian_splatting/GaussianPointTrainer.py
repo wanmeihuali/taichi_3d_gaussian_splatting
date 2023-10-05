@@ -6,6 +6,7 @@ from .CameraPoses import CameraPoses
 from .GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from .GaussianPointAdaptiveController import GaussianPointAdaptiveController
 from .LossFunction import LossFunction
+from .utils import inverse_SE3_qt_torch
 import torch
 import argparse
 from dataclass_wizard import YAMLWizard
@@ -163,7 +164,7 @@ class GaussianPointCloudTrainer:
 
             image_gt, input_q_pointcloud_camera, input_t_pointcloud_camera, camera_pose_indices, camera_info = next(
                 train_data_loader_iter)
-            trained_q_pointcloud_camera, trained_t_pointcloud_camera = self.camera_poses(
+            trained_q_camera_pointcloud, trained_t_camera_pointcloud = self.camera_poses(
                 camera_pose_indices)
             if downsample_factor > 1:
                 image_gt, camera_info = GaussianPointCloudTrainer._downsample_image_and_camera_info(
@@ -171,8 +172,6 @@ class GaussianPointCloudTrainer:
             image_gt = image_gt.cuda()
             input_q_pointcloud_camera = input_q_pointcloud_camera.cuda()
             input_t_pointcloud_camera = input_t_pointcloud_camera.cuda()
-            trained_q_pointcloud_camera = trained_q_pointcloud_camera.cuda()
-            trained_t_pointcloud_camera = trained_t_pointcloud_camera.cuda()
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
             camera_info.camera_width = int(camera_info.camera_width)
             camera_info.camera_height = int(camera_info.camera_height)
@@ -182,8 +181,8 @@ class GaussianPointCloudTrainer:
                 point_object_id=self.scene.point_object_id,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 camera_info=camera_info,
-                q_pointcloud_camera=trained_q_pointcloud_camera,
-                t_pointcloud_camera=trained_t_pointcloud_camera,
+                q_camera_pointcloud=trained_q_camera_pointcloud, 
+                t_camera_pointcloud=trained_t_camera_pointcloud,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
             image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
@@ -395,6 +394,8 @@ class GaussianPointCloudTrainer:
                 image_gt = image_gt.cuda()
                 q_pointcloud_camera = q_pointcloud_camera.cuda()
                 t_pointcloud_camera = t_pointcloud_camera.cuda()
+                q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
+                    q=q_pointcloud_camera, t=t_pointcloud_camera)
                 camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
                 # make taichi happy.
                 camera_info.camera_width = int(camera_info.camera_width)
@@ -405,8 +406,8 @@ class GaussianPointCloudTrainer:
                     point_object_id=self.scene.point_object_id,
                     point_invalid_mask=self.scene.point_invalid_mask,
                     camera_info=camera_info,
-                    q_pointcloud_camera=q_pointcloud_camera,
-                    t_pointcloud_camera=t_pointcloud_camera,
+                    q_camera_pointcloud=q_camera_pointcloud,
+                    t_camera_pointcloud=t_camera_pointcloud,
                     color_max_sh_band=3
                 )
                 start_event.record()
