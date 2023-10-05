@@ -155,7 +155,10 @@ def generate_point_sort_key_by_num_overlap_tiles(
             camera_height=camera_height,
         )
 
-        point_depth = xyz_in_camera[2]
+        # use depth in ray rather than depth to camera plane, because occlusion is not handled in the depth to camera plane
+        # point_depth = xyz_in_camera[2]
+        point_depth = ti.sqrt(xyz_in_camera[0] * xyz_in_camera[0] +
+                              xyz_in_camera[1] * xyz_in_camera[1] + xyz_in_camera[2] * xyz_in_camera[2])
         encoded_projected_depth = ti.cast(
             point_depth * depth_to_sort_key_scale, ti.i32)
         for tile_u in range(min_tile_u, max_tile_u):
@@ -410,7 +413,13 @@ def gaussian_point_rasterisation(
                 tile_point_uv_conic[2,
                                     thread_id] = point_uv_conic[to_load_point_offset, 2]
                 if not rgb_only:
-                    tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
+                    # use depth in ray rather than depth to camera plane, because occlusion is not handled in the depth to camera plane
+                    # tile_point_depth[thread_id] = point_in_camera[to_load_point_offset, 2]
+                    tile_point_depth[thread_id] = ti.sqrt(
+                        point_in_camera[to_load_point_offset, 0] * point_in_camera[to_load_point_offset, 0] + \
+                        point_in_camera[to_load_point_offset, 1] * point_in_camera[to_load_point_offset, 1] + \
+                        point_in_camera[to_load_point_offset, 2] * point_in_camera[to_load_point_offset, 2])
+                                                          
                 tile_point_alpha[thread_id] = point_alpha_after_activation[to_load_point_offset]
 
                 tile_point_color[0,
