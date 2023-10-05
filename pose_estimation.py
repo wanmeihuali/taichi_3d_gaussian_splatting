@@ -1,4 +1,7 @@
 # %%
+import sys
+sys.path.append("../..")
+# %%
 import argparse
 import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
@@ -47,6 +50,7 @@ dataset_json_path = "data/tat_truck_every_8_test/train.json"
 
 rasterisation = GaussianPointCloudRasterisation(
     config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
+        enable_grad_camera_pose=True,
         near_plane=0.8,
         far_plane=1000.,
         depth_to_sort_key_scale=100.))
