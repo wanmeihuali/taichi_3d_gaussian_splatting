@@ -85,7 +85,7 @@ def get_bounding_box_by_point_and_radii(
     camera_width: ti.i32,
     camera_height: ti.i32,
 ):
-    radii = ti.max(radii, 1.0)   # avoid zero radii, at least 1 pixel
+    radii = ti.max(radii, 1.0)  # avoid zero radii, at least 1 pixel
     min_u = ti.max(0.0, uv[0] - radii)
     max_u = uv[0] + radii
     min_v = ti.max(0.0, uv[1] - radii)
@@ -848,10 +848,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         point_invalid_mask: torch.Tensor  # N
         camera_info: CameraInfo
         # Kx4, x to the right, y down, z forward, K is the number of objects
-        # q_pointcloud_camera: torch.Tensor
         q_camera_pointcloud: torch.Tensor
         # Kx3, x to the right, y down, z forward, K is the number of objects
-        # t_pointcloud_camera: torch.Tensor
         t_camera_pointcloud: torch.Tensor
         color_max_sh_band: int = 2
 
@@ -1246,12 +1244,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         pointcloud_features = input_data.point_cloud_features
         point_invalid_mask = input_data.point_invalid_mask
         point_object_id = input_data.point_object_id
-        """
-        q_pointcloud_camera = input_data.q_pointcloud_camera
-        t_pointcloud_camera = input_data.t_pointcloud_camera
-        q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
-            q=q_pointcloud_camera, t=t_pointcloud_camera)
-        """
         q_camera_pointcloud = input_data.q_camera_pointcloud
         t_camera_pointcloud = input_data.t_camera_pointcloud
         q_pointcloud_camera, t_pointcloud_camera = inverse_SE3_qt_torch(

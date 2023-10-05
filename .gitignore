@@ -10,3 +10,5 @@ image/
 *.qdstrm
 *.nsys-rep
 *.sqlite
+build/
+*.ll
