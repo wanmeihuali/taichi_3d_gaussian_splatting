@@ -40,12 +40,6 @@ jobs:
       issues: write
    
     steps:
-    - name: Maximize build space
-      uses: easimon/maximize-build-space@v8
-      with:
-        root-reserve-mb: 512
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
     - name: Check out code
       uses: actions/checkout@v3
       
@@ -72,6 +66,8 @@ jobs:
         # use the branch name for the Docker tag
         IMAGE_TAG: ${{ steps.get-branch-name.outputs.BRANCH_NAME }}
       run: |
+        docker system prune -af
+        docker volume prune -f
         aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 763104351884.dkr.ecr.us-east-2.amazonaws.com
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.aws .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
