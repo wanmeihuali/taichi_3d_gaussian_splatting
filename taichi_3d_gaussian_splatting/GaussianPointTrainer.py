@@ -331,8 +331,6 @@ class GaussianPointCloudTrainer:
             r_grad = feature_grad[:, 8:24]
             g_grad = feature_grad[:, 24:40]
             b_grad = feature_grad[:, 40:56]
-            grad_q_camera_pointcloud = grad_input.grad_q_camera_pointcloud
-            grad_t_camera_pointcloud = grad_input.grad_t_camera_pointcloud
             num_overlap_tiles = grad_input.num_overlap_tiles
             num_affected_pixels = grad_input.num_affected_pixels
             writer.add_histogram("grad/xyz_grad", xyz_grad, iteration)
@@ -347,13 +345,7 @@ class GaussianPointCloudTrainer:
                                  num_overlap_tiles, iteration)
             writer.add_histogram("value/num_affected_pixels",
                                  num_affected_pixels, iteration)
-            if grad_q_camera_pointcloud is not None:
-                writer.add_histogram(
-                    "grad/grad_q_camera_pointcloud", grad_q_camera_pointcloud, iteration)
-            if grad_t_camera_pointcloud is not None:
-                writer.add_histogram(
-                    "grad/grad_t_camera_pointcloud", grad_t_camera_pointcloud, iteration)
-
+            
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
         with torch.no_grad():
