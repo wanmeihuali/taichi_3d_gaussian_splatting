@@ -449,7 +449,7 @@ def gaussian_point_rasterisation(
                 # 255 ) and also clamp 𝛼 with 0.99 from above.
                 # print(
                 #     f"({pixel_v}, {pixel_u}, {point_offset}), alpha: {alpha}, accumulated_alpha: {accumulated_alpha}")
-                if alpha < 1. / 255.:
+                if alpha < 1. / 255. or ti.abs(gaussian_alpha) >= np.inf:
                     continue
                 alpha = ti.min(alpha, 0.99)
                 # from paper: before a Gaussian is included in the forward rasterization
