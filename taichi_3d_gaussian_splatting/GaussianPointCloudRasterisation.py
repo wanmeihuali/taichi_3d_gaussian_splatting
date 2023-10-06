@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import taichi as ti
 from dataclasses import dataclass
