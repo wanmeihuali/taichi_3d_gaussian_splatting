@@ -23,6 +23,7 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         self.df = pd.read_json(dataset_json_path, orient="records")
         for column in required_columns:
             assert column in self.df.columns, f"column {column} is not in the dataset"
+        self._check_num_objects()
 
     def __len__(self):
         # return 1 # for debugging
@@ -40,8 +41,11 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         image_path = self.df.iloc[idx]["image_path"]
         T_pointcloud_camera = self._pandas_field_to_tensor(
             self.df.iloc[idx]["T_pointcloud_camera"])
+        if len(T_pointcloud_camera.shape) == 2:
+                T_pointcloud_camera = T_pointcloud_camera.unsqueeze(0)
+
         q_pointcloud_camera, t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
-            T_pointcloud_camera.unsqueeze(0))
+            T_pointcloud_camera)
         camera_intrinsics = self._pandas_field_to_tensor(
             self.df.iloc[idx]["camera_intrinsics"])
         base_camera_height = self.df.iloc[idx]["camera_height"]
@@ -67,4 +71,22 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             camera_width=camera_width,
             camera_id=camera_id,
         )
-        return image, q_pointcloud_camera, t_pointcloud_camera, camera_info
+        # for each image there are num_objects camera poses, so indices are from idx * num_objects to (idx + 1) * num_objects
+        camera_pose_indices = torch.arange(idx * self.num_objects, (idx + 1) * self.num_objects)
+        return image, q_pointcloud_camera, t_pointcloud_camera, camera_pose_indices, camera_info
+
+
+    def _check_num_objects(self):
+        self.num_objects = None
+        for idx, row in self.df.iterrows():
+            T_pointcloud_camera = self._pandas_field_to_tensor(
+                row["T_pointcloud_camera"])
+            if len(T_pointcloud_camera.shape) == 2:
+                T_pointcloud_camera = T_pointcloud_camera.unsqueeze(0)
+            num_objects = T_pointcloud_camera.shape[0]
+            if self.num_objects is None:
+                self.num_objects = num_objects
+            elif self.num_objects != num_objects:
+                raise ValueError(
+                    f"num_objects in row {idx} is {num_objects}, but previous rows have {self.num_objects}")
+            

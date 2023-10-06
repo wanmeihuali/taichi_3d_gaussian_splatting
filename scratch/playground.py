@@ -2,6 +2,7 @@
 from Camera import CameraInfo
 from utils import get_ray_origin_and_direction_from_camera, get_ray_origin_and_direction_from_camera_by_gpt
 from utils import torch_single_point_alpha_forward
+# %%
 import scipy.spatial.transform as transform
 import taichi as ti
 import torch
@@ -48,6 +49,55 @@ D_translation_camrea_D_translation.simplify()
 print(latex(D_translation_camrea_D_translation))
 pprint(D_translation_camrea_D_translation, use_unicode=True)
 
+T_flatten = sympy.Matrix([[T[i, j]] for i in range(4) for j in range(4)])
+D_translation_camrea_D_T = translation_camera.jacobian(T_flatten)
+print(latex(D_translation_camrea_D_T))
+pprint(D_translation_camrea_D_T, use_unicode=True)
+
+# %%
+x = sympy.Symbol('qx')
+y = sympy.Symbol('qy')
+z = sympy.Symbol('qz')
+w = sympy.Symbol('qw')
+
+tx = sympy.Symbol('tx')
+ty = sympy.Symbol('ty')
+tz = sympy.Symbol('tz')
+
+xx = x * x
+yy = y * y
+zz = z * z
+xy = x * y
+xz = x * z
+yz = y * z
+wx = w * x
+wy = w * y
+wz = w * z
+q = sympy.Matrix([[x], [y], [z], [w]])
+t = sympy.Matrix([[tx], [ty], [tz]])
+T = sympy.Matrix([
+    [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy), tx],
+    [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx), ty],
+    [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy), tz],
+    [0, 0, 0, 1]
+])
+translation = sympy.MatrixSymbol('t', 3, 1)
+homogeneous_translation_camera = T @ sympy.Matrix(
+    [translation[0, 0], translation[1, 0], translation[2, 0], 1])
+translation_camera = sympy.Matrix([homogeneous_translation_camera[0, 0],
+                                  homogeneous_translation_camera[1, 0], homogeneous_translation_camera[2, 0]])
+
+D_translation_camrea_D_q = translation_camera.jacobian(q)
+D_translation_camrea_D_t = translation_camera.jacobian(translation)
+print(latex(D_translation_camrea_D_q))
+pprint(D_translation_camrea_D_q, use_unicode=True)
+print(latex(D_translation_camrea_D_t))
+pprint(D_translation_camrea_D_t, use_unicode=True)
+
+# %%
+print(D_translation_camrea_D_q.shape)
+
+
 # %%
 
 uv1 = (projective_transform @ translation_camera) / translation_camera[2, 0]
@@ -58,6 +108,10 @@ D_uv_D_translation = uv.jacobian(translation)
 D_uv_D_translation.simplify()
 print(latex(D_uv_D_translation))
 pprint(D_uv_D_translation, use_unicode=True)
+
+# %%
+
+
 # %%
 """
 U = J @ W # 2x3
@@ -830,4 +884,15 @@ plt.show()
 print(np.sqrt(eigen_values[0]) * 4)
 print(np.sqrt(eigen_values[1]) * 4)
 
+# %%
+import pandas as pd
+"/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_experiment/camera_poses_6000.parquet"
+df = pd.read_parquet("/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_with_pose_noise_optimization/camera_poses_10000.parquet")
+# %%
+df.head()
+# %%
+df1 = pd.read_parquet("/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_baseline/camera_poses_30000.parquet")
+# %%
+
+df1.head()
 # %%

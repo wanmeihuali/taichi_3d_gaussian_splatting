@@ -4,7 +4,7 @@ import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
-from taichi_3d_gaussian_splatting.utils import torch2ti, SE3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
+from taichi_3d_gaussian_splatting.utils import torch2ti, SE3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch, inverse_SE3_qt_torch
 from dataclasses import dataclass
 from typing import List, Tuple
 import torch
@@ -268,6 +268,10 @@ class GaussianPointVisualizer:
                 self.state.last_mouse_pos = None
 
             with torch.no_grad():
+                q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
+                    q=self.state.next_q_pointcloud_camera,
+                    t=self.state.next_t_pointcloud_camera
+                )
                 image, _, _ = self.rasteriser(
                     GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                         point_cloud=self.scene.point_cloud,
@@ -275,8 +279,8 @@ class GaussianPointVisualizer:
                         point_invalid_mask=self.scene.point_invalid_mask,
                         point_object_id=self.scene.point_object_id,
                         camera_info=self.camera_info,
-                        q_pointcloud_camera=self.state.next_q_pointcloud_camera,
-                        t_pointcloud_camera=self.state.next_t_pointcloud_camera,
+                        q_camera_pointcloud=q_camera_pointcloud,
+                        t_camera_pointcloud=t_camera_pointcloud,
                         color_max_sh_band=3,
                     )
                 )
