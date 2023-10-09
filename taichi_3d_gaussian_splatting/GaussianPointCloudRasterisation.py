@@ -509,6 +509,8 @@ def gaussian_point_rasterisation_backward(
     grad_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (N, 3)
     grad_pointcloud_features: ti.types.ndarray(ti.f32, ndim=2),  # (N, K)
     enable_grad_camera_pose: ti.template(),
+    enable_entropy_grad: ti.template(),
+    entropy_grad_factor: ti.f32,
     grad_q_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 4)
     grad_t_camera_pointcloud: ti.types.ndarray(ti.f32, ndim=2),  # (K, 3)
     grad_uv: ti.types.ndarray(ti.f32, ndim=2),  # (N, 2)
@@ -656,11 +658,14 @@ def gaussian_point_rasterisation_backward(
                     point_grad_color = d_pixel_rgb_d_color * pixel_rgb_grad
 
                     # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
-                    alpha_grad_from_rgb = (color * T_i - w_i / (1. - alpha)) \
+                    rgb_alpha_grad_vec = (color * T_i - w_i / (1. - alpha)) \
                         * pixel_rgb_grad
                     # w_{i-1} = w_i + c_i a_i T(i)
                     w_i += color * alpha * T_i
-                    alpha_grad: ti.f32 = alpha_grad_from_rgb.sum()
+                    alpha_grad: ti.f32 = rgb_alpha_grad_vec.sum()
+                    if enable_entropy_grad:
+                        entropy_alpha_grad: ti.f32 = -(T_i + T_i * ti.log(alpha * T_i))
+                        alpha_grad += entropy_alpha_grad * entropy_grad_factor
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
                         (1. - point_alpha_after_activation_value) * \
@@ -832,7 +837,9 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         far_plane: float = 1000.
         depth_to_sort_key_scale: float = 100.
         rgb_only: bool = False
-        enable_grad_camera_pose: bool = False
+        enable_grad_camera_pose: bool = True
+        enalbe_entropy_grad: bool = False
+        entropy_grad_factor: float = 0.2
         grad_color_factor = 5.
         grad_high_order_color_factor = 1.
         grad_s_factor = 0.5
@@ -1149,6 +1156,8 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         grad_pointcloud=grad_pointcloud.contiguous(),
                         grad_pointcloud_features=grad_pointcloud_features.contiguous(),
                         enable_grad_camera_pose=self.config.enable_grad_camera_pose,
+                        enable_entropy_grad=self.config.enalbe_entropy_grad,
+                        entropy_grad_factor=self.config.entropy_grad_factor,
                         grad_q_camera_pointcloud=grad_q_camera_pointcloud.contiguous(),
                         grad_t_camera_pointcloud=grad_t_camera_pointcloud.contiguous(),
                         grad_uv=grad_viewspace.contiguous(),
