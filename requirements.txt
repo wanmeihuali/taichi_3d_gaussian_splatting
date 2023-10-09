@@ -1,4 +1,4 @@
-taichi>=1.6.0
+taichi-nightly
 matplotlib
 numpy
 pytorch_msssim
