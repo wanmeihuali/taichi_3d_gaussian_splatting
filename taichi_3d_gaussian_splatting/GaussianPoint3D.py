@@ -211,7 +211,14 @@ class GaussianPoint3D:
         d_uv_d_q = d_uv_d_translation_camera @ d_translation_camera_d_q
         # d_uv_d_t = d_uv_d_translation_camera @ d_translation_camera_d_t
         d_uv_d_t = d_uv_d_translation_camera
-        return d_uv_d_translation, d_uv_d_q, d_uv_d_t
+        d_depth_dq = ti.math.vec4([
+            d_translation_camera_d_q[2, 0],
+            d_translation_camera_d_q[2, 1],
+            d_translation_camera_d_q[2, 2],
+            d_translation_camera_d_q[2, 3]
+        ])
+        d_depth_dt = ti.math.vec3([0, 0, 1])
+        return d_uv_d_translation, d_uv_d_q, d_uv_d_t, d_depth_dq, d_depth_dt
 
     @ti.func
     def project_to_camera_covariance(
