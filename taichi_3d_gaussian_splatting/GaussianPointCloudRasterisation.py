@@ -664,7 +664,7 @@ def gaussian_point_rasterisation_backward(
                     w_i += color * alpha * T_i
                     alpha_grad: ti.f32 = rgb_alpha_grad_vec.sum()
                     if enable_entropy_grad:
-                        entropy_alpha_grad: ti.f32 = (T_i + T_i * ti.log(alpha * T_i))
+                        entropy_alpha_grad: ti.f32 = -(T_i + T_i * ti.log(alpha * T_i))
                         alpha_grad += entropy_alpha_grad * entropy_grad_factor
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
