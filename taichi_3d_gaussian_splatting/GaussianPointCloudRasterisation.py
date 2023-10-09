@@ -838,7 +838,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         depth_to_sort_key_scale: float = 100.
         rgb_only: bool = False
         enable_grad_camera_pose: bool = True
-        enalbe_entropy_grad: bool = False
+        enalbe_entropy_grad: bool = True
         entropy_grad_factor: float = 0.2
         grad_color_factor = 5.
         grad_high_order_color_factor = 1.
