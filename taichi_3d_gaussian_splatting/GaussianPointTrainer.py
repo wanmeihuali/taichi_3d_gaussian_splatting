@@ -43,7 +43,7 @@ class GaussianPointCloudTrainer:
         iteration_start_camera_pose_optimization: int = 30000
         iteration_start_depth_cov_loss: int = 2000
         enable_depth_cov_loss: bool = True
-        initial_depth_cov_loss_factor: float = 0.2
+        initial_depth_cov_loss_factor: float = 0.4
         depth_cov_loss_factor_increase_interval: int = 1000
         depth_cov_loss_factor_increase_rate: float = 1.05511
         camera_pose_optimization_batch_size: int = 500
