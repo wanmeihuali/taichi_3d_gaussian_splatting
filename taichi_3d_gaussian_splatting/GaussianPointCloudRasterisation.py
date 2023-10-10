@@ -689,8 +689,8 @@ def gaussian_point_rasterisation_backward(
                     if enable_grad_depth_cov:
                         d_var_depth_d_depth = alpha * T_i * \
                             (point_depth - pixel_depth) * depth_cov_loss_factor
-                        d_var_depth_d_alpha = -T_i * \
-                            (point_depth - pixel_depth) ** 2 + p_i / (1. - alpha)
+                        d_var_depth_d_alpha = T_i * \
+                            (point_depth - pixel_depth) ** 2 - p_i / (1. - alpha)
                         p_i += alpha * T_i * (point_depth - pixel_depth) ** 2
 
                     alpha_grad += d_var_depth_d_alpha
