@@ -574,6 +574,10 @@ def gaussian_point_rasterisation_backward(
         # \frac{dC}{da_i} = c_i T(i) - \frac{1}{1 - a_i} w_i
         w_i = ti.math.vec3(0.0, 0.0, 0.0)
 
+        # \frac{\partial{Var(\bar{depth})}}{\partial{\alpha_i}} \propto T_i (d_i - \bar{depth})^2 - \frac{1}{1 - a_i} \sum_{j=i+1}^{n} (d_j - \bar{depth})^2 a_j T(j)
+        # let p_i = \sum_{j=i+1}^{n} (d_j - \bar{depth})^2 a_j T(j)
+        p_i = 0.0
+
         pixel_rgb_grad = ti.math.vec3(
             rasterized_image_grad[pixel_v, pixel_u, 0], rasterized_image_grad[pixel_v, pixel_u, 1], rasterized_image_grad[pixel_v, pixel_u, 2])
 
@@ -676,14 +680,20 @@ def gaussian_point_rasterisation_backward(
                     alpha_grad_from_rgb = (color * T_i - w_i / (1. - alpha)) \
                         * pixel_rgb_grad
 
-                    d_var_depth_d_depth = 0.0
-                    if enable_grad_depth_cov:
-                        d_var_depth_d_depth = alpha * T_i * \
-                            (point_depth - pixel_depth) * depth_cov_loss_factor
-
                     # w_{i-1} = w_i + c_i a_i T(i)
                     w_i += color * alpha * T_i
                     alpha_grad: ti.f32 = alpha_grad_from_rgb.sum()
+                    d_var_depth_d_depth = 0.0
+                    d_var_depth_d_alpha = 0.0
+
+                    if enable_grad_depth_cov:
+                        d_var_depth_d_depth = alpha * T_i * \
+                            (point_depth - pixel_depth) * depth_cov_loss_factor
+                        d_var_depth_d_alpha = -T_i * \
+                            (point_depth - pixel_depth) ** 2 + p_i / (1. - alpha)
+                        p_i += alpha * T_i * (point_depth - pixel_depth) ** 2
+
+                    alpha_grad += d_var_depth_d_alpha
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
                         (1. - point_alpha_after_activation_value) * \
