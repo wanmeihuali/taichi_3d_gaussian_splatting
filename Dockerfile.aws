@@ -5,5 +5,6 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -U taichi==1.6.0 matplotlib numpy pytorch_msssim dataclass-wizard pillow pyyaml pandas[parquet]==2.0.0 scipy argparse tensorboard
 COPY . /opt/ml/code
 WORKDIR /opt/ml/code
+RUN pip install -i https://pypi.taichi.graphics/simple/ taichi-nightly
 RUN pip install -r requirements.txt
 RUN pip install -e .
