@@ -36,6 +36,30 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         elif isinstance(field, torch.Tensor):
             return field
 
+    @staticmethod
+    def _autoscale_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo):
+        if camera_info.camera_height <= 1600 and camera_info.camera_width <= 1600:
+            return image, camera_info
+        image = transforms.functional.resize(image, size=1024, max_size=1600, antialias=True)
+        _, camera_height, camera_width = image.shape
+        scale_x = camera_width / camera_info.camera_width
+        scale_y = camera_height / camera_info.camera_height
+        camera_width = camera_width - camera_width % TILE_WIDTH
+        camera_height = camera_height - camera_height % TILE_HEIGHT
+        image = image[:3, :camera_height, :camera_width].contiguous()
+        camera_intrinsics = camera_info.camera_intrinsics
+        camera_intrinsics = camera_intrinsics.clone()
+        camera_intrinsics[0, 0] *= scale_x
+        camera_intrinsics[1, 1] *= scale_y
+        camera_intrinsics[0, 2] *= scale_x
+        camera_intrinsics[1, 2] *= scale_y
+        resized_camera_info = CameraInfo(
+            camera_intrinsics=camera_intrinsics,
+            camera_height=camera_height,
+            camera_width=camera_width,
+            camera_id=camera_info.camera_id)
+        return image, resized_camera_info
+
     def __getitem__(self, idx):
         image_path = self.df.iloc[idx]["image_path"]
         T_pointcloud_camera = self._pandas_field_to_tensor(
@@ -67,4 +91,5 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             camera_width=camera_width,
             camera_id=camera_id,
         )
+        image, camera_info = ImagePoseDataset._autoscale_image_and_camera_info(image, camera_info)
         return image, q_pointcloud_camera, t_pointcloud_camera, camera_info
