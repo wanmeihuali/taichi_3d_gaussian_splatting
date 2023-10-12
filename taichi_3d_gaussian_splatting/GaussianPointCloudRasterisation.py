@@ -518,6 +518,7 @@ def gaussian_point_rasterisation_backward(
     enable_grad_depth_cov: ti.template(),
     in_camera_grad_depth_buffer: ti.types.ndarray(ti.f32, ndim=1),  # (M,)
     depth_cov_loss_factor: ti.f32,
+    depth_cov_alpha_factor: ti.f32,
     rasterized_depth: ti.types.ndarray(ti.f32, ndim=2),  # (H, W)
 
     point_uv: ti.types.ndarray(ti.f32, ndim=2),  # (M, 2)
@@ -692,8 +693,9 @@ def gaussian_point_rasterisation_backward(
                         d_var_depth_d_alpha = T_i * \
                             (point_depth - pixel_depth) ** 2 - p_i / (1. - alpha)
                         p_i += alpha * T_i * (point_depth - pixel_depth) ** 2
+                        alpha_grad += d_var_depth_d_alpha * \
+                            depth_cov_alpha_factor
 
-                    alpha_grad += d_var_depth_d_alpha
                     point_alpha_after_activation_grad = alpha_grad * gaussian_alpha
                     gaussian_point_3d_alpha_grad = point_alpha_after_activation_grad * \
                         (1. - point_alpha_after_activation_value) * \
@@ -902,6 +904,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         color_max_sh_band: int = 2
         enable_depth_cov_loss: bool = True
         depth_cov_loss_factor: float = 0.2
+        depth_cov_alpha_factor: float = 0.02
 
     @dataclass
     class BackwardValidPointHookInput:
@@ -942,6 +945,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         color_max_sh_band,
                         enable_depth_cov_loss,
                         depth_cov_loss_factor,
+                        depth_cov_alpha_factor,
                         ):
                 point_in_camera_mask = torch.zeros(
                     size=(pointcloud.shape[0],), dtype=torch.int8, device=pointcloud.device)
@@ -1124,6 +1128,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 ctx.color_max_sh_band = color_max_sh_band
                 ctx.enable_depth_cov_loss = enable_depth_cov_loss
                 ctx.depth_cov_loss_factor = depth_cov_loss_factor
+                ctx.depth_cov_alpha_factor = depth_cov_alpha_factor
                 # rasterized_image.requires_grad_(True)
                 return rasterized_image, rasterized_depth, pixel_valid_point_count
 
@@ -1154,6 +1159,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     color_max_sh_band = ctx.color_max_sh_band
                     enable_depth_cov_loss = ctx.enable_depth_cov_loss
                     depth_cov_loss_factor = ctx.depth_cov_loss_factor
+                    depth_cov_alpha_factor = ctx.depth_cov_alpha_factor
                     grad_rasterized_image = grad_rasterized_image.contiguous()
                     grad_pointcloud = torch.zeros_like(pointcloud)
                     grad_pointcloud_features = torch.zeros_like(
@@ -1217,6 +1223,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                         enable_grad_depth_cov=enable_depth_cov_loss,
                         in_camera_grad_depth_buffer=in_camera_grad_depth_buffer.contiguous(),
                         depth_cov_loss_factor=depth_cov_loss_factor,
+                        depth_cov_alpha_factor=depth_cov_alpha_factor,
                         rasterized_depth=rasterized_depth.contiguous(),
                         point_uv=point_uv.contiguous(),
                         point_in_camera=point_in_camera.contiguous(),
@@ -1296,7 +1303,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                     grad_q_camera_pointcloud, \
                     grad_t_camera_pointcloud, \
                     None, \
-                    None, None, None, None
+                    None, None, None, None, None
 
         self._module_function = _module_function
 
@@ -1342,4 +1349,5 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
             color_max_sh_band,
             input_data.enable_depth_cov_loss,
             input_data.depth_cov_loss_factor,
+            input_data.depth_cov_alpha_factor,
         )
