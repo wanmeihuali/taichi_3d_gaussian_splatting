@@ -5,11 +5,17 @@ import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
-from taichi_3d_gaussian_splatting.utils import SE3_to_quaternion_and_translation_torch
+from taichi_3d_gaussian_splatting.utils import SE3_to_quaternion_and_translation_torch, quaternion_to_rotation_matrix_torch
 from dataclasses import dataclass
+from taichi_3d_gaussian_splatting.ImagePoseDataset import ImagePoseDataset
+
 import torch
+import torchvision
 import numpy as np
 from PIL import Image
+from pathlib import Path
+import os
+from tqdm import tqdm
 
 class GaussianPointRenderer:
     @dataclass
@@ -93,7 +99,7 @@ class GaussianPointRenderer:
 
     def run(self, output_prefix):
         num_cameras = self.cameras.shape[0]
-        for i in range(num_cameras):
+        for i in tqdm(range(num_cameras)):
             c = self.cameras[i, :, :].unsqueeze(0)
             q, t = SE3_to_quaternion_and_translation_torch(c)
 
@@ -112,24 +118,59 @@ class GaussianPointRenderer:
                 )
 
                 img = Image.fromarray(torch.clamp(image * 255, 0, 255).byte().cpu().numpy(), 'RGB')
-                img.save(f'{output_prefix}/frame_{i:03}.png')
+                img.save(output_prefix / f'frame_{i:03}.png')
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--parquet_path", type=str, required=True)
-    parser.add_argument("--poses", type=str, required=True)
+    parser.add_argument("--poses", type=str, required=True, help="could be a .pt file that was saved as torch.save(), or a json dataset file used by Taichi-GS")
     parser.add_argument("--output_prefix", type=str, required=True)
+    parser.add_argument("--gt_prefix", type=str, default="")
     parser.add_argument("--portrait_mode", action='store_true', default=False)
     args = parser.parse_args()
     ti.init(arch=ti.cuda, device_memory_GB=4, kernel_profiler=True)
 
-    config = GaussianPointRenderer.GaussianPointRendererConfig(
-        args.parquet_path,
-        torch.load(args.poses))
+    output_prefix = Path(args.output_prefix)
+    os.makedirs(output_prefix, exist_ok=True)
+    if args.gt_prefix:
+        gt_prefix = Path(args.gt_prefix)
+        os.makedirs(gt_prefix, exist_ok=True)
+    else:
+        gt_prefix = None
 
-    if args.portrait_mode:
-        config.set_portrait_mode()
+    if args.poses.endswith(".pt"):
+        config = GaussianPointRenderer.GaussianPointRendererConfig(
+            args.parquet_path, torch.load(args.poses))
+        if args.portrait_mode:
+            config.set_portrait_mode()
+    elif args.poses.endswith(".json"):
+        val_dataset = ImagePoseDataset(
+            dataset_json_path=args.poses)
+        val_data_loader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
+
+        cameras = torch.zeros((len(val_data_loader), 4, 4))
+        camera_info = None
+        for idx, val_data in enumerate(tqdm(val_data_loader)):
+            image_gt, q, t, camera_info = val_data
+            r = quaternion_to_rotation_matrix_torch(q)
+            cameras[idx, :3, :3] = r
+            cameras[idx, :3, 3] = t
+            cameras[idx, 3, 3] = 1.0
+            # dump autoscaled GT images at the resolution of training
+            if gt_prefix is not None:
+                img = torchvision.transforms.functional.to_pil_image(image_gt)
+                img.save(gt_prefix / f'frame_{idx:03}.png')
+        config = GaussianPointRenderer.GaussianPointRendererConfig(
+            args.parquet_path, cameras
+        )
+        # override camera meta data as provided
+        config.image_width = camera_info.camera_width
+        config.image_height = camera_info.camera_height
+        config.camera_intrinsics = camera_info.camera_intrinsics
+    else:
+        raise ValueError(f"Unrecognized poses file format: {args.poses}, Must be .pt or .json file")
 
     renderer = GaussianPointRenderer(config)
-    renderer.run(args.output_prefix)
+    renderer.run(output_prefix)

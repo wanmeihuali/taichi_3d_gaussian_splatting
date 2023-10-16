@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
-from scipy.spatial.ckdtree import cKDTree
+from scipy.spatial import cKDTree
 from typing import Optional, Union
 from dataclass_wizard import YAMLWizard
 from plyfile import PlyData, PlyElement
