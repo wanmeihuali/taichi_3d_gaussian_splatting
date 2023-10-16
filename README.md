@@ -34,7 +34,6 @@ Because the nice property of point cloud, the algorithm easily handles scene/obj
 https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/assets/18469933/bc38a103-e435-4d35-9239-940e605b4552
 
 
-
 <details><summary>other example result</summary>
 <p>
 
