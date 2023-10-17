@@ -1,5 +1,6 @@
 # %%
-from .GaussianPointCloudScene import GaussianPointCloudScene
+# from .GaussianPointCloudScene import GaussianPointCloudScene
+from .DynamicGaussianPointCloudScene import DynamicGaussianPointCloudScene
 from .ImagePoseDataset import ImagePoseDataset
 from .Camera import CameraInfo
 from .CameraPoses import CameraPoses
@@ -66,7 +67,7 @@ class GaussianPointCloudTrainer:
         output_model_dir: Optional[str] = None
         rasterisation_config: GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig()
         adaptive_controller_config: GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig = GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig()
-        gaussian_point_cloud_scene_config: GaussianPointCloudScene.PointCloudSceneConfig = GaussianPointCloudScene.PointCloudSceneConfig()
+        gaussian_point_cloud_scene_config: DynamicGaussianPointCloudScene.DynamicPointCloudSceneConfig = DynamicGaussianPointCloudScene.DynamicPointCloudSceneConfig()
         loss_function_config: LossFunction.LossFunctionConfig = LossFunction.LossFunctionConfig()
 
     def __init__(self, config: TrainConfig):
@@ -83,7 +84,7 @@ class GaussianPointCloudTrainer:
             dataset_json_path=self.config.train_dataset_json_path)
         self.val_dataset = ImagePoseDataset(
             dataset_json_path=self.config.val_dataset_json_path)
-        self.scene = GaussianPointCloudScene.from_parquet(
+        self.scene = DynamicGaussianPointCloudScene.from_parquet(
             self.config.pointcloud_parquet_path, config=self.config.gaussian_point_cloud_scene_config)
         self.camera_poses = CameraPoses(
             dataset_json_path=self.config.train_dataset_json_path)
@@ -92,8 +93,13 @@ class GaussianPointCloudTrainer:
         self.adaptive_controller = GaussianPointAdaptiveController(
             config=self.config.adaptive_controller_config,
             maintained_parameters=GaussianPointAdaptiveController.GaussianPointAdaptiveControllerMaintainedParameters(
-                pointcloud=self.scene.point_cloud,
-                pointcloud_features=self.scene.point_cloud_features,
+                pointcloud=self.scene.point_cloud_t_base,
+                point_cloud_q_base=self.scene.point_cloud_q_base,
+                point_cloud_s=self.scene.point_cloud_s,
+                point_cloud_alpha=self.scene.point_cloud_alpha,
+                point_cloud_r_sh=self.scene.point_cloud_r_sh,
+                point_cloud_g_sh=self.scene.point_cloud_g_sh,
+                point_cloud_b_sh=self.scene.point_cloud_b_sh,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 point_object_id=self.scene.point_object_id,
             ))
@@ -141,10 +147,16 @@ class GaussianPointCloudTrainer:
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
 
-        optimizer = torch.optim.Adam(
-            [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
+        optimizer = torch.optim.Adam([
+            self.scene.point_cloud_q_base,
+            self.scene.point_cloud_s,
+            self.scene.point_cloud_alpha,
+            self.scene.point_cloud_r_sh,
+            self.scene.point_cloud_g_sh,
+            self.scene.point_cloud_b_sh,
+        ], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
         position_optimizer = torch.optim.Adam(
-            [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
+            [self.scene.point_cloud_t_base], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
         camera_pose_optimizer = torch.optim.AdamW(
             self.camera_poses.parameters(), lr=self.config.camera_pose_learning_rate, betas=(0.9, 0.999))
 
@@ -183,9 +195,10 @@ class GaussianPointCloudTrainer:
             depth_cov_loss_factor = self.config.initial_depth_cov_loss_factor * \
                 self.config.depth_cov_loss_factor_increase_rate ** (
                     iteration // self.config.depth_cov_loss_factor_increase_interval)
+            point_cloud, point_cloud_features = self.scene()
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
-                point_cloud=self.scene.point_cloud,
-                point_cloud_features=self.scene.point_cloud_features,
+                point_cloud=point_cloud,
+                point_cloud_features=point_cloud_features,
                 point_object_id=self.scene.point_object_id,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 camera_info=camera_info,
@@ -205,7 +218,7 @@ class GaussianPointCloudTrainer:
                 image_pred,
                 image_gt,
                 point_invalid_mask=self.scene.point_invalid_mask,
-                pointcloud_features=self.scene.point_cloud_features)
+                pointcloud_features=point_cloud_features)
             loss.backward()
             optimizer.step()
             position_optimizer.step()
@@ -357,10 +370,11 @@ class GaussianPointCloudTrainer:
                                  num_affected_pixels, iteration)
 
     @staticmethod
-    def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
+    def _plot_value_histogram(scene: DynamicGaussianPointCloudScene, writer, iteration):
         with torch.no_grad():
-            valid_point_cloud = scene.point_cloud[scene.point_invalid_mask == 0]
-            valid_point_cloud_features = scene.point_cloud_features[scene.point_invalid_mask == 0]
+            point_cloud, point_cloud_features = scene()
+            valid_point_cloud = point_cloud[scene.point_invalid_mask == 0]
+            valid_point_cloud_features = point_cloud_features[scene.point_invalid_mask == 0]
             num_valid_points = valid_point_cloud.shape[0]
             q = valid_point_cloud_features[:, :4]
             s = valid_point_cloud_features[:, 4:7]
@@ -402,9 +416,10 @@ class GaussianPointCloudTrainer:
                 # make taichi happy.
                 camera_info.camera_width = int(camera_info.camera_width)
                 camera_info.camera_height = int(camera_info.camera_height)
+                point_cloud, point_cloud_features = self.scene()
                 gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
-                    point_cloud=self.scene.point_cloud,
-                    point_cloud_features=self.scene.point_cloud_features,
+                    point_cloud=point_cloud,
+                    point_cloud_features=point_cloud_features,
                     point_object_id=self.scene.point_object_id,
                     point_invalid_mask=self.scene.point_invalid_mask,
                     camera_info=camera_info,
