@@ -41,6 +41,11 @@ class GaussianPointCloudTrainer:
         val_interval: int = 1000
         feature_learning_rate: float = 1e-3
         iteration_start_camera_pose_optimization: int = 30000
+        iteration_start_depth_cov_loss: int = 2000
+        enable_depth_cov_loss: bool = True
+        initial_depth_cov_loss_factor: float = 0.4
+        depth_cov_loss_factor_increase_interval: int = 1000
+        depth_cov_loss_factor_increase_rate: float = 1.05511
         camera_pose_optimization_batch_size: int = 500
         position_learning_rate: float = 1e-5
         position_learning_rate_decay_rate: float = 0.97
@@ -175,15 +180,20 @@ class GaussianPointCloudTrainer:
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
             camera_info.camera_width = int(camera_info.camera_width)
             camera_info.camera_height = int(camera_info.camera_height)
+            depth_cov_loss_factor = self.config.initial_depth_cov_loss_factor * \
+                self.config.depth_cov_loss_factor_increase_rate ** (
+                    iteration // self.config.depth_cov_loss_factor_increase_interval)
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=self.scene.point_cloud,
                 point_cloud_features=self.scene.point_cloud_features,
                 point_object_id=self.scene.point_object_id,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 camera_info=camera_info,
-                q_camera_pointcloud=trained_q_camera_pointcloud, 
+                q_camera_pointcloud=trained_q_camera_pointcloud,
                 t_camera_pointcloud=trained_t_camera_pointcloud,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
+                enable_depth_cov_loss=self.config.enable_depth_cov_loss and iteration > self.config.iteration_start_depth_cov_loss,
+                depth_cov_loss_factor=depth_cov_loss_factor
             )
             image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
@@ -345,7 +355,7 @@ class GaussianPointCloudTrainer:
                                  num_overlap_tiles, iteration)
             writer.add_histogram("value/num_affected_pixels",
                                  num_affected_pixels, iteration)
-            
+
     @staticmethod
     def _plot_value_histogram(scene: GaussianPointCloudScene, writer, iteration):
         with torch.no_grad():
