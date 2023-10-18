@@ -412,7 +412,9 @@ class GaussianPointAdaptiveController:
         self.densify_point_info = None  # clear densify point info
 
     def reset_alpha(self):
-        self.maintained_parameters.point_cloud_s = self.config.reset_alpha_value
+        # self.maintained_parameters.point_cloud_s = self.config.reset_alpha_value
+        self.maintained_parameters.point_cloud_alpha.fill_(
+            self.config.reset_alpha_value)
 
     def _sample_from_point(self,
                            point_to_split: torch.Tensor,  # (N, 3)
