@@ -444,9 +444,6 @@ def gaussian_point_rasterisation(
                     gaussian_mean=uv,
                     conic=uv_conic,
                 )
-                # ad-hoc fix for numerical issues
-                if gaussian_alpha > 100000:
-                    gaussian_alpha = 0.
                 alpha = gaussian_alpha * point_alpha_after_activation_value
                 # from paper: we skip any blending updates with 𝛼 < 𝜖 (we choose 𝜖 as 1
                 # 255 ) and also clamp 𝛼 with 0.99 from above.
