@@ -188,11 +188,6 @@ class GaussianPoint3D:
         ])
 
         cov_uv = J @ W @ Sigma @ W.transpose() @ J.transpose()  # equation (5) in the paper
-
-        # Apply low-pass filter: every Gaussian should be at least one pixel wide/high. Discard 3rd row and column.
-        # https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/59f5f77e3ddbac3ed9db93ec2cfe99ed6c5d121d/cuda_rasterizer/forward.cu#L108-L111
-        cov_uv[0, 0] += 0.3
-        cov_uv[1, 1] += 0.3
         return cov_uv
 
     @ti.func
@@ -237,10 +232,6 @@ class GaussianPoint3D:
         ])
 
         cov_uv = J @ W @ Sigma @ W.transpose() @ J.transpose()  # equation (5) in the paper
-        # Apply low-pass filter: every Gaussian should be at least one pixel wide/high. Discard 3rd row and column.
-        # https://github.com/graphdeco-inria/diff-gaussian-rasterization/blob/59f5f77e3ddbac3ed9db93ec2cfe99ed6c5d121d/cuda_rasterizer/forward.cu#L108-L111
-        cov_uv[0, 0] += 0.3
-        cov_uv[1, 1] += 0.3
         return cov_uv
 
     @ti.func
@@ -271,7 +262,7 @@ class GaussianPoint3D:
         ])
 
         U = J @ W  # 2x3
-        # Sigma' = U @ Sigma @ U^T + 0.3 * Identity, so
+        # Sigma' = U @ Sigma @ U^T, so
         # d_Sigma' / d_Sigma =
         # \left[\begin{matrix}U_{0, 0}^{2} & U_{0, 0} U_{0, 1} & U_{0, 0} U_{0, 2} & U_{0, 0} U_{0, 1} & U_{0, 1}^{2} & U_{0, 1} U_{0, 2} & U_{0, 0} U_{0, 2} & U_{0, 1} U_{0, 2} & U_{0, 2}^{2}\\U_{0, 0} U_{1, 0} & U_{0, 0} U_{1, 1} & U_{0, 0} U_{1, 2} & U_{0, 1} U_{1, 0} & U_{0, 1} U_{1, 1} & U_{0, 1} U_{1, 2} & U_{0, 2} U_{1, 0} & U_{0, 2} U_{1, 1} & U_{0, 2} U_{1, 2}\\U_{0, 0} U_{1, 0} & U_{0, 1} U_{1, 0} & U_{0, 2} U_{1, 0} & U_{0, 0} U_{1, 1} & U_{0, 1} U_{1, 1} & U_{0, 2} U_{1, 1} & U_{0, 0} U_{1, 2} & U_{0, 1} U_{1, 2} & U_{0, 2} U_{1, 2}\\U_{1, 0}^{2} & U_{1, 0} U_{1, 1} & U_{1, 0} U_{1, 2} & U_{1, 0} U_{1, 1} & U_{1, 1}^{2} & U_{1, 1} U_{1, 2} & U_{1, 0} U_{1, 2} & U_{1, 1} U_{1, 2} & U_{1, 2}^{2}\end{matrix}\right]
         # as Sigma' and Sigma are matrix and the derivative is a tensor, so we use a 2x2x3x3 tensor to represent the derivative
