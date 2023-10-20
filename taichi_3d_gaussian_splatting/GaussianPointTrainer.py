@@ -322,7 +322,7 @@ class GaussianPointCloudTrainer:
             g = valid_point_cloud_features[:, 24:40]
             b = valid_point_cloud_features[:, 40:56]
             writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
-            print(f"num_valid_points={num_valid_points};")
+            # print(f"num_valid_points={num_valid_points};")
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)
