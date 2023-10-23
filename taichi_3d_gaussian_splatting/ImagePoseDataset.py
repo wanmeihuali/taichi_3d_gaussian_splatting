@@ -10,6 +10,7 @@ from typing import Any
 from .utils import SE3_to_quaternion_and_translation_torch
 from .GaussianPointCloudRasterisation import TILE_WIDTH, TILE_HEIGHT
 
+MAX_RESOLUTION_TRAIN=1600
 
 class ImagePoseDataset(torch.utils.data.Dataset):
     """
@@ -38,7 +39,7 @@ class ImagePoseDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def _autoscale_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo):
-        if camera_info.camera_height <= 1600 and camera_info.camera_width <= 1600:
+        if camera_info.camera_height <= MAX_RESOLUTION_TRAIN and camera_info.camera_width <= MAX_RESOLUTION_TRAIN:
             return image, camera_info
         image = transforms.functional.resize(image, size=1024, max_size=1600, antialias=True)
         _, camera_height, camera_width = image.shape
