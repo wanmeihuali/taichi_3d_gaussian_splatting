@@ -6,7 +6,7 @@ from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import (
     find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d, GaussianPointCloudRasterisation)
 from taichi_3d_gaussian_splatting.GaussianPoint3D import GaussianPoint3D, mat2x3f
 from taichi_3d_gaussian_splatting.SphericalHarmonics import SphericalHarmonics
-from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized, se3_to_quaternion_and_translation_torch
+from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized, SE3_to_quaternion_and_translation_torch
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from tqdm import tqdm
 
@@ -134,7 +134,7 @@ class TestRasterisation(unittest.TestCase):
             T_pointcloud_to_camera = torch.eye(
                 4, dtype=torch.float32, device=torch.device("cuda:0"))
             T_pointcloud_to_camera[2, 3] = -0.5
-            q_pointcloud_to_camera, t_pointcloud_to_camera = se3_to_quaternion_and_translation_torch(
+            q_pointcloud_to_camera, t_pointcloud_to_camera = SE3_to_quaternion_and_translation_torch(
                 T_pointcloud_to_camera.unsqueeze(0))
 
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
@@ -148,7 +148,7 @@ class TestRasterisation(unittest.TestCase):
             image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
-        
+
     def test_rasterisation_two_points(self):
         """
         test two points, both at the center of the image with different covariances and depth
@@ -158,9 +158,9 @@ class TestRasterisation(unittest.TestCase):
                 near_plane=0.0,
                 far_plane=10.0,
             ))
-        image_size = (16, 16)
+        image_size = (32, 32)
         point_cloud = torch.nn.Parameter(torch.tensor(
-            [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))       
+            [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]], dtype=torch.float32, device=torch.device("cuda:0")))
         point_cloud_features = torch.zeros(
             size=(2, 56), dtype=torch.float32, device=torch.device("cuda:0"))
         point_cloud_features[:, 3] = 1.0
@@ -175,7 +175,8 @@ class TestRasterisation(unittest.TestCase):
         point_cloud_features[:, 41:56] = 0.0
 
         point_cloud_features = torch.nn.Parameter(point_cloud_features)
-        point_object_id = torch.zeros(point_cloud.shape[0], dtype=torch.int32, device=torch.device("cuda:0"))
+        point_object_id = torch.zeros(
+            point_cloud.shape[0], dtype=torch.int32, device=torch.device("cuda:0"))
         point_invalid_mask = torch.zeros(
             size=(2,), dtype=torch.int8, device=torch.device("cuda:0"))
         point_invalid_mask[0] = 1
@@ -188,7 +189,7 @@ class TestRasterisation(unittest.TestCase):
         )
         T_camera_world = torch.eye(
             4, dtype=torch.float32, device=torch.device("cuda:0"))
-        q_pointcloud_to_camera, t_pointcloud_to_camera = se3_to_quaternion_and_translation_torch(
+        q_pointcloud_to_camera, t_pointcloud_to_camera = SE3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
 
         input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
@@ -202,8 +203,6 @@ class TestRasterisation(unittest.TestCase):
             color_max_sh_band=0)
         pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
         print(pred_image)
-
-        
 
     def test_backward_hook(self):
         """ use a fake image, and test if gradient descent can have a good coverage
@@ -241,7 +240,7 @@ class TestRasterisation(unittest.TestCase):
         T_camera_world = torch.eye(
             4, dtype=torch.float32, device=torch.device("cuda:0"))
         T_camera_world[2, 3] = -2
-        q_pointcloud_to_camera, t_pointcloud_to_camera = se3_to_quaternion_and_translation_torch(
+        q_pointcloud_to_camera, t_pointcloud_to_camera = SE3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
 
         def backward_valid_point_hook(input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
@@ -318,9 +317,9 @@ class TestRasterisation(unittest.TestCase):
         T_camera_world = torch.eye(
             4, dtype=torch.float32, device=torch.device("cuda:0"))
         T_camera_world[2, 3] = -2
-        q_camera_world, t_camera_world = se3_to_quaternion_and_translation_torch(
+        q_camera_world, t_camera_world = SE3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
-    
+
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
                 near_plane=1.,
