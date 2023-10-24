@@ -36,17 +36,29 @@ D_uv_D_translation_camera.simplify()
 print(latex(D_uv_D_translation_camera))
 pprint(D_uv_D_translation_camera, use_unicode=True)
 # %%
+import sympy
+from sympy import latex, pprint
 T = sympy.MatrixSymbol('T', 4, 4)
 translation = sympy.MatrixSymbol('t', 3, 1)
 homogeneous_translation_camera = T @ sympy.Matrix(
     [translation[0, 0], translation[1, 0], translation[2, 0], 1])
 translation_camera = sympy.Matrix([homogeneous_translation_camera[0, 0],
                                   homogeneous_translation_camera[1, 0], homogeneous_translation_camera[2, 0]])
+depth_camera = sympy.Matrix([homogeneous_translation_camera[2, 0]])
 
 D_translation_camrea_D_translation = translation_camera.jacobian(translation)
 D_translation_camrea_D_translation.simplify()
 print(latex(D_translation_camrea_D_translation))
 pprint(D_translation_camrea_D_translation, use_unicode=True)
+
+# %%
+D_depth_camera_D_translation = depth_camera.jacobian(translation)
+D_depth_camera_D_translation.simplify()
+print(latex(D_depth_camera_D_translation))
+pprint(D_depth_camera_D_translation, use_unicode=True)
+
+# %%
+
 
 # %%
 
