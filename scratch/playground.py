@@ -1,7 +1,13 @@
 # %%
+from scipy.stats import multivariate_normal
+import open3d as o3d
+from sympy import symbols, Matrix, diff, exp
+import matplotlib.pyplot as plt
+import pandas as pd
 from Camera import CameraInfo
 from utils import get_ray_origin_and_direction_from_camera, get_ray_origin_and_direction_from_camera_by_gpt
 from utils import torch_single_point_alpha_forward
+# %%
 import scipy.spatial.transform as transform
 import taichi as ti
 import torch
@@ -48,6 +54,55 @@ D_translation_camrea_D_translation.simplify()
 print(latex(D_translation_camrea_D_translation))
 pprint(D_translation_camrea_D_translation, use_unicode=True)
 
+T_flatten = sympy.Matrix([[T[i, j]] for i in range(4) for j in range(4)])
+D_translation_camrea_D_T = translation_camera.jacobian(T_flatten)
+print(latex(D_translation_camrea_D_T))
+pprint(D_translation_camrea_D_T, use_unicode=True)
+
+# %%
+x = sympy.Symbol('qx')
+y = sympy.Symbol('qy')
+z = sympy.Symbol('qz')
+w = sympy.Symbol('qw')
+
+tx = sympy.Symbol('tx')
+ty = sympy.Symbol('ty')
+tz = sympy.Symbol('tz')
+
+xx = x * x
+yy = y * y
+zz = z * z
+xy = x * y
+xz = x * z
+yz = y * z
+wx = w * x
+wy = w * y
+wz = w * z
+q = sympy.Matrix([[x], [y], [z], [w]])
+t = sympy.Matrix([[tx], [ty], [tz]])
+T = sympy.Matrix([
+    [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy), tx],
+    [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx), ty],
+    [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy), tz],
+    [0, 0, 0, 1]
+])
+translation = sympy.MatrixSymbol('t', 3, 1)
+homogeneous_translation_camera = T @ sympy.Matrix(
+    [translation[0, 0], translation[1, 0], translation[2, 0], 1])
+translation_camera = sympy.Matrix([homogeneous_translation_camera[0, 0],
+                                  homogeneous_translation_camera[1, 0], homogeneous_translation_camera[2, 0]])
+
+D_translation_camrea_D_q = translation_camera.jacobian(q)
+D_translation_camrea_D_t = translation_camera.jacobian(t)
+print(latex(D_translation_camrea_D_q))
+pprint(D_translation_camrea_D_q, use_unicode=True)
+print(latex(D_translation_camrea_D_t))
+pprint(D_translation_camrea_D_t, use_unicode=True)
+
+# %%
+print(D_translation_camrea_D_q.shape)
+
+
 # %%
 
 uv1 = (projective_transform @ translation_camera) / translation_camera[2, 0]
@@ -58,6 +113,10 @@ D_uv_D_translation = uv.jacobian(translation)
 D_uv_D_translation.simplify()
 print(latex(D_uv_D_translation))
 pprint(D_uv_D_translation, use_unicode=True)
+
+# %%
+
+
 # %%
 """
 U = J @ W # 2x3
@@ -249,7 +308,6 @@ print(J.shape)
 print(sympy.python(J))
 
 # %%
-import sympy
 xy = sympy.MatrixSymbol('xy', 2, 1)
 mu = sympy.Matrix(["mu_x", "mu_y"])
 cov = sympy.MatrixSymbol('cov', 2, 2)
@@ -271,7 +329,6 @@ J = p_vec.jacobian(tmp)
 print(J.shape)
 print(sympy.python(J))
 # %%
-import numpy as np
 xy = np.array([1, 2])
 x = xy[0]
 y = xy[1]
@@ -323,7 +380,6 @@ def gradient_cov(x, mean, cov):
 print(gradient_mean(xy, mu, cov))
 print(gradient_cov(xy, mu, cov))
 # %%
-import torch
 xy = torch.tensor([1., 2.])
 mu = torch.tensor([3., 1.], requires_grad=True)
 cov = torch.tensor([[0.8, 0.1], [0.1, 0.8]], requires_grad=True)
@@ -531,14 +587,11 @@ ray_origin, ray_direction = get_ray_origin_and_direction_from_camera(
     T_pointcloud_camera=T_pointcloud_camera)
 
 # %%
-import pandas as pd
-import numpy as np
 path = "logs/sigmoid_on_image_fix_bug/scene_66000.parquet"
 df = pd.read_parquet(path)
 # %%
 df.head()
 # %%
-import matplotlib.pyplot as plt
 plt.hist(np.exp(df.cov_s0), bins=100)
 # %%
 np.exp(df.cov_s0).argmax()
@@ -554,11 +607,11 @@ for col in df.columns:
     print(col, df[col].isnull().sum())
 
 # %%
-df = df.dropna() 
+df = df.dropna()
 
 # %%
-import numpy as np
-from sympy import symbols, Matrix, diff, exp
+
+
 def compute_derivatives(mu, Sigma, x):
     # 定义符号变量
     mu1, mu2, x1, x2 = symbols('mu1 mu2 x1 x2')
@@ -583,12 +636,13 @@ def compute_derivatives(mu, Sigma, x):
     """
 
     # 用实际值替换符号变量
-    subs = {mu1: mu[0], mu2: mu[1], x1: x[0], x2: x[1], 
+    subs = {mu1: mu[0], mu2: mu[1], x1: x[0], x2: x[1],
             s11: Sigma[0, 0], s12: Sigma[0, 1], s21: Sigma[1, 0], s22: Sigma[1, 1]}
     dp_dmu_val = dp_dmu.subs(subs)
     dp_dSigma_val = dp_dSigma.subs(subs)
 
     return dp_dmu_val, dp_dSigma_val
+
 
 # 测试函数
 mu = np.array([1, 2])
@@ -599,7 +653,7 @@ dp_dmu, dp_dSigma = compute_derivatives(mu, Sigma, x)
 print("dp/dmu:", dp_dmu)
 print("dp/dSigma:", dp_dSigma)
 # %%
-import torch
+
 
 def compute_derivatives_torch(mu, Sigma, x):
     # 将输入转换为PyTorch张量，并设置requires_grad=True以启用自动微分
@@ -617,6 +671,7 @@ def compute_derivatives_torch(mu, Sigma, x):
 
     return mu_torch.grad, Sigma_torch.grad
 
+
 def my_compute(mu, Sigma, x):
     gaussian_mean = mu
     xy = x
@@ -626,7 +681,7 @@ def my_compute(mu, Sigma, x):
     det_cov = Sigma[0, 0] * Sigma[1, 1] - Sigma[0, 1] * Sigma[1, 0]
     inv_cov = (1. / det_cov) * \
         np.array([[gaussian_covariance[1, 1], -gaussian_covariance[0, 1]],
-                      [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
+                  [-gaussian_covariance[1, 0], gaussian_covariance[0, 0]]])
     cov_inv_xy_mean = inv_cov @ xy_mean
     xy_mean_T_cov_inv_xy_mean = xy_mean @ cov_inv_xy_mean
     exponent = -0.5 * xy_mean_T_cov_inv_xy_mean
@@ -635,8 +690,9 @@ def my_compute(mu, Sigma, x):
     xy_mean_outer_xy_mean = np.array([[xy_mean[0] * xy_mean[0], xy_mean[0] * xy_mean[1]],
                                       [xy_mean[1] * xy_mean[0], xy_mean[1] * xy_mean[1]]])
     d_p_d_cov = 0.5 * p * (inv_cov @
-                            xy_mean_outer_xy_mean @ inv_cov)
+                           xy_mean_outer_xy_mean @ inv_cov)
     return d_p_d_mean, d_p_d_cov
+
 
 # 测试函数
 mu = np.array([1.0, 2.0])
@@ -657,7 +713,8 @@ for i in range(100):
     tmp = np.random.rand(2, 2)
     Sigma = tmp @ tmp.T
     dp_dmu, dp_dSigma = compute_derivatives(mu, Sigma, x)
-    dp_dmu, dp_dSigma = np.array(dp_dmu, dtype=np.float32), np.array(dp_dSigma, dtype=np.float32)
+    dp_dmu, dp_dSigma = np.array(dp_dmu, dtype=np.float32), np.array(
+        dp_dSigma, dtype=np.float32)
     dp_dmu = dp_dmu.reshape(-1)
     dp_dSigma = dp_dSigma.reshape(2, 2)
     dp_dmu_torch, dp_dSigma_torch = compute_derivatives_torch(mu, Sigma, x)
@@ -669,17 +726,16 @@ for i in range(100):
     print("dp/dSigma:", dp_dSigma)
     print("dp/dSigma (my):", dp_dSigma_my)
     print("dp/dSigma (torch):", dp_dSigma_torch)
-    
+
     # assert np.allclose(dp_dmu, dp_dmu_torch.detach().numpy(), rtol=1e-3), f"dp_dmu: {dp_dmu}, dp_dmu_torch: {dp_dmu_torch}"
     # assert np.allclose(dp_dSigma, dp_dSigma_torch.detach().numpy(), rtol=1e-3), f"dp_dSigma: {dp_dSigma}, dp_dSigma_torch: {dp_dSigma_torch}"
-    assert np.allclose(dp_dmu, dp_dmu_my, rtol=1e-3), f"dp_dmu: {dp_dmu}, dp_dmu_my: {dp_dmu_my}"
-    assert np.allclose(dp_dSigma, dp_dSigma_my, rtol=1e-3), f"dp_dSigma: {dp_dSigma}, dp_dSigma_my: {dp_dSigma_my}"
-    
-    
+    assert np.allclose(dp_dmu, dp_dmu_my,
+                       rtol=1e-3), f"dp_dmu: {dp_dmu}, dp_dmu_my: {dp_dmu_my}"
+    assert np.allclose(dp_dSigma, dp_dSigma_my,
+                       rtol=1e-3), f"dp_dSigma: {dp_dSigma}, dp_dSigma_my: {dp_dSigma_my}"
+
+
 # %%
-import pandas as pd
-import numpy as np
-import open3d as o3d
 parquet_path = "/home/kuangyuan/hdd/Development/taichi_3d_gaussian_splatting/logs/tat_truck_experiment_more_val/scene_13750.parquet"
 df = pd.read_parquet(parquet_path)
 # %%
@@ -687,7 +743,7 @@ df.head()
 # %%
 point_cloud = df[["x", "y", "z"]].values
 point_cloud_rgb = df[["r_sh0", "g_sh0", "b_sh0"]].values
-# here rgb are actually sh coefficients (-inf, inf), 
+# here rgb are actually sh coefficients (-inf, inf),
 # need to apply sigmoid to get (0, 1) rgb
 point_cloud_rgb = 1.0 / (1.0 + np.exp(-point_cloud_rgb))
 # %%
@@ -735,6 +791,7 @@ def rotation_matrix_from_quaternion(q: ti.math.vec4) -> ti.math.mat3:
     ])
 """
 
+
 def rotation_matrix_from_quaternion(q: np.ndarray) -> np.ndarray:
     xx = q[0] * q[0]
     yy = q[1] * q[1]
@@ -751,6 +808,7 @@ def rotation_matrix_from_quaternion(q: np.ndarray) -> np.ndarray:
         [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)]
     ])
 
+
 S = np.exp(s)
 
 rotated_S = np.zeros((len(q), 3))
@@ -760,8 +818,7 @@ for i in range(len(q)):
     normal[i] = rotation_matrix_from_quaternion(q[i]) @ base_vector[i]
     normal[i] *= np.linalg.norm(rotated_S[i])
 
- 
-    
+
 # %%
 point_cloud_o3d = o3d.geometry.PointCloud()
 point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud[mask])
@@ -770,8 +827,9 @@ point_cloud_o3d.normals = o3d.utility.Vector3dVector(normal[mask] * 3)
 o3d.visualization.draw_geometries([point_cloud_o3d])
 # %%
 
-import taichi as ti
 ti.init(arch=ti.cpu)
+
+
 @ti.kernel
 def test():
     Cov = ti.Matrix([
@@ -781,11 +839,10 @@ def test():
     eig, V = ti.sym_eig(Cov)
     print(eig)
     print(V)
+
+
 test()
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import multivariate_normal
 
 # Define the mean and covariance matrix
 mean = np.array([0, 0])
@@ -821,8 +878,10 @@ plt.figure(figsize=(6, 6))
 plt.imshow(mask, extent=(-50, 50, -50, 50), origin='lower')
 
 # plt eigenvectors
-plt.quiver(mean[0], mean[1], eigen_vectors[0, 0], eigen_vectors[1, 0], color='r', scale=10 / np.sqrt(eigen_values[0]))
-plt.quiver(mean[0], mean[1], eigen_vectors[0, 1], eigen_vectors[1, 1], color='r', scale=10 / np.sqrt(eigen_values[1]))
+plt.quiver(mean[0], mean[1], eigen_vectors[0, 0], eigen_vectors[1,
+           0], color='r', scale=10 / np.sqrt(eigen_values[0]))
+plt.quiver(mean[0], mean[1], eigen_vectors[0, 1], eigen_vectors[1,
+           1], color='r', scale=10 / np.sqrt(eigen_values[1]))
 
 plt.colorbar()
 plt.show()
@@ -830,4 +889,16 @@ plt.show()
 print(np.sqrt(eigen_values[0]) * 4)
 print(np.sqrt(eigen_values[1]) * 4)
 
+# %%
+"/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_experiment/camera_poses_6000.parquet"
+df = pd.read_parquet(
+    "/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_with_pose_noise_optimization/camera_poses_10000.parquet")
+# %%
+df.head()
+# %%
+df1 = pd.read_parquet(
+    "/home/kuangyuan/hdd/Development/other/taichi_3d_gaussian_splatting/logs/tat_truck_every_8_baseline/camera_poses_30000.parquet")
+# %%
+
+df1.head()
 # %%
