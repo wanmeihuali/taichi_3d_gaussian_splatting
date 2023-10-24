@@ -114,6 +114,28 @@
             "preLaunchTask": "install"
         },
         {
+            "name": "tat truck with noise",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/experiment/camera_pose_optimization/camera_pose_optimization.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/tat_truck_every_8_test.yaml",
+            ],
+            "preLaunchTask": "install"
+        },
+        {
+            "name": "tat truck pose estimation",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/experiment/camera_pose_optimization/pose_estimation.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "preLaunchTask": "install"
+        },
+        {
             "name": "tat m60 training",
             "type": "python",
             "request": "launch",
