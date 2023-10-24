@@ -9,6 +9,7 @@ mat9x9f = ti.types.matrix(n=9, m=9, dtype=ti.f32)
 mat9x3f = ti.types.matrix(n=9, m=3, dtype=ti.f32)
 mat4x9f = ti.types.matrix(n=4, m=9, dtype=ti.f32)
 mat9x4f = ti.types.matrix(n=9, m=4, dtype=ti.f32)
+mat3x4f = ti.types.matrix(n=3, m=4, dtype=ti.f32)
 
 
 @ti.func
@@ -49,7 +50,7 @@ def rotation_matrix_from_quaternion(q: ti.math.vec4) -> ti.math.mat3:
 
 
 @ti.func
-def tranform_matrix_from_quaternion_and_translation(q: ti.math.vec4, t: ti.math.vec3) -> ti.math.mat4:
+def transform_matrix_from_quaternion_and_translation(q: ti.math.vec4, t: ti.math.vec3) -> ti.math.mat4:
     """
     Convert a quaternion and a translation to a transformation matrix.
     """
@@ -85,6 +86,7 @@ def get_projective_transform_jacobian(
         [fx / z, 0, -(fx * x) / (z * z)],
         [0, fy / z, -(fy * y) / (z * z)]
     ])
+
 
 @ti.func
 def box_muller_transform(u1, u2):
@@ -128,7 +130,6 @@ class GaussianPoint3D:
         translation = quaternion_rotate(extra_rotation, translation)
         return project_point_to_camera(translation, T_camera_world, projective_transform)
 
-
     @ti.func
     def project_to_camera_position_jacobian(
         self,
@@ -157,6 +158,60 @@ class GaussianPoint3D:
         d_translation_camera_d_translation = W
         d_uv_d_translation = d_uv_d_translation_camera @ d_translation_camera_d_translation  # 2 x 3
         return d_uv_d_translation
+
+    @ti.func
+    def project_to_camera_position_by_q_t_jacobian(
+        self,
+        q_camera_world: ti.math.vec4,
+        t_camera_world: ti.math.vec3,
+        projective_transform: ti.math.mat3,
+    ):
+        T = transform_matrix_from_quaternion_and_translation(
+            q=q_camera_world, t=t_camera_world
+        )
+        W = ti.math.mat3([
+            [T[0, 0], T[0, 1], T[0, 2]],
+            [T[1, 0], T[1, 1], T[1, 2]],
+            [T[2, 0], T[2, 1], T[2, 2]]
+        ])
+
+        # the forward output is uv, cov_uv, the backward input is d_uv, d_cov_uv
+        # jacobian: d_uv / d_translation, d_cov_uv / d_cov_rotation, d_cov_uv / d_cov_scale
+        # in paper, d_cov_uv / d_cov_rotation is called d_Sigma' / dq, d_cov_uv / d_cov_scale is called d_Sigma' / ds
+        # t = self.translation
+        t = T @ ti.math.vec4(
+            [self.translation.x, self.translation.y, self.translation.z, 1])
+        K = projective_transform
+        # d_uv_d_translation_camera = \left[\begin{matrix}\frac{K_{0, 0}}{t_{2, 0}} & \frac{K_{0, 1}}{t_{2, 0}} & \frac{- K_{0, 0} t_{0, 0} - K_{0, 1} t_{1, 0}}{t_{2, 0}^{2}}\\\frac{K_{1, 0}}{t_{2, 0}} & \frac{K_{1, 1}}{t_{2, 0}} & \frac{- K_{1, 0} t_{0, 0} - K_{1, 1} t_{1, 0}}{t_{2, 0}^{2}}\end{matrix}\right]
+        d_uv_d_translation_camera = mat2x3f([
+            [K[0, 0] / t.z, K[0, 1] / t.z,
+                (-K[0, 0] * t.x - K[0, 1] * t.y) / (t.z * t.z)],
+            [K[1, 0] / t.z, K[1, 1] / t.z, (-K[1, 0] * t.x - K[1, 1] * t.y) / (t.z * t.z)]])
+        d_translation_camera_d_translation = W
+        d_uv_d_translation = d_uv_d_translation_camera @ d_translation_camera_d_translation  # 2 x 3
+        q = q_camera_world
+        # \left[\begin{matrix}2 qy t_{1, 0} + 2 qz t_{2, 0} & 2 qw t_{2, 0} + 2 qx t_{1, 0} - 4 qy t_{0, 0} & - 2 qw t_{1, 0} + 2 qx t_{2, 0} - 4 qz t_{0, 0} & 2 qy t_{2, 0} - 2 qz t_{1, 0}\\- 2 qw t_{2, 0} - 4 qx t_{1, 0} + 2 qy t_{0, 0} & 2 qx t_{0, 0} + 2 qz t_{2, 0} & 2 qw t_{0, 0} + 2 qy t_{2, 0} - 4 qz t_{1, 0} & - 2 qx t_{2, 0} + 2 qz t_{0, 0}\\2 qw t_{1, 0} - 4 qx t_{2, 0} + 2 qz t_{0, 0} & - 2 qw t_{0, 0} - 4 qy t_{2, 0} + 2 qz t_{1, 0} & 2 qx t_{0, 0} + 2 qy t_{1, 0} & 2 qx t_{1, 0} - 2 qy t_{0, 0}\end{matrix}\right]
+        tt = self.translation
+        d_translation_camera_d_q = mat3x4f([
+            [2 * q.y * tt.y + 2 * q.z * tt.z,
+             2 * q.w * tt.z + 2 * q.x * tt.y - 4 * q.y * tt.x,
+             -2 * q.w * tt.y + 2 * q.x * tt.z - 4 * q.z * tt.x,
+             2 * q.y * tt.z - 2 * q.z * tt.y],
+            [-2 * q.w * tt.z - 4 * q.x * tt.y + 2 * q.y * tt.x,
+             2 * q.x * tt.x + 2 * q.z * tt.z,
+             2 * q.w * tt.x + 2 * q.y * tt.z - 4 * q.z * tt.y,
+             -2 * q.x * tt.z + 2 * q.z * tt.x],
+            [2 * q.w * tt.y - 4 * q.x * tt.z + 2 * q.z * tt.x,
+             -2 * q.w * tt.x - 4 * q.y * tt.z + 2 * q.z * tt.y,
+             2 * q.x * tt.x + 2 * q.y * tt.y,
+             2 * q.x * tt.y - 2 * q.y * tt.x]])
+
+        # eye(3)
+        # d_translation_camera_d_t = ti.math.mat3.identity()
+        d_uv_d_q = d_uv_d_translation_camera @ d_translation_camera_d_q
+        # d_uv_d_t = d_uv_d_translation_camera @ d_translation_camera_d_t
+        d_uv_d_t = d_uv_d_translation_camera
+        return d_uv_d_translation, d_uv_d_q, d_uv_d_t
 
     @ti.func
     def project_to_camera_covariance(
@@ -196,7 +251,7 @@ class GaussianPoint3D:
         T_camera_world: ti.math.mat4,
         projective_transform: ti.math.mat3,
         translation_camera: ti.math.vec3,
-        extra_rotation_quaternion: ti.math.vec4, 
+        extra_rotation_quaternion: ti.math.vec4,
         extra_scale: ti.math.vec3,
     ):
         """
@@ -214,7 +269,7 @@ class GaussianPoint3D:
         ])
         # covariance matrix, 3x3, equation (6) in the paper
         Sigma = R @ S @ S.transpose() @ R.transpose()
-        
+
         # for inference, we can add extra rotation and scale to the covariance matrix
         # e.g. when we want to rotate or resize point cloud for an object in the scene
         R_extra = rotation_matrix_from_quaternion(extra_rotation_quaternion)
@@ -368,7 +423,7 @@ class GaussianPoint3D:
         r_jacobian = r_normalized_jacobian * r_jacobian
         g_jacobian = g_normalized_jacobian * g_jacobian
         b_jacobian = b_normalized_jacobian * b_jacobian
-        
+
         # return ti.math.vec3(r, g, b), r_jacobian, g_jacobian, b_jacobian
         return ti.math.vec3(r_normalized, g_normalized, b_normalized), r_jacobian, g_jacobian, b_jacobian
 
@@ -404,7 +459,6 @@ class GaussianPoint3D:
         ])
         base = ti.math.vec3(z1, z2, z3)
         return self.translation + R @ S @ base
-        
 
 
 # %%

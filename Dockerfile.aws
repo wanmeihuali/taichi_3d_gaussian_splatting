@@ -1,4 +1,5 @@
-FROM 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker
+# FROM 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker
+FROM 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference@sha256:69dcf4bccdf337e2eea1d195d63ec8f8528fab982a4697626684fe7f57a30a22
 # preinstall dependencies for faster build
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -U taichi==1.6.0 matplotlib numpy pytorch_msssim dataclass-wizard pillow pyyaml pandas[parquet]==2.0.0 scipy argparse tensorboard
