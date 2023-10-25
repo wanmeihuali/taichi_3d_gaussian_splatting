@@ -113,8 +113,7 @@ class GaussianPointCloudTrainer:
     def _downsample_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo, downsample_factor: int):
         camera_height = camera_info.camera_height // downsample_factor
         camera_width = camera_info.camera_width // downsample_factor
-        image = transforms.functional.resize(
-            image, size=(camera_height, camera_width))
+        image = transforms.functional.resize(image, size=(camera_height, camera_width), antialias=True)
         camera_width = camera_width - camera_width % 16
         camera_height = camera_height - camera_height % 16
         image = image[:3, :camera_height, :camera_width].contiguous()

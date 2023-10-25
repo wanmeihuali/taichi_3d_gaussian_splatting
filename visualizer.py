@@ -4,7 +4,7 @@ import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
-from taichi_3d_gaussian_splatting.utils import torch2ti, SE3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch, inverse_SE3_qt_torch
+from taichi_3d_gaussian_splatting.utils import torch2ti, SE3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
 from dataclasses import dataclass
 from typing import List, Tuple
 import torch

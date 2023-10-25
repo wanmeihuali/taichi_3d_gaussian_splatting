@@ -1,5 +1,5 @@
 adaptive-controller-config:
-  densification-view-space-position-gradients-threshold: 6e-6
+  densification-view-space-position-gradients-threshold: 3e-6
   densification_view_avg_space_position_gradients_threshold: 1e3
   densification_multi_frame_view_space_position_gradients_threshold: 1e3
   densification_multi_frame_view_pixel_avg_space_position_gradients_threshold: 1e3
@@ -28,7 +28,7 @@ log-image-interval: 200
 log-loss-interval: 10
 log-metrics-interval: 100
 print-metrics-to-console: False
-enable_taichi_kernel_profiler: True
+enable_taichi_kernel_profiler: False
 log_taichi_kernel_profile_interval: 3000
 iteration_start_camera_pose_optimization: 50000
 camera_pose_optimization_batch_size: 500
