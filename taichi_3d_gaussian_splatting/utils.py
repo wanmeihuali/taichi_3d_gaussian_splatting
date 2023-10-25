@@ -272,7 +272,6 @@ def get_point_conic_and_rescale(
     return conic_and_rescale
 
 
-
 @ti.func
 def get_point_probability_density_from_conic_and_rescale(
     xy: ti.math.vec2,
@@ -283,7 +282,6 @@ def get_point_probability_density_from_conic_and_rescale(
     exponent = -0.5 * (xy_mean.x * xy_mean.x * conic_and_rescale.x + xy_mean.y * xy_mean.y * conic_and_rescale.z) \
         - xy_mean.x * xy_mean.y * conic_and_rescale.y
     return ti.exp(exponent) * conic_and_rescale.w
-
 
 
 @ti.func
