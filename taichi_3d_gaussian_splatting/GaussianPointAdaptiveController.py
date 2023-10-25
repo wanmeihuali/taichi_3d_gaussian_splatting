@@ -277,7 +277,7 @@ class GaussianPointAdaptiveController:
             ax.legend()
             image_height = input_data.magnitude_grad_viewspace_on_image.shape[0]
             image_width = input_data.magnitude_grad_viewspace_on_image.shape[1]
-            print(image_height, image_width)
+            # print(image_height, image_width)
             ax.set_xlim([0, image_width])
             ax.set_ylim([image_height, 0])
             self.has_plot = True
@@ -354,7 +354,8 @@ class GaussianPointAdaptiveController:
 
     def reset_alpha(self):
         pointcloud_features = self.maintained_parameters.pointcloud_features
-        pointcloud_features[:, 7] = self.config.reset_alpha_value
+        pointcloud_features[:, 7] = torch.clamp(pointcloud_features[:, 7],
+                                                max=self.config.reset_alpha_value)
 
     def _generate_point_offset(self, 
                                point_to_split: torch.Tensor, # (N, 3)
