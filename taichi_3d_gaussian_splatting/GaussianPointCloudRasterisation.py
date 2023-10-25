@@ -1208,7 +1208,7 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
         color_max_sh_band = input_data.color_max_sh_band
         background_color = input_data.background_color
         if background_color is None:
-            background_color = torch.ones((3, ), dtype=torch.float32,
+            background_color = torch.zeros((3, ), dtype=torch.float32,
                                           device=pointcloud.device)
         camera_info = input_data.camera_info
         assert camera_info.camera_width % TILE_WIDTH == 0
