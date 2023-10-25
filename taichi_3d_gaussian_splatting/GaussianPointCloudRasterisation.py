@@ -275,7 +275,7 @@ def generate_point_attributes_in_camera_plane(  # from 3d gaussian to 2d feature
             [t_camera_pointcloud[point_object_id[point_id], idx] for idx in ti.static(range(3))])
         T_camera_pointcloud_mat = transform_matrix_from_quaternion_and_translation(
             q=point_q_camera_pointcloud,
-            t=point_t_camera_pointcloud>>>>>>> main,
+            t=point_t_camera_pointcloud,
         )
         T_pointcloud_camera = taichi_inverse_SE3(T_camera_pointcloud_mat)
         ray_origin = ti.math.vec3(
