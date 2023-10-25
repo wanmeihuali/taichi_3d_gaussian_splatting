@@ -3,9 +3,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dataclasses import dataclass
-from scipy.spatial.ckdtree import cKDTree
+from scipy.spatial import cKDTree
 from typing import Optional, Union
 from dataclass_wizard import YAMLWizard
+from plyfile import PlyData, PlyElement
 
 
 class GaussianPointCloudScene(torch.nn.Module):
@@ -143,6 +144,40 @@ class GaussianPointCloudScene(torch.nn.Module):
             valid_point_cloud_features.detach().cpu().numpy(), columns=feature_columns)
         scene_df = pd.concat([point_cloud_df, point_cloud_features_df], axis=1)
         scene_df.to_parquet(path)
+
+    def to_ply(self, path: str):
+        valid_point_cloud = self.point_cloud[self.point_invalid_mask == 0].detach().cpu()
+        valid_point_cloud_features = self.point_cloud_features[self.point_invalid_mask == 0].detach().cpu()
+        xyz = valid_point_cloud.numpy()
+        normals = np.zeros_like(xyz)
+        f_sh = valid_point_cloud_features[:, 8:].reshape(-1, 3, 16)
+        f_dc = f_sh[..., 0].numpy()
+        f_rest = f_sh[..., 1:].reshape(-1, 45).numpy()
+        opacities = valid_point_cloud_features[:, 7:8].numpy()
+        scale = valid_point_cloud_features[:, 4:7].numpy()
+        rotation = valid_point_cloud_features[:, [3, 0, 1, 2]].numpy()
+
+        def construct_list_of_attributes():
+            l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
+            # All channels except the 3 DC
+            for i in range(f_dc.shape[1]):
+                l.append('f_dc_{}'.format(i))
+            for i in range(f_rest.shape[1]):
+                l.append('f_rest_{}'.format(i))
+            l.append('opacity')
+            for i in range(scale.shape[1]):
+                l.append('scale_{}'.format(i))
+            for i in range(rotation.shape[1]):
+                l.append('rot_{}'.format(i))
+            return l
+
+        dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
+
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        elements[:] = list(map(tuple, attributes))
+        el = PlyElement.describe(elements, 'vertex')
+        PlyData([el]).write(path)
 
     @staticmethod
     def from_parquet(path: str, config=PointCloudSceneConfig()):

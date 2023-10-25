@@ -98,7 +98,7 @@ class GaussianPointCloudTrainer:
     def _downsample_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo, downsample_factor: int):
         camera_height = camera_info.camera_height // downsample_factor
         camera_width = camera_info.camera_width // downsample_factor
-        image = transforms.functional.resize(image, size=(camera_height, camera_width))
+        image = transforms.functional.resize(image, size=(camera_height, camera_width), antialias=True)
         camera_width = camera_width - camera_width % 16
         camera_height = camera_height - camera_height % 16
         image = image[:3, :camera_height, :camera_width].contiguous()
@@ -123,9 +123,9 @@ class GaussianPointCloudTrainer:
             self.val_dataset, batch_size=None, shuffle=False, pin_memory=True, num_workers=4)
         train_data_loader_iter = cycle(train_data_loader)
         
-        optimizer = torch.optim.AdamW(
+        optimizer = torch.optim.Adam(
             [self.scene.point_cloud_features], lr=self.config.feature_learning_rate, betas=(0.9, 0.999))
-        position_optimizer = torch.optim.AdamW(
+        position_optimizer = torch.optim.Adam(
             [self.scene.point_cloud], lr=self.config.position_learning_rate, betas=(0.9, 0.999))
 
         scheduler = torch.optim.lr_scheduler.ExponentialLR(
@@ -322,7 +322,7 @@ class GaussianPointCloudTrainer:
             g = valid_point_cloud_features[:, 24:40]
             b = valid_point_cloud_features[:, 40:56]
             writer.add_scalar("value/num_valid_points", num_valid_points, iteration)
-            print(f"num_valid_points={num_valid_points};")
+            # print(f"num_valid_points={num_valid_points};")
             writer.add_histogram("value/q", q, iteration)
             writer.add_histogram("value/s", s, iteration)
             writer.add_histogram("value/alpha", alpha, iteration)

@@ -63,12 +63,12 @@ The results for the official implementation and this implementation are tested o
 | Truck(7k) | this implementation | 23.762359619140625 | 0.835700511932373 | ~2.3e5 |
 | Truck(30k) | paper | 25.187 | 0.879 | - |
 | Truck(30k) | offcial implementation | 24.88 | - | 2.1e6 |
-| Truck(30k) | this implementation | 25.127460479736328 | 0.8657363057136536 | 4.62e5 |
+| Truck(30k) | this implementation | 25.21463966369629 | 0.8645088076591492 | 428687.0 |
 
-[Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/91#issuecomment-1630260288):
-| train:5kpsnr | train:5kssim | train:7kpsnr | train:7kssim | train:psnr | train:ssim | val:5kpsnr | val:5kssim | val:7kpsnr | val:7kssim | val:psnr | val:ssim |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 21.456432342529297 | 0.7930525541305542 | 26.37507438659668 | 0.8753818273544312 | 23.809328079223633 | 0.8456022143363953 | 23.075576782226562 | 0.8141209483146667 | 23.762359619140625 | 0.835700511932373 | 25.127460479736328 | 0.8657363057136536 |
+[Truck(30k)(recent best result)](https://github.com/wanmeihuali/taichi_3d_gaussian_splatting/pull/98#issuecomment-1634828783):
+| train:iteration | train:l1loss | train:loss | train:num_valid_points | train:psnr | train:ssim | train:ssimloss | val:loss | val:psnr | val:ssim |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 30000.0 | 0.02784738875925541 | 0.04742341861128807 | 428687.0 | 25.662137985229492 | 0.8742724657058716 | 0.12572753429412842 | 0.05369199812412262 | 25.21463966369629 | 0.8645088076591492 |
 
 
 ## Installation

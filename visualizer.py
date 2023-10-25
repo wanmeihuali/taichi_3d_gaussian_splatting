@@ -4,7 +4,7 @@ import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
-from taichi_3d_gaussian_splatting.utils import torch2ti, se3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
+from taichi_3d_gaussian_splatting.utils import torch2ti, SE3_to_quaternion_and_translation_torch, quaternion_rotate_torch, quaternion_multiply_torch, quaternion_conjugate_torch
 from dataclasses import dataclass
 from typing import List, Tuple
 import torch
@@ -71,7 +71,7 @@ class GaussianPointVisualizer:
             self.config.device)
         initial_T_pointcloud_camera = initial_T_pointcloud_camera.unsqueeze(
             0).repeat(len(scene_list), 1, 1)
-        initial_q_pointcloud_camera, initial_t_pointcloud_camera = se3_to_quaternion_and_translation_torch(
+        initial_q_pointcloud_camera, initial_t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
             initial_T_pointcloud_camera)
 
         self.state = self.GaussianPointVisualizerState(
@@ -107,14 +107,15 @@ class GaussianPointVisualizer:
             events = self.gui.get_events(self.gui.PRESS)
             start_offset = 0
             end_offset = self.scene.point_cloud.shape[0]
-            selected_objects = torch.arange(len(self.extra_scene_info_dict), device=self.config.device)
+            selected_objects = torch.arange(
+                len(self.extra_scene_info_dict), device=self.config.device)
             object_selected = self.state.selected_scene != 0
             move_factor = -1 if object_selected else 1
             if object_selected:
                 start_offset = self.extra_scene_info_dict[self.state.selected_scene - 1].start_offset
                 end_offset = self.extra_scene_info_dict[self.state.selected_scene - 1].end_offset
                 selected_objects = self.state.selected_scene - 1
-            
+
             for event in events:
                 if event.key >= "0" and event.key <= "9":
                     scene_index = int(event.key)
@@ -123,42 +124,48 @@ class GaussianPointVisualizer:
                 elif event.key == "w":
                     delta = torch.zeros_like(
                         self.state.next_t_pointcloud_camera)
-                    delta[selected_objects, 2] = self.config.step_size * move_factor
+                    delta[selected_objects,
+                          2] = self.config.step_size * move_factor
                     delta = quaternion_rotate_torch(
                         v=delta, q=self.state.next_q_pointcloud_camera)
                     self.state.next_t_pointcloud_camera += delta
                 elif event.key == "s":
                     delta = torch.zeros_like(
                         self.state.next_t_pointcloud_camera)
-                    delta[selected_objects, 2] = -self.config.step_size * move_factor
+                    delta[selected_objects, 2] = - \
+                        self.config.step_size * move_factor
                     delta = quaternion_rotate_torch(
                         v=delta, q=self.state.next_q_pointcloud_camera)
                     self.state.next_t_pointcloud_camera += delta
                 elif event.key == "a":
                     delta = torch.zeros_like(
                         self.state.next_t_pointcloud_camera)
-                    delta[selected_objects, 0] = -self.config.step_size * move_factor
+                    delta[selected_objects, 0] = - \
+                        self.config.step_size * move_factor
                     delta = quaternion_rotate_torch(
                         v=delta, q=self.state.next_q_pointcloud_camera)
                     self.state.next_t_pointcloud_camera += delta
                 elif event.key == "d":
                     delta = torch.zeros_like(
                         self.state.next_t_pointcloud_camera)
-                    delta[selected_objects, 0] = self.config.step_size * move_factor
+                    delta[selected_objects,
+                          0] = self.config.step_size * move_factor
                     delta = quaternion_rotate_torch(
                         v=delta, q=self.state.next_q_pointcloud_camera)
                     self.state.next_t_pointcloud_camera += delta
                 elif event.key == "-":
                     delta = torch.zeros_like(
                         self.state.next_t_pointcloud_camera)
-                    delta[selected_objects, 1] = self.config.step_size * move_factor
+                    delta[selected_objects,
+                          1] = self.config.step_size * move_factor
                     delta = quaternion_rotate_torch(
                         v=delta, q=self.state.next_q_pointcloud_camera)
                     self.state.next_t_pointcloud_camera += delta
                 elif event.key == "=":
                     delta = torch.zeros_like(
                         self.state.next_t_pointcloud_camera)
-                    delta[selected_objects, 1] = -self.config.step_size * move_factor
+                    delta[selected_objects, 1] = - \
+                        self.config.step_size * move_factor
                     delta = quaternion_rotate_torch(
                         v=delta, q=self.state.next_q_pointcloud_camera)
                     self.state.next_t_pointcloud_camera += delta
@@ -166,24 +173,32 @@ class GaussianPointVisualizer:
                     delta_q = torch.zeros_like(
                         self.state.next_q_pointcloud_camera)
                     delta_q[..., 3] = 1.
-                    delta_q[selected_objects, 3] = np.cos(-self.config.step_size / 2 * move_factor)
-                    delta_q[selected_objects, 1] = np.sin(-self.config.step_size / 2 * move_factor)
-                    delta_q = delta_q / torch.norm(delta_q, dim=-1, keepdim=True)
+                    delta_q[selected_objects,
+                            3] = np.cos(-self.config.step_size / 2 * move_factor)
+                    delta_q[selected_objects,
+                            1] = np.sin(-self.config.step_size / 2 * move_factor)
+                    delta_q = delta_q / \
+                        torch.norm(delta_q, dim=-1, keepdim=True)
                     self.state.next_q_pointcloud_camera = quaternion_multiply_torch(
                         self.state.next_q_pointcloud_camera, delta_q)
                     self.state.next_q_pointcloud_camera = self.state.next_q_pointcloud_camera / \
-                        torch.norm(self.state.next_q_pointcloud_camera, dim=-1, keepdim=True)
+                        torch.norm(self.state.next_q_pointcloud_camera,
+                                   dim=-1, keepdim=True)
                 elif event.key == "e":
                     delta_q = torch.zeros_like(
                         self.state.next_q_pointcloud_camera)
                     delta_q[..., 3] = 1.
-                    delta_q[selected_objects, 3] = np.cos(self.config.step_size / 2 * move_factor)
-                    delta_q[selected_objects, 1] = np.sin(self.config.step_size / 2 * move_factor)
-                    delta_q = delta_q / torch.norm(delta_q, dim=-1, keepdim=True)
+                    delta_q[selected_objects, 3] = np.cos(
+                        self.config.step_size / 2 * move_factor)
+                    delta_q[selected_objects, 1] = np.sin(
+                        self.config.step_size / 2 * move_factor)
+                    delta_q = delta_q / \
+                        torch.norm(delta_q, dim=-1, keepdim=True)
                     self.state.next_q_pointcloud_camera = quaternion_multiply_torch(
                         self.state.next_q_pointcloud_camera, delta_q)
                     self.state.next_q_pointcloud_camera = self.state.next_q_pointcloud_camera / \
-                        torch.norm(self.state.next_q_pointcloud_camera, dim=-1, keepdim=True)
+                        torch.norm(self.state.next_q_pointcloud_camera,
+                                   dim=-1, keepdim=True)
                 elif event.key == "h":
                     self.scene.point_invalid_mask[start_offset:end_offset] = 1
                 elif event.key == "p":
@@ -194,16 +209,20 @@ class GaussianPointVisualizer:
                 if self.state.last_mouse_pos is None:
                     self.state.last_mouse_pos = mouse_pos
                 else:
-                    dy, dx = mouse_pos[0] - self.state.last_mouse_pos[0], mouse_pos[1] - self.state.last_mouse_pos[1]
+                    dy, dx = mouse_pos[0] - self.state.last_mouse_pos[0], mouse_pos[1] - \
+                        self.state.last_mouse_pos[1]
                     angle_x = dx * self.config.mouse_sensitivity
                     angle_y = dy * self.config.mouse_sensitivity
                     if self.state.selected_scene != 0:
-                        pointcloud_object_center = self.extra_scene_info_dict[self.state.selected_scene - 1].center.unsqueeze(0)
-                        pointcloud_object_center = pointcloud_object_center.to(self.state.next_t_pointcloud_camera.device)
+                        pointcloud_object_center = self.extra_scene_info_dict[self.state.selected_scene - 1].center.unsqueeze(
+                            0)
+                        pointcloud_object_center = pointcloud_object_center.to(
+                            self.state.next_t_pointcloud_camera.device)
                         pointcloud_camera_to_center = pointcloud_object_center - \
                             self.state.next_t_pointcloud_camera[selected_objects]
                         camera_camera_to_center = quaternion_rotate_torch(
-                            q=quaternion_conjugate_torch(self.state.next_q_pointcloud_camera[selected_objects]),
+                            q=quaternion_conjugate_torch(
+                                self.state.next_q_pointcloud_camera[selected_objects]),
                             v=pointcloud_camera_to_center)
 
                     delta_q_y = torch.zeros_like(
@@ -211,33 +230,39 @@ class GaussianPointVisualizer:
                     delta_q_y[..., 3] = 1.
                     delta_q_y[selected_objects, 3] = np.cos(angle_y / 2)
                     delta_q_y[selected_objects, 1] = np.sin(angle_y / 2)
-                    delta_q_y = delta_q_y / torch.norm(delta_q_y, dim=-1, keepdim=True)
+                    delta_q_y = delta_q_y / \
+                        torch.norm(delta_q_y, dim=-1, keepdim=True)
 
                     self.state.next_q_pointcloud_camera = quaternion_multiply_torch(
                         self.state.next_q_pointcloud_camera, delta_q_y)
                     self.state.next_q_pointcloud_camera = self.state.next_q_pointcloud_camera / \
-                        torch.norm(self.state.next_q_pointcloud_camera, dim=-1, keepdim=True)
+                        torch.norm(self.state.next_q_pointcloud_camera,
+                                   dim=-1, keepdim=True)
 
                     delta_q_x = torch.zeros_like(
                         self.state.next_q_pointcloud_camera)
                     delta_q_x[..., 3] = 1.
                     delta_q_x[selected_objects, 3] = np.cos(angle_x / 2)
                     delta_q_x[selected_objects, 0] = np.sin(angle_x / 2)
-                    delta_q_x = delta_q_x / torch.norm(delta_q_x, dim=-1, keepdim=True)
+                    delta_q_x = delta_q_x / \
+                        torch.norm(delta_q_x, dim=-1, keepdim=True)
 
                     self.state.next_q_pointcloud_camera = quaternion_multiply_torch(
                         self.state.next_q_pointcloud_camera, delta_q_x)
                     self.state.next_q_pointcloud_camera = self.state.next_q_pointcloud_camera / \
-                        torch.norm(self.state.next_q_pointcloud_camera, dim=-1, keepdim=True)
+                        torch.norm(self.state.next_q_pointcloud_camera,
+                                   dim=-1, keepdim=True)
 
                     if object_selected:
-                        pointcloud_object_center = self.extra_scene_info_dict[self.state.selected_scene - 1].center.unsqueeze(0)
-                        pointcloud_object_center = pointcloud_object_center.to(self.state.next_t_pointcloud_camera.device)
+                        pointcloud_object_center = self.extra_scene_info_dict[self.state.selected_scene - 1].center.unsqueeze(
+                            0)
+                        pointcloud_object_center = pointcloud_object_center.to(
+                            self.state.next_t_pointcloud_camera.device)
                         object_center_new = quaternion_rotate_torch(
                             q=self.state.next_q_pointcloud_camera[selected_objects],
                             v=camera_camera_to_center)
                         self.state.next_t_pointcloud_camera[selected_objects] = pointcloud_object_center - object_center_new
-                        
+
                     self.state.last_mouse_pos = mouse_pos
             else:
                 self.state.last_mouse_pos = None
@@ -293,6 +318,7 @@ class GaussianPointVisualizer:
                 max_num_points_ratio=None
             ))
         return merged_scene
+
 
 # %%
 if __name__ == "__main__":

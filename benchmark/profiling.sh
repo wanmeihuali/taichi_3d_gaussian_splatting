@@ -1,0 +1,1 @@
+nsys profile -w true -t cuda,nvtx,osrt,cudnn,cublas -s none -o nsight_report_ply_parquet -f true -x true python benchmark/inference_benchmark.py
