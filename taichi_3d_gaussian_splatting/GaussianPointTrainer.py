@@ -42,7 +42,7 @@ class GaussianPointCloudTrainer:
         feature_learning_rate: float = 1e-3
         iteration_start_camera_pose_optimization: int = 30000
         iteration_start_depth_cov_loss: int = 2000
-        enable_depth_cov_loss: bool = True
+        enable_depth_cov_loss: bool = False
         initial_depth_cov_loss_factor: float = 0.4
         depth_cov_loss_factor_increase_interval: int = 1000
         depth_cov_loss_factor_increase_rate: float = 1.05511
