@@ -6,7 +6,7 @@ from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import (
     find_tile_start_and_end, load_point_cloud_row_into_gaussian_point_3d, GaussianPointCloudRasterisation)
 from taichi_3d_gaussian_splatting.GaussianPoint3D import GaussianPoint3D, mat2x3f
 from taichi_3d_gaussian_splatting.SphericalHarmonics import SphericalHarmonics
-from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized, SE3_to_quaternion_and_translation_torch
+from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_2d_normalized, torch_single_point_alpha_forward, torch_single_point_forward, get_point_probability_density_from_2d_gaussian_normalized, SE3_to_quaternion_and_translation_torch, inverse_SE3_qt_torch
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from tqdm import tqdm
 
@@ -136,6 +136,9 @@ class TestRasterisation(unittest.TestCase):
             T_pointcloud_to_camera[2, 3] = -0.5
             q_pointcloud_to_camera, t_pointcloud_to_camera = SE3_to_quaternion_and_translation_torch(
                 T_pointcloud_to_camera.unsqueeze(0))
+            q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
+                q=q_pointcloud_to_camera, t=t_pointcloud_to_camera
+            )
 
             input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=point_cloud,
@@ -143,8 +146,9 @@ class TestRasterisation(unittest.TestCase):
                 point_object_id=point_object_id,
                 point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
-                q_pointcloud_camera=q_pointcloud_to_camera,
-                t_pointcloud_camera=t_pointcloud_to_camera)
+                q_camera_pointcloud=q_camera_pointcloud,
+                t_camera_pointcloud=t_camera_pointcloud,
+            )
             image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = image.sum()
             loss.backward()
@@ -191,6 +195,8 @@ class TestRasterisation(unittest.TestCase):
             4, dtype=torch.float32, device=torch.device("cuda:0"))
         q_pointcloud_to_camera, t_pointcloud_to_camera = SE3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
+        q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
+            q=q_pointcloud_to_camera, t=t_pointcloud_to_camera)
 
         input_data = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
             point_cloud=point_cloud,
@@ -198,8 +204,8 @@ class TestRasterisation(unittest.TestCase):
             point_object_id=point_object_id,
             point_invalid_mask=point_invalid_mask,
             camera_info=camera_info,
-            q_pointcloud_camera=q_pointcloud_to_camera,
-            t_pointcloud_camera=t_pointcloud_to_camera,
+            q_camera_pointcloud=q_camera_pointcloud,
+            t_camera_pointcloud=t_camera_pointcloud,
             color_max_sh_band=0)
         pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
         print(pred_image)
@@ -242,6 +248,9 @@ class TestRasterisation(unittest.TestCase):
         T_camera_world[2, 3] = -2
         q_pointcloud_to_camera, t_pointcloud_to_camera = SE3_to_quaternion_and_translation_torch(
             T_camera_world.unsqueeze(0))
+        q_camera_pointcloud, t_camera_pointcloud = inverse_SE3_qt_torch(
+            q=q_pointcloud_to_camera, t=t_pointcloud_to_camera)
+
 
         def backward_valid_point_hook(input_data: GaussianPointCloudRasterisation.BackwardValidPointHookInput):
             num_points_in_camera = input_data.point_id_in_camera_list.shape[0]
@@ -273,15 +282,16 @@ class TestRasterisation(unittest.TestCase):
             point_object_id=point_object_id,
             point_invalid_mask=point_invalid_mask,
             camera_info=camera_info,
-            q_pointcloud_camera=q_pointcloud_to_camera,
-            t_pointcloud_camera=t_pointcloud_to_camera)
+            q_camera_pointcloud=q_camera_pointcloud,
+            t_camera_pointcloud=t_camera_pointcloud,
+        )
         pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
         loss = ((pred_image - fake_image)**2).sum()
         loss.backward()
         optimizer.step()
         print(f"loss: {loss.item()}")
 
-    def test_backward_coverage(self):
+    def test_backward_convergence(self):
         """ use a fake image, and test if gradient descent can have a good coverage
         """
         image_size = (32, 32)
@@ -314,11 +324,13 @@ class TestRasterisation(unittest.TestCase):
             camera_intrinsics=torch.tensor([[32, 0, 16], [0, 32, 16], [
                                            0, 0, 1]], dtype=torch.float32, device=torch.device("cuda:0")),
         )
-        T_camera_world = torch.eye(
+        T_world_camera = torch.eye(
             4, dtype=torch.float32, device=torch.device("cuda:0"))
-        T_camera_world[2, 3] = -2
-        q_camera_world, t_camera_world = SE3_to_quaternion_and_translation_torch(
-            T_camera_world.unsqueeze(0))
+        T_world_camera[2, 3] = -2
+        q_world_camera, t_world_camera = SE3_to_quaternion_and_translation_torch(
+            T_world_camera.unsqueeze(0))
+        q_camera_world, t_camera_world = inverse_SE3_qt_torch(
+            q=q_world_camera, t=t_world_camera)
 
         gaussian_point_cloud_rasterisation = GaussianPointCloudRasterisation(
             config=GaussianPointCloudRasterisation.GaussianPointCloudRasterisationConfig(
@@ -337,8 +349,8 @@ class TestRasterisation(unittest.TestCase):
                 point_object_id=point_object_id,
                 point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
-                q_pointcloud_camera=q_camera_world,
-                t_pointcloud_camera=t_camera_world,
+                q_camera_pointcloud=q_camera_world,
+                t_camera_pointcloud=t_camera_world,
                 color_max_sh_band=idx // 1000)
             pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()

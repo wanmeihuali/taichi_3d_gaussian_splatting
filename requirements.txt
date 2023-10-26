@@ -1,4 +1,3 @@
-taichi>=1.6.0
 matplotlib
 numpy
 pytorch_msssim

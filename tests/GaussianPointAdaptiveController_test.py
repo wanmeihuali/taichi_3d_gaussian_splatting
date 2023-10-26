@@ -2,6 +2,7 @@ import unittest
 from taichi_3d_gaussian_splatting.GaussianPointAdaptiveController import GaussianPointAdaptiveController
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
+from taichi_3d_gaussian_splatting.utils import inverse_SE3_qt_torch
 from tqdm import tqdm
 import torch
 import taichi as ti
@@ -51,8 +52,10 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
             4, dtype=torch.float32, device=torch.device("cuda:0"))
         T_camera_world[2, 3] = -2
         """
-        q_camera_world = torch.tensor([0, 0, 0, 1], dtype=torch.float32, device=torch.device("cuda:0")).unsqueeze(0)
-        t_camera_world = torch.tensor([0, 0, -2], dtype=torch.float32, device=torch.device("cuda:0")).unsqueeze(0)
+        q_world_camera = torch.tensor([0, 0, 0, 1], dtype=torch.float32, device=torch.device("cuda:0")).unsqueeze(0)
+        t_world_camera = torch.tensor([0, 0, -2], dtype=torch.float32, device=torch.device("cuda:0")).unsqueeze(0)
+        q_camera_world, t_camera_world = inverse_SE3_qt_torch(q_world_camera, t_world_camera)
+        
         gaussian_point_adaptive_controller = GaussianPointAdaptiveController(
             config=GaussianPointAdaptiveController.GaussianPointAdaptiveControllerConfig(),
             maintained_parameters=GaussianPointAdaptiveController.GaussianPointAdaptiveControllerMaintainedParameters(
@@ -79,8 +82,8 @@ class GaussianPointAdaptiveControllerTest(unittest.TestCase):
                 point_object_id=point_object_id,
                 point_invalid_mask=point_invalid_mask,
                 camera_info=camera_info,
-                q_pointcloud_camera=q_camera_world,
-                t_pointcloud_camera=t_camera_world,
+                q_camera_pointcloud=q_camera_world,
+                t_camera_pointcloud=t_camera_world,
                 color_max_sh_band=idx // 1000)
             pred_image, _, _ = gaussian_point_cloud_rasterisation(input_data)
             loss = ((pred_image - fake_image)**2).sum()

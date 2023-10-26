@@ -30,10 +30,13 @@ log-metrics-interval: 100
 print-metrics-to-console: False
 enable_taichi_kernel_profiler: False
 log_taichi_kernel_profile_interval: 3000
+iteration_start_camera_pose_optimization: 50000
+camera_pose_optimization_batch_size: 500
 log_validation_image: False
 feature_learning_rate: 0.005
 position_learning_rateo: 0.00005
 position_learning_rate_decay_rate: 0.9947
+camera_pose_learning_rate: 1e-6
 position_learning_rate_decay_interval: 100
 loss-function-config:
   lambda-value: 0.2
@@ -45,8 +48,8 @@ rasterisation-config:
   depth-to-sort-key-scale: 10.0
   far-plane: 2000.0
   near-plane: 0.4
-summary-writer-log-dir: logs/tat_truck_every_8_experiment
-output-model-dir: logs/tat_truck_every_8_experiment
+summary-writer-log-dir: logs/tat_truck_every_8_baseline
+output-model-dir: logs/tat_truck_every_8_baseline
 train-dataset-json-path: 'data/tat_truck_every_8_test/train.json'
 val-dataset-json-path: 'data/tat_truck_every_8_test/val.json'
 val-interval: 1000
