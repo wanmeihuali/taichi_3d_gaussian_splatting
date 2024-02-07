@@ -10,3 +10,5 @@ scipy
 argparse
 tensorboard
 plyfile
+torchvision
+tqdm
