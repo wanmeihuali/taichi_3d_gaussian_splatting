@@ -177,6 +177,19 @@
                 "config/boots_super_sparse_config.yaml",
             ],
             "preLaunchTask": "install"
+        },
+        {
+            "name": "replica train",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gaussian_point_train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--train_config",
+                "config/replica_room_1_high_quality_500_frames.yaml",
+            ],
+            "preLaunchTask": "install", 
         }
     ]
 }

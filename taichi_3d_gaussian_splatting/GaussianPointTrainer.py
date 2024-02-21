@@ -162,7 +162,7 @@ class GaussianPointCloudTrainer:
                 t_pointcloud_camera=t_pointcloud_camera,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
-            image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
+            image_pred, image_depth, pixel_valid_point_count, _ = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
             # clip to [0, 1]
             image_pred = torch.clamp(image_pred, min=0, max=1)
@@ -362,7 +362,7 @@ class GaussianPointCloudTrainer:
                     color_max_sh_band=3
                 )
                 start_event.record()
-                image_pred, image_depth, pixel_valid_point_count = self.rasterisation(
+                image_pred, image_depth, pixel_valid_point_count, _ = self.rasterisation(
                     gaussian_point_cloud_rasterisation_input)
                 end_event.record()
                 torch.cuda.synchronize()

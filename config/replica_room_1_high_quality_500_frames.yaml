@@ -1,0 +1,48 @@
+adaptive-controller-config:
+  densification-view-space-position-gradients-threshold: 0.000006
+  gaussian-split-factor-phi: 1.6
+  num-iterations-densify: 100
+  num-iterations-reset-alpha: 40000 #4000 
+  num-iterations-warm-up: 500
+  reset-alpha-value: -1.9
+  transparent-alpha-threshold: -2.0
+  floater_num_pixels_threshold: 400000
+  floater_near_camrea_num_pixels_threshold: 300000
+  iteration_start_remove_floater: 2000
+  under_reconstructed_num_pixels_threshold: 32
+  enable_sample_from_point: True
+gaussian-point-cloud-scene-config:
+  max-num-points-ratio: 100.0
+  num-of-features: 56
+  add_sphere: True
+  initial_alpha: -0.0
+  max_initial_covariance: 3000.0
+  initial_covariance_ratio: 0.1
+increase-color-max-sh-band-interval: 1000.0
+log-image-interval: 200
+log-loss-interval: 10
+log-metrics-interval: 100
+print-metrics-to-console: False
+enable_taichi_kernel_profiler: True
+log_taichi_kernel_profile_interval: 1000
+log_validation_image: True
+feature_learning_rate: 0.005
+position_learning_rate: 0.00005 
+position_learning_rate_decay_rate: 0.9947
+position_learning_rate_decay_interval: 100
+loss-function-config:
+  lambda-value: 0.2
+  lambda-depth-value: 0.2
+  lambda-smooth-value: 0.001
+  enable_regularization: False
+  regularization_weight: 0.005
+num-iterations: 30001
+pointcloud-parquet-path: 'data/replica/room_1_high_quality_500_frames/point_cloud.parquet'
+rasterisation-config:
+  depth-to-sort-key-scale: 100.0
+  far-plane: 1000.0
+  near-plane: 0.001
+summary-writer-log-dir: 'logs/replica/room_1_high_quality_500_frames'
+train-dataset-json-path: 'data/replica/room_1_high_quality_500_frames/train.json'
+val-dataset-json-path: 'data/replica/room_1_high_quality_500_frames/val.json'
+val-interval: 1000
