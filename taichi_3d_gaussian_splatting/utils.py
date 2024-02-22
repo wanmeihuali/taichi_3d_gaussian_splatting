@@ -396,6 +396,18 @@ def ti_sigmoid_with_jacobian(x):
     s = ti_sigmoid(x)
     return s, s * (1 - s)
 
+@ti.func
+def ti_clamp(x):
+    s = ti.math.clamp(x + 0.5, 0, 1)
+    return s
+
+@ti.func
+def ti_clamp_with_jacobian(x):
+    s = ti.math.clamp(x + 0.5, 0, 1)
+    jacobian = 0.0
+    if (x + 0.5 < 1. and x + 0.5 > 0.):
+        jacobian = 1.0
+    return s, jacobian
 
 @ti.kernel
 def torch2ti(field: ti.template(), data: ti.types.ndarray()):
