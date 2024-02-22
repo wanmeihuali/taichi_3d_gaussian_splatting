@@ -5,7 +5,7 @@ adaptive-controller-config:
   num-iterations-reset-alpha: 40000 #4000 
   num-iterations-warm-up: 500
   reset-alpha-value: -1.9
-  transparent-alpha-threshold: -2.0
+  transparent-alpha-threshold: -6.0 #-2.0
   floater_num_pixels_threshold: 400000
   floater_near_camrea_num_pixels_threshold: 300000
   iteration_start_remove_floater: 2000
@@ -15,7 +15,7 @@ gaussian-point-cloud-scene-config:
   max-num-points-ratio: 100.0
   num-of-features: 56
   add_sphere: True
-  initial_alpha: -0.0
+  initial_alpha: -5.0 #-0.0
   max_initial_covariance: 3000.0
   initial_covariance_ratio: 0.1
 increase-color-max-sh-band-interval: 1000.0

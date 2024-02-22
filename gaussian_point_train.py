@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import argparse
 from taichi_3d_gaussian_splatting.GaussianPointTrainer import GaussianPointCloudTrainer
+import os
+import shutil
 
 if __name__ == "__main__":
     plt.switch_backend("agg")
@@ -16,5 +18,11 @@ if __name__ == "__main__":
         exit(0)
     config = GaussianPointCloudTrainer.TrainConfig.from_yaml_file(
         args.train_config)
+
+    # Create log dir and paste config file
+    os.makedirs(config.summary_writer_log_dir, exist_ok=True)
+    file_name = os.path.basename(args.train_config)
+    shutil.copy2(args.train_config, os.path.join(config.summary_writer_log_dir, file_name))
+    
     trainer = GaussianPointCloudTrainer(config)
     trainer.train()

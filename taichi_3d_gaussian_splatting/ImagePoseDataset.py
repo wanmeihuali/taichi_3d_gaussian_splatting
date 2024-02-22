@@ -38,18 +38,19 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             return field
 
     @staticmethod
-    def _autoscale_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo):
+    def _autoscale_image_and_camera_info(image: torch.Tensor, depth: torch.Tensor, camera_info: CameraInfo):
         if camera_info.camera_height <= MAX_RESOLUTION_TRAIN and camera_info.camera_width <= MAX_RESOLUTION_TRAIN:
-            return image, camera_info
+            return image, camera_info, depth
         image = transforms.functional.resize(image, size=1024, max_size=1600, antialias=True)
+        depth = transforms.functional.resize(depth, size=1024, max_size=1600, antialias=True)
         _, camera_height, camera_width = image.shape
         scale_x = camera_width / camera_info.camera_width
         scale_y = camera_height / camera_info.camera_height
         camera_width = camera_width - camera_width % TILE_WIDTH
         camera_height = camera_height - camera_height % TILE_HEIGHT
-        image = image[:3, :camera_height, :camera_width].contiguous()
-        camera_intrinsics = camera_info.camera_intrinsics
-        camera_intrinsics = camera_intrinsics.clone()
+        image = image[:, :camera_height, :camera_width].contiguous()
+        depth = depth[:, :camera_height, :camera_width].contiguous()
+        camera_intrinsics = camera_info.camera_intrinsics.clone()
         camera_intrinsics[0, 0] *= scale_x
         camera_intrinsics[1, 1] *= scale_y
         camera_intrinsics[0, 2] *= scale_x
@@ -59,10 +60,13 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             camera_height=camera_height,
             camera_width=camera_width,
             camera_id=camera_info.camera_id)
-        return image, resized_camera_info
+
+        return image, resized_camera_info, depth
+
 
     def __getitem__(self, idx):
         image_path = self.df.iloc[idx]["image_path"]
+        depth_path = self.df.iloc[idx]["depth_path"]
         T_pointcloud_camera = self._pandas_field_to_tensor(
             self.df.iloc[idx]["T_pointcloud_camera"])
         q_pointcloud_camera, t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
@@ -72,8 +76,12 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         base_camera_height = self.df.iloc[idx]["camera_height"]
         base_camera_width = self.df.iloc[idx]["camera_width"]
         camera_id = self.df.iloc[idx]["camera_id"]
-        image = PIL.Image.open(image_path)
+        image = np.array(PIL.Image.open(image_path))
+        depth = np.array(PIL.Image.open(depth_path))
+        
         image = torchvision.transforms.functional.to_tensor(image)
+        depth = torchvision.transforms.functional.to_tensor(depth)
+        
         # use real image size instead of camera_height and camera_width from colmap
         camera_height = image.shape[1]
         camera_width = image.shape[2]
@@ -86,11 +94,12 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         camera_width = camera_width - camera_width % TILE_WIDTH
         camera_height = camera_height - camera_height % TILE_HEIGHT
         image = image[:3, :camera_height, :camera_width].contiguous()
+        depth = depth[:3, :camera_height, :camera_width].contiguous()
         camera_info = CameraInfo(
             camera_intrinsics=camera_intrinsics,
             camera_height=camera_height,
             camera_width=camera_width,
             camera_id=camera_id,
         )
-        image, camera_info = ImagePoseDataset._autoscale_image_and_camera_info(image, camera_info)
-        return image, q_pointcloud_camera, t_pointcloud_camera, camera_info
+        image, camera_info, depth = ImagePoseDataset._autoscale_image_and_camera_info(image, depth, camera_info)
+        return image, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth

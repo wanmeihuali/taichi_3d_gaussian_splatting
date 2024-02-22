@@ -21,7 +21,8 @@ from matplotlib import cm
 from collections import deque
 import numpy as np
 from typing import Optional
-
+from taichi_3d_gaussian_splatting.utils import quaternion_to_rotation_matrix_torch, inverse_SE3
+import copy
 
 def cycle(dataloader):
     while True:
@@ -61,6 +62,7 @@ class GaussianPointCloudTrainer:
         self.config = config
         # create the log directory if it doesn't exist
         os.makedirs(self.config.summary_writer_log_dir, exist_ok=True)
+        
         if self.config.output_model_dir is None:
             self.config.output_model_dir = self.config.summary_writer_log_dir
             os.makedirs(self.config.output_model_dir, exist_ok=True)
@@ -95,13 +97,15 @@ class GaussianPointCloudTrainer:
         # move scene to GPU
 
     @staticmethod
-    def _downsample_image_and_camera_info(image: torch.Tensor, camera_info: CameraInfo, downsample_factor: int):
+    def _downsample_image_and_camera_info(image: torch.Tensor, depth: torch.Tensor, camera_info: CameraInfo, downsample_factor: int):
         camera_height = camera_info.camera_height // downsample_factor
         camera_width = camera_info.camera_width // downsample_factor
         image = transforms.functional.resize(image, size=(camera_height, camera_width), antialias=True)
+        depth = transforms.functional.resize(depth, size=(camera_height, camera_width), antialias=True)
         camera_width = camera_width - camera_width % 16
         camera_height = camera_height - camera_height % 16
         image = image[:3, :camera_height, :camera_width].contiguous()
+        depth = depth[:3, :camera_height, :camera_width].contiguous()
         camera_intrinsics = camera_info.camera_intrinsics
         camera_intrinsics = camera_intrinsics.clone()
         camera_intrinsics[0, 0] /= downsample_factor
@@ -113,7 +117,7 @@ class GaussianPointCloudTrainer:
             camera_height=camera_height,
             camera_width=camera_width,
             camera_id=camera_info.camera_id)
-        return image, resized_camera_info
+        return image, resized_camera_info, depth
 
     def train(self):
         ti.init(arch=ti.cuda, device_memory_GB=0.1, kernel_profiler=self.config.enable_taichi_kernel_profiler) # we don't use taichi fields, so we don't need to allocate memory, but taichi requires the memory to be allocated > 0
@@ -141,17 +145,25 @@ class GaussianPointCloudTrainer:
             optimizer.zero_grad()
             position_optimizer.zero_grad()
             
-            image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info = next(
+            image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt = next(
                 train_data_loader_iter)
+            
             if downsample_factor > 1:
-                image_gt, camera_info = GaussianPointCloudTrainer._downsample_image_and_camera_info(
-                    image_gt, camera_info, downsample_factor=downsample_factor)
+                image_gt, camera_info, depth_gt = GaussianPointCloudTrainer._downsample_image_and_camera_info(
+                    image_gt, depth_gt, camera_info, downsample_factor=downsample_factor)
+            
             image_gt = image_gt.cuda()
+            # Normalize
+            
+            # depth_gt = (depth_gt - np.min(depth_gt)) / np.max(depth_gt - np.min(depth_gt))
+            depth_gt = depth_gt.cuda()
             q_pointcloud_camera = q_pointcloud_camera.cuda()
             t_pointcloud_camera = t_pointcloud_camera.cuda()
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
             camera_info.camera_width = int(camera_info.camera_width)
             camera_info.camera_height = int(camera_info.camera_height)
+            
+            
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=self.scene.point_cloud,
                 point_cloud_features=self.scene.point_cloud_features,
@@ -162,24 +174,36 @@ class GaussianPointCloudTrainer:
                 t_pointcloud_camera=t_pointcloud_camera,
                 color_max_sh_band=iteration // self.config.increase_color_max_sh_band_interval,
             )
+              
             image_pred, image_depth, pixel_valid_point_count, _ = self.rasterisation(
                 gaussian_point_cloud_rasterisation_input)
+
+            image_depth = image_depth.cuda()
+            image_depth = image_depth/torch.max(image_depth)          
+            depth_gt = depth_gt / torch.max(depth_gt)
+            
+            # image_depth = (image_depth - torch.min(image_depth)) / torch.max(image_depth - torch.min(image_depth))
+            # depth_gt = (depth_gt - torch.min(depth_gt)) / torch.max(depth_gt - torch.min(depth_gt))
+            
             # clip to [0, 1]
             image_pred = torch.clamp(image_pred, min=0, max=1)
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
-            loss, l1_loss, ssim_loss = self.loss_function(
+            
+            loss, l1_loss, ssim_loss, depth_loss, smooth_loss = self.loss_function(
                 image_pred, 
                 image_gt, 
+                image_depth,
+                depth_gt,
                 point_invalid_mask=self.scene.point_invalid_mask,
                 pointcloud_features=self.scene.point_cloud_features)
+            
             loss.backward()
             optimizer.step()
             position_optimizer.step()
 
             recent_losses.append(loss.item())
             
-
             if iteration % self.config.position_learning_rate_decay_interval == 0:
                 scheduler.step()
             magnitude_grad_viewspace_on_image = None
@@ -209,6 +233,15 @@ class GaussianPointCloudTrainer:
                     "train/l1 loss", l1_loss.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
+                self.writer.add_scalar(
+                    "train/depth loss", depth_loss.item(), iteration)
+                self.writer.add_scalar(
+                    "train/max depth", torch.max(image_depth), iteration)
+                self.writer.add_scalar(
+                    "train/max gt depth", torch.max(depth_gt), iteration)
+                self.writer.add_scalar(
+                     "train/smooth_loss", smooth_loss, iteration)
+                
                 if self.config.print_metrics_to_console:
                     print(f"train_iteration={iteration};")
                     print(f"train_loss={loss.item()};")
@@ -262,18 +295,22 @@ class GaussianPointCloudTrainer:
                     self.writer.add_image(
                         "train/image", grid, iteration)
 
-            del image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, loss, l1_loss, ssim_loss
+            del image_gt, depth_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, gaussian_point_cloud_rasterisation_input, image_pred, image_depth, loss, l1_loss, ssim_loss, depth_loss
             if (iteration % self.config.val_interval == 0 and iteration != 0) or iteration == 7000 or iteration == 5000: # they use 7000 in paper, it's hard to set a interval so hard code it here
                 self.validation(val_data_loader, iteration)
     
     @staticmethod
     def _easy_cmap(x: torch.Tensor):
         x_rgb = torch.zeros((3, x.shape[0], x.shape[1]), dtype=torch.float32, device=x.device)
-        x_rgb[0] = torch.clamp(x, 0, 10) / 10.
-        x_rgb[1] = torch.clamp(x - 10, 0, 50) / 50.
-        x_rgb[2] = torch.clamp(x - 60, 0, 200) / 200.
+        # x_rgb[0] = torch.clamp(x, 0, 0.20) / 0.20
+        # x_rgb[1] = torch.clamp(x - 0.2, 0, 0.5) / 0.5
+        # x_rgb[2] = torch.clamp(x - 0.5, 0, 0.75) / 0.75
+
+        x_rgb[0] = torch.clamp(x, 0, 0.20) / 0.20
+        x_rgb[1] = torch.clamp(x - 0.2, 0, 0.5) / 0.5
+        x_rgb[2] = torch.clamp(x - 0.5, 0, 0.75) / 0.75
         return 1. - x_rgb
-        
+    
 
     @staticmethod
     def _compute_pnsr_and_ssim(image_pred, image_gt):
@@ -343,8 +380,10 @@ class GaussianPointCloudTrainer:
             for idx, val_data in enumerate(tqdm(val_data_loader)):
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
-                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info = val_data
+                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt = val_data
                 image_gt = image_gt.cuda()
+                # depth_gt = (depth_gt - np.min(depth_gt)) / np.max(depth_gt - np.min(depth_gt))
+                depth_gt = depth_gt.cuda() 
                 q_pointcloud_camera = q_pointcloud_camera.cuda()
                 t_pointcloud_camera = t_pointcloud_camera.cuda()
                 camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
@@ -370,16 +409,34 @@ class GaussianPointCloudTrainer:
                 total_inference_time += time_taken
                 image_pred = torch.clamp(image_pred, 0, 1)
                 image_pred = image_pred.permute(2, 0, 1)
-                image_depth = self._easy_cmap(image_depth)
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
-                loss, _, _ = self.loss_function(image_pred, image_gt)
+                
+                image_depth = image_depth.cuda()
+                # image_depth = (image_depth - torch.min(image_depth)) / torch.max(image_depth - torch.min(image_depth))
+                # depth_gt = (depth_gt - torch.min(depth_gt)) / torch.max(depth_gt - torch.min(depth_gt))
+                
+                image_depth = image_depth / torch.max(image_depth)
+                depth_gt = depth_gt / torch.max(depth_gt)
+
+                
+                loss, _, _, _, _ = self.loss_function(image_pred, 
+                                                      image_gt,
+                                                      image_depth,
+                                                      depth_gt
+                                                      )
+
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
                     image_pred=image_pred, image_gt=image_gt)
                 image_diff = torch.abs(image_pred - image_gt)
                 total_loss += loss.item()
                 total_psnr_score += psnr_score.item()
                 total_ssim_score += ssim_score.item()
-                grid = make_grid([image_pred, image_gt, image_depth, pixel_valid_point_count, image_diff], nrow=2)
+                
+                image_depth_3_channels = self._easy_cmap(image_depth)
+                depth_gt = torch.squeeze(depth_gt)     
+                depth_gt_3_channels = self._easy_cmap(depth_gt)
+                
+                grid = make_grid([image_pred, image_gt, image_depth_3_channels, depth_gt_3_channels, pixel_valid_point_count, image_diff], nrow=2)
                 if self.config.log_validation_image:
                     self.writer.add_image(
                         f"val/image {idx}", grid, iteration)
