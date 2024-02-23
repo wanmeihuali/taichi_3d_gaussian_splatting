@@ -35,10 +35,10 @@ class LossFunction(nn.Module):
                            data_range=1, size_average=True)
         L_DEPTH = torch.abs(predicted_depth - ground_truth_depth).mean()
         L_SMOOTH = self.smoothing_loss(ground_truth_image, predicted_depth)
-         # (1 - self.config.lambda_value) * L1 + \
-            # self.config.lambda_value * LD_SSIM  + \
-        L = self.config.lambda_depth_value * L_DEPTH #+\
-            #self.config.lambda_smooth_value * L_SMOOTH
+        L = (1 - self.config.lambda_value) * L1 + \
+            self.config.lambda_value * LD_SSIM  + \
+            self.config.lambda_depth_value * L_DEPTH +\
+            self.config.lambda_smooth_value * L_SMOOTH
         if pointcloud_features is not None and self.config.enable_regularization:
             regularization_loss = self._regularization_loss(point_invalid_mask, pointcloud_features)
             L = L + self.config.regularization_weight * regularization_loss
