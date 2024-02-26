@@ -9,3 +9,5 @@ imgui.ini
 *.qdstrm
 *.nsys-rep
 *.sqlite
+output.txt
+save_pid.txt

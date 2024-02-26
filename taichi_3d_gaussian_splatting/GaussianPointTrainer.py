@@ -236,10 +236,6 @@ class GaussianPointCloudTrainer:
                 self.writer.add_scalar(
                     "train/depth loss", depth_loss.item(), iteration)
                 self.writer.add_scalar(
-                    "train/max depth", torch.max(image_depth), iteration)
-                self.writer.add_scalar(
-                    "train/max gt depth", torch.max(depth_gt), iteration)
-                self.writer.add_scalar(
                      "train/smooth_loss", smooth_loss, iteration)
                 
                 if self.config.print_metrics_to_console:

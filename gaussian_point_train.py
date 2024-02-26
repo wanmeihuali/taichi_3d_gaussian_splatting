@@ -34,7 +34,7 @@ if __name__ == "__main__":
     lambda_smooth_values= np.array([0, 0.0005, 0.001, 0.003, 0.005])
     
     summary_writer_log_dir_base = config.summary_writer_log_dir
-    count = 2
+    count = 6
     for i in range(1, len(lambda_depth_values)):
         for j in range(len(lambda_smooth_values)):
             config.output_model_dir = summary_writer_log_dir_base + f"_{count}"
