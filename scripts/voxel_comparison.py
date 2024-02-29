@@ -30,8 +30,7 @@ def compute_overlapping_voxels(voxel_grid1, voxel_grid2):
     gt_centers = torch.tensor([voxel_grid1.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxel_grid1.get_voxels()], dtype=torch.float32, device='cuda')
     reconstruction_centers = torch.tensor([voxel_grid2.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxel_grid2.get_voxels()], dtype=torch.float32, device='cuda')
     
-    print(gt_centers.shape)
-    print(reconstruction_centers.shape)
+    print(f"Number of reconstruction centers: {reconstruction_centers.shape}")
     print("Fitting nearest neighbors")
     nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(reconstruction_centers.cpu())
     print("Evaluating neighbors")
@@ -50,20 +49,18 @@ def compute_overlapping_voxels(voxel_grid1, voxel_grid2):
     )
 
     within_bounds_mask = within_bounds_mask.cpu().numpy()
-    print(within_bounds_mask.shape)
     
     overlap_centers = overlap_centers.cpu().numpy()
     overlap_centers = overlap_centers[within_bounds_mask, :]
-    print(overlap_centers.shape)
     
     intersection_point_cloud = o3d.geometry.PointCloud()
     intersection_point_cloud.points = o3d.utility.Vector3dVector(overlap_centers)
-    # overlap_voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(intersection_point_cloud, voxel_size)
     output_directory = "/home/mroncoroni/git/evaluation_scripts/output/voxelization/voxelized_taichi3dgs_reconstruction"
     if not os.path.exists(output_directory):
         print("Creating output directory.....")
         os.makedirs(output_directory)
-    o3d.io.write_point_cloud(os.path.join(output_directory, "overlap_room_1_high_quality_500_frames_max_smoothing.ply"), intersection_point_cloud)
+    o3d.io.write_point_cloud(os.path.join(output_directory, "overlap_room_1_high_quality_500_frames.ply"), intersection_point_cloud)
+    print(f"Writing overlapping pointcloud to {os.path.join(output_directory, 'overlap_room_1_high_quality_500_frames.ply')}")
     print(overlap_centers)
     # Number of overlapping voxels
     num_overlapping_voxels = len(overlap_centers)
@@ -71,7 +68,7 @@ def compute_overlapping_voxels(voxel_grid1, voxel_grid2):
     return num_overlapping_voxels
 
 
-def main(groundtruth_voxel_grid_path, reconstructed_voxel_grid_path):
+def main(groundtruth_voxel_grid_path, reconstructed_voxel_grid_path, output_directory_path):
     print("Evaluating overlapping voxels")
     print(f"Ground truth voxel file path: {groundtruth_voxel_grid_path}")
     print(f"Reconstructed voxel file path: {reconstructed_voxel_grid_path}")
@@ -83,15 +80,16 @@ def main(groundtruth_voxel_grid_path, reconstructed_voxel_grid_path):
     # Compute the number of overlapping voxels
     num_overlapping_voxels = compute_overlapping_voxels(groundtruth_voxel_grid, reconstructed_voxel_grid)
     print(f"Number of overlapping voxels: {num_overlapping_voxels}")
-    output_directory = "/home/mroncoroni/git/evaluation_scripts/output/voxelization/voxelized_taichi3dgs_reconstruction"
+    output_directory = output_directory_path
    
-    with open(os.path.join(output_directory,"readme.txt"), 'w') as f:
+    with open(os.path.join(output_directory,"readme_voxel.txt"), 'w') as f:
         f.write(f"Number overlapping voxels (rendered voxels in GT): {num_overlapping_voxels}")
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--groundtruth_voxel_grid_path", type=str, required=True)
     parser.add_argument("--reconstructed_voxel_grid_path", type=str, required=True)
+    parser.add_argument("--output_directory_path", type=str, required=True)
     
     args = parser.parse_args()
-    main(args.groundtruth_voxel_grid_path, args.reconstructed_voxel_grid_path)
+    main(args.groundtruth_voxel_grid_path, args.reconstructed_voxel_grid_path, args.output_directory_path)

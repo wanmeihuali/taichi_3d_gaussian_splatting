@@ -6,17 +6,21 @@ import numpy as np
 import argparse
 import struct
 import collections
-
+import open3d as o3d
 # %%
 parser = argparse.ArgumentParser("Prepare dataset for 3D Gaussian Splatting from COLMAP text output")
 parser.add_argument("--base_path", type=str, required=True, help="Path to the COLMAP output folder, containing cameras.txt, images.txt, points3D.txt")
 parser.add_argument("--image_path", type=str, required=True, help="Path to the COLMAP Image folder")
 parser.add_argument("--test_image_list_path", type=str, default=None, help="Path to the test image list")
 parser.add_argument("--output_dir", type=str, required=True, help="Path to the output folder")
+parser.add_argument("--depth_path", type=str, required=False, help="Path to the Depth Image folder")
+
+
 args = parser.parse_args()
 base_path = args.base_path
 image_path = args.image_path
 output_dir = args.output_dir
+depth_path = args.depth_path
 test_image_list_path = args.test_image_list_path
 # %%
 def read_images_txt(file):
@@ -249,12 +253,23 @@ point_cloud = points[['x', 'y', 'z']].values
 point_cloud = point_cloud.T
 point_cloud_color = points[['r', 'g', 'b']].values
 point_cloud_color = point_cloud_color.T
+print(type(point_cloud))
 print(point_cloud.shape)
 print(point_cloud_color.shape)
 
+subsampled_point_cloud = o3d.geometry.PointCloud()
+subsampled_point_cloud.points = o3d.utility.Vector3dVector(point_cloud.T)
+subsampled_point_cloud.colors = o3d.utility.Vector3dVector(point_cloud_color.T/255)
+
+o3d.io.write_point_cloud(os.path.join(
+    output_dir, "point_cloud.ply"), subsampled_point_cloud)
+
 data = []
 idx = 0
-for name, image in images.items():
+sorted_images = sorted(images.items(), key=lambda x: x[0])
+images = sorted_images[::-1]
+
+for name, image in images:
     idx += 1
     camera = cameras.loc[int(image['camera_id'])]
     # Extract quaternion and translation vector
@@ -299,7 +314,12 @@ for name, image in images.items():
     plt.show()
     break
     """
-
+items = os.listdir(depth_path)
+sorted_items = sorted(items)[::-1]
+for item,name in  zip(data, sorted_items):
+    depth_full_path = os.path.join(depth_path, name)
+    item["depth_path"] = depth_full_path
+    
 df = pd.DataFrame(data)
 if test_image_list_path is not None:
     with open(test_image_list_path, "r") as f:

@@ -32,17 +32,17 @@ position_learning_rate_decay_rate: 0.9947
 position_learning_rate_decay_interval: 100
 loss-function-config:
   lambda-value: 0.2
-  lambda-depth-value: 0.2
-  lambda-smooth-value: 0.001
+  lambda-depth-value: 0.1
+  lambda-smooth-value: 0.0005
   enable_regularization: False
   regularization_weight: 0.005
 num-iterations: 30001
-pointcloud-parquet-path: 'data/replica/room_1_high_quality_500_frames/point_cloud.parquet'
+pointcloud-parquet-path: 'data/replica_colmap/room_1_high_quality_500_frames/point_cloud.parquet'
 rasterisation-config:
   depth-to-sort-key-scale: 100.0
   far-plane: 1000.0
   near-plane: 0.001
-summary-writer-log-dir: 'logs/replica/room_1_high_quality_500_frames'
-train-dataset-json-path: 'data/replica/room_1_high_quality_500_frames/train.json'
-val-dataset-json-path: 'data/replica/room_1_high_quality_500_frames/val.json'
+summary-writer-log-dir: 'logs/replica_colmap/room_1_high_quality_500_frames'
+train-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/train.json'
+val-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/val.json'
 val-interval: 1000

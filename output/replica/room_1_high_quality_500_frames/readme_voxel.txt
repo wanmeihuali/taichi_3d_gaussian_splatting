@@ -1,0 +1,1 @@
+Number overlapping voxels (rendered voxels in GT): 123350

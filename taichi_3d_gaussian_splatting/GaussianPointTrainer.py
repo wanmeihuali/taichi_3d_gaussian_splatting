@@ -21,7 +21,6 @@ from matplotlib import cm
 from collections import deque
 import numpy as np
 from typing import Optional
-from taichi_3d_gaussian_splatting.utils import quaternion_to_rotation_matrix_torch, inverse_SE3
 import copy
 
 def cycle(dataloader):

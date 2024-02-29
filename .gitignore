@@ -11,3 +11,4 @@ imgui.ini
 *.sqlite
 output.txt
 save_pid.txt
+output/
