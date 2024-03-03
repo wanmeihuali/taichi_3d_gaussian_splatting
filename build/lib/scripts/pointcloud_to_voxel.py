@@ -12,16 +12,16 @@ def main(): # groundtruth_voxel_grid_path, reconstructed_voxel_grid_path
     
     # Convert ply to voxel
     mesh_gt =  o3d.io.read_point_cloud("/home/mroncoroni/groundtruth/replica/room_1/mesh_upsampled.ply")
-    mesh_reconstructed =  o3d.io.read_point_cloud("/home/mroncoroni/git/taichi_3d_gaussian_splatting/output/replica/room_1_high_quality_500_frames_12/point_clouds/completePointSet_aligned_icp.ply")
+    mesh_reconstructed =  o3d.io.read_point_cloud("/home/mroncoroni/git/taichi_3d_gaussian_splatting/output/replica_colmap/room_1_high_quality_500_frames_12/point_clouds//completePointSet_aligned_icp.ply")
 
     print('voxelization')
     voxel_grid = o3d.geometry.VoxelGrid.create_from_point_cloud(mesh_gt,
                                                                 voxel_size=0.01)
     voxel_grid_reconstruction = o3d.geometry.VoxelGrid.create_from_point_cloud(mesh_reconstructed,
                                                                 voxel_size=0.01)
-
+    print(len(voxel_grid_reconstruction.get_voxels()))
     o3d.io.write_voxel_grid("/home/mroncoroni/groundtruth/replica/room_1/voxelized_gt.ply", voxel_grid)
-    o3d.io.write_voxel_grid("/home/mroncoroni/git/taichi_3d_gaussian_splatting/output/replica/room_1_high_quality_500_frames_12/point_clouds/voxelized_completePointSet_aligned_icp.ply", voxel_grid_reconstruction)
+    o3d.io.write_voxel_grid("/home/mroncoroni/git/taichi_3d_gaussian_splatting/output/replica_colmap/room_1_high_quality_500_frames_12/point_clouds//voxelized_completePointSet_aligned_icp.ply", voxel_grid_reconstruction)
     
 if __name__ == '__main__':
     # parser = argparse.ArgumentParser()

@@ -153,7 +153,7 @@ if __name__ == "__main__":
         cameras = torch.zeros((len(val_data_loader), 4, 4))
         camera_info = None
         for idx, val_data in enumerate(tqdm(val_data_loader)):
-            image_gt, q, t, camera_info = val_data
+            image_gt, q, t, camera_info, _, _ = val_data
             r = quaternion_to_rotation_matrix_torch(q)
             cameras[idx, :3, :3] = r
             cameras[idx, :3, 3] = t

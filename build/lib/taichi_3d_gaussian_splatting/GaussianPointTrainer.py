@@ -5,8 +5,9 @@ from .Camera import CameraInfo
 from .GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from .GaussianPointAdaptiveController import GaussianPointAdaptiveController
 from .LossFunction import LossFunction
+from .Lidar import Lidar
+
 import torch
-import argparse
 from dataclass_wizard import YAMLWizard
 from dataclasses import dataclass
 from torch.utils.tensorboard import SummaryWriter
@@ -17,12 +18,11 @@ from tqdm import tqdm
 import taichi as ti
 import os
 import matplotlib.pyplot as plt
-from matplotlib import cm
 from collections import deque
-import numpy as np
 from typing import Optional
-from taichi_3d_gaussian_splatting.utils import quaternion_to_rotation_matrix_torch, inverse_SE3
-import copy
+import numpy as np
+import open3d as o3d
+from PIL import Image
 
 def cycle(dataloader):
     while True:
@@ -145,7 +145,7 @@ class GaussianPointCloudTrainer:
             optimizer.zero_grad()
             position_optimizer.zero_grad()
             
-            image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt = next(
+            image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt, lidar_pcd, t_lidar_camera, T_pointcloud_camera = next(
                 train_data_loader_iter)
             
             if downsample_factor > 1:
@@ -153,17 +153,32 @@ class GaussianPointCloudTrainer:
                     image_gt, depth_gt, camera_info, downsample_factor=downsample_factor)
             
             image_gt = image_gt.cuda()
-            # Normalize
-            
-            # depth_gt = (depth_gt - np.min(depth_gt)) / np.max(depth_gt - np.min(depth_gt))
             depth_gt = depth_gt.cuda()
             q_pointcloud_camera = q_pointcloud_camera.cuda()
             t_pointcloud_camera = t_pointcloud_camera.cuda()
             camera_info.camera_intrinsics = camera_info.camera_intrinsics.cuda()
             camera_info.camera_width = int(camera_info.camera_width)
             camera_info.camera_height = int(camera_info.camera_height)
+            T_pointcloud_camera = T_pointcloud_camera.cuda()
+            # T_camera_pointcloud = inverse_SE3(T_pointcloud_camera) # From world frame to camera frame
+            if lidar_pcd is not None:
+                lidar_measurement = Lidar(lidar_pcd.cuda(), t_lidar_camera.cuda())
+                visible_points = lidar_measurement.lidar_points_visible(
+                        lidar_measurement.point_cloud, 
+                        T_pointcloud_camera, 
+                        camera_info.camera_intrinsics,
+                        (camera_info.camera_width, camera_info.camera_height))
             
-            
+                depth_map  = lidar_measurement.lidar_points_to_camera(
+                        visible_points,
+                        T_pointcloud_camera,
+                        camera_info.camera_intrinsics,
+                        (camera_info.camera_width, camera_info.camera_height)
+                        )
+                
+                depth_map_numpy = depth_map.detach().cpu().numpy().transpose()
+                image = Image.fromarray(((depth_map_numpy* (2**8-1)).astype(np.uint8) ) , 'L')
+                image.save("debug.jpeg")
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=self.scene.point_cloud,
                 point_cloud_features=self.scene.point_cloud_features,
@@ -181,9 +196,6 @@ class GaussianPointCloudTrainer:
             image_depth = image_depth.cuda()
             image_depth = image_depth/torch.max(image_depth)          
             depth_gt = depth_gt / torch.max(depth_gt)
-            
-            # image_depth = (image_depth - torch.min(image_depth)) / torch.max(image_depth - torch.min(image_depth))
-            # depth_gt = (depth_gt - torch.min(depth_gt)) / torch.max(depth_gt - torch.min(depth_gt))
             
             # clip to [0, 1]
             image_pred = torch.clamp(image_pred, min=0, max=1)
@@ -376,7 +388,7 @@ class GaussianPointCloudTrainer:
             for idx, val_data in enumerate(tqdm(val_data_loader)):
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
-                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt = val_data
+                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt, lidar_pcd, t_lidar_camera = val_data
                 image_gt = image_gt.cuda()
                 # depth_gt = (depth_gt - np.min(depth_gt)) / np.max(depth_gt - np.min(depth_gt))
                 depth_gt = depth_gt.cuda() 
@@ -408,8 +420,6 @@ class GaussianPointCloudTrainer:
                 pixel_valid_point_count = pixel_valid_point_count.float().unsqueeze(0).repeat(3, 1, 1) / pixel_valid_point_count.max()
                 
                 image_depth = image_depth.cuda()
-                # image_depth = (image_depth - torch.min(image_depth)) / torch.max(image_depth - torch.min(image_depth))
-                # depth_gt = (depth_gt - torch.min(depth_gt)) / torch.max(depth_gt - torch.min(depth_gt))
                 
                 image_depth = image_depth / torch.max(image_depth)
                 depth_gt = depth_gt / torch.max(depth_gt)

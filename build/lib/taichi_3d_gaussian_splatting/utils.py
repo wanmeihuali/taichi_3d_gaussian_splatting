@@ -705,3 +705,5 @@ def get_spherical_harmonic_from_xyz_torch(
     l3p3 = 0.59004358992664352 * x * (-x * x + 3.0 * y * y)
     return torch.tensor([
         l0m0, l1m1, l1m0, l1p1, l2m2, l2m1, l2m0, l2p1, l2p2, l3m3, l3m2, l3m1, l3m0, l3p1, l3p2, l3p3])
+
+

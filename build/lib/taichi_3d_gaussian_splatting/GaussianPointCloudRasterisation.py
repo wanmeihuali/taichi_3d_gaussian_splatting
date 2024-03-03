@@ -1012,7 +1012,6 @@ class GaussianPointCloudRasterisation(torch.nn.Module):
                 ctx.camera_info = camera_info
                 ctx.color_max_sh_band = color_max_sh_band
                 # rasterized_image.requires_grad_(True)
-                print("forwarding")
                 return rasterized_image, rasterized_depth, pixel_valid_point_count, pixel_accumulated_alpha
 
 

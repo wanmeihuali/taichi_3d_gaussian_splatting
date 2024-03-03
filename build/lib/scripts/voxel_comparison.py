@@ -30,6 +30,7 @@ def compute_overlapping_voxels(voxel_grid1, voxel_grid2):
     gt_centers = torch.tensor([voxel_grid1.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxel_grid1.get_voxels()], dtype=torch.float32, device='cuda')
     reconstruction_centers = torch.tensor([voxel_grid2.get_voxel_center_coordinate(voxel.grid_index) for voxel in voxel_grid2.get_voxels()], dtype=torch.float32, device='cuda')
     
+    print(f"Number of reconstruction centers: {reconstruction_centers.shape}")
     print("Fitting nearest neighbors")
     nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(reconstruction_centers.cpu())
     print("Evaluating neighbors")
@@ -58,8 +59,8 @@ def compute_overlapping_voxels(voxel_grid1, voxel_grid2):
     if not os.path.exists(output_directory):
         print("Creating output directory.....")
         os.makedirs(output_directory)
-    o3d.io.write_point_cloud(os.path.join(output_directory, "overlap_room_1_high_quality_500_frames_max_smoothing.ply"), intersection_point_cloud)
-    print(f"Writing overlapping pointcloud to {os.path.join(output_directory, 'overlap_room_1_high_quality_500_frames_max_smoothing.ply')}")
+    o3d.io.write_point_cloud(os.path.join(output_directory, "overlap_room_1_high_quality_500_frames.ply"), intersection_point_cloud)
+    print(f"Writing overlapping pointcloud to {os.path.join(output_directory, 'overlap_room_1_high_quality_500_frames.ply')}")
     print(overlap_centers)
     # Number of overlapping voxels
     num_overlapping_voxels = len(overlap_centers)

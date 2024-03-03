@@ -193,31 +193,5 @@
             ],
             "preLaunchTask": "install", 
         },
-        {
-            "name": "Loss evaluation",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/scripts/loss_evaluation_csv.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "preLaunchTask": "install", 
-        },
-        {
-            "name": "RGB render",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/scripts/render_rgb_depth_pointcloud.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "args": [
-                "--parquet-path",
-                "logs/replica_colmap/room_1_high_quality_500_frames_12/best_scene.ply",
-                "--trajectory-path",
-                "data/replica_colmap/room_1_high_quality_500_frames/val.json",
-                "--output-path",
-                "output/replica_colmap/room_1_high_quality_500_frames_12/"
-            ],
-            "preLaunchTask": "install", 
-        }
     ]
 }

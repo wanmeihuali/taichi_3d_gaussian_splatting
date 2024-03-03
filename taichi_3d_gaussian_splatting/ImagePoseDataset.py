@@ -9,6 +9,7 @@ from .Camera import CameraInfo
 from typing import Any
 from .utils import SE3_to_quaternion_and_translation_torch
 from .GaussianPointCloudRasterisation import TILE_WIDTH, TILE_HEIGHT
+import open3d as o3d
 
 MAX_RESOLUTION_TRAIN=1600
 
@@ -76,6 +77,7 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         base_camera_height = self.df.iloc[idx]["camera_height"]
         base_camera_width = self.df.iloc[idx]["camera_width"]
         camera_id = self.df.iloc[idx]["camera_id"]
+        
         image = np.array(PIL.Image.open(image_path))
         depth = np.array(PIL.Image.open(depth_path))
         
@@ -102,4 +104,14 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             camera_id=camera_id,
         )
         image, camera_info, depth = ImagePoseDataset._autoscale_image_and_camera_info(image, depth, camera_info)
-        return image, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth
+        
+        # Get lidar file if available
+        lidar_path = self.df.iloc[idx]['lidar_path']
+        if lidar_path:
+            lidar_pcd = o3d.io.read_point_cloud(self.df.iloc[idx]['lidar_path'])
+            lidar_pcd = torch.tensor(lidar_pcd.points)
+            t_lidar_camera =  self._pandas_field_to_tensor(self.df.iloc[idx]['T_camera_lidar'])
+        else:
+            lidar_pcd = None
+            t_lidar_camera = None
+        return image, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth, lidar_pcd, t_lidar_camera, T_pointcloud_camera
