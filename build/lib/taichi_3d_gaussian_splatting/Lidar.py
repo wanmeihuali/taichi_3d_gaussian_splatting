@@ -22,47 +22,30 @@ class Lidar:
         projective_transform,
         image_size: tuple
     ):        
-        fx = 400 # projective_transform[0, 0]
-        fy = 400 #projective_transform[1, 1]
-        cx = 360.0 #projective_transform[0, 2]
-        cy = 202.5  #projective_transform[1, 2]
 
-        print("T_camera_world")
-        print(T_camera_world)
-        print("Projective transform")
-        print(projective_transform)
-        print("Image size")
-        print(image_size)
-        image_size = list(image_size)
-        # image_size[0] = int(cx*2)
-        # image_size[1] = int(cy*2)
-        # depth_map = torch.zeros((image_size[1],image_size[0]))
-        # for i in range(lidar_point_cloud.shape[0]):
-        #     v = (lidar_point_cloud[i,0]/ (-lidar_point_cloud[i,2])) * fx + cx
-        #     u = (lidar_point_cloud[i,1]/ (-lidar_point_cloud[i,2])) * fy + cy
-        #     if u>= 0 and u <image_size[0] and v>= 0 and v <image_size[1]:
-        #         depth_map[math.floor(v), math.floor(u)] = -lidar_point_cloud[i,2]
         if projective_transform.dtype != lidar_point_cloud.dtype:
             # Convert T_camera_world to the data type of lidar_point_cloud_homogeneous
             projective_transform = projective_transform.to(lidar_point_cloud.dtype)        
         uv1 = torch.matmul(projective_transform, torch.transpose(lidar_point_cloud,0,1)) / \
             lidar_point_cloud[:, 2]
         uv = uv1[:2, :]
-        print(uv)
-        print(torch.max(uv[0,:]))
-        print(torch.max(uv[1,:]))
-        print(torch.min(uv[0,:]))
-        print(torch.min(uv[1,:]))
-        depth_map = torch.zeros((image_size[1],image_size[0]))
-        for i in range(uv.shape[1]):
-            u = (uv[0, i]) 
-            v = (uv[1, i]) 
-            # if u >= 0 and u < image_size[0] and v >= 0 and v < image_size[1]:
-            #     depth_map[math.floor(v), math.floor(u)] = -lidar_point_cloud[i,2]
-            depth_map[math.floor(v), math.floor(u)] = -lidar_point_cloud[i,2]
-        print(torch.max(depth_map))
-        print(torch.min(depth_map))
-        depth_map = depth_map / torch.max(depth_map)
+        
+        u = torch.floor(uv[0, :]).long()
+        u = u.flip(0)
+        v = torch.floor(uv[1, :]).long()
+    
+
+        depth_map = torch.full((image_size[1], image_size[0]), -1.0, dtype=lidar_point_cloud.dtype,device="cuda")
+        depth_map[v[:], u[:]] = -lidar_point_cloud[:, 2]
+
+        # depth_map = torch.ones((image_size[0],image_size[1]))*(-1)
+        # depth_map = depth_map.cuda()
+        # for i in range(uv.shape[1]):
+        #     u = (uv[1, i]) 
+        #     v = (uv[0, i]) 
+        #     depth_map[math.floor(v), math.floor(u)] = -lidar_point_cloud[i,2]
+        
+        # depth_map = torch.transpose(depth_map, 0, 1)
         return depth_map
     
     def lidar_points_visible(self,
@@ -93,8 +76,8 @@ class Lidar:
         print(image_size)
         # image_size[0] = 720
         # image_size[1] = 405
-        is_visible_x = (0 <= normalized_point[0]) & (normalized_point[0] < image_size[0]) & (transformed_points[2] < 0.)
-        is_visible_y = (0 <= normalized_point[1]) & (normalized_point[1] < image_size[1])  & (transformed_points[2] < 0.)
+        is_visible_x = (0 <= normalized_point[0]) & (normalized_point[0] < image_size[0]) & (transformed_points[2] < 0.001) & (transformed_points[2] > -1000.)
+        is_visible_y = (0 <= normalized_point[1]) & (normalized_point[1] < image_size[1])  & (transformed_points[2] < 0.001) & (transformed_points[2] > -1000.)
         is_visible = is_visible_x & is_visible_y
         
         transformed_points = torch.transpose(transformed_points, 0, 1)

@@ -6,6 +6,7 @@ from .GaussianPointCloudRasterisation import GaussianPointCloudRasterisation
 from .GaussianPointAdaptiveController import GaussianPointAdaptiveController
 from .LossFunction import LossFunction
 from .Lidar import Lidar
+from .utils import write_png
 
 import torch
 from dataclass_wizard import YAMLWizard
@@ -161,6 +162,8 @@ class GaussianPointCloudTrainer:
             camera_info.camera_height = int(camera_info.camera_height)
             T_pointcloud_camera = T_pointcloud_camera.cuda()
             # T_camera_pointcloud = inverse_SE3(T_pointcloud_camera) # From world frame to camera frame
+            depth_map = torch.full((camera_info.camera_height, camera_info.camera_width), -1.0,device="cuda")
+            
             if lidar_pcd is not None:
                 lidar_measurement = Lidar(lidar_pcd.cuda(), t_lidar_camera.cuda())
                 visible_points = lidar_measurement.lidar_points_visible(
@@ -175,10 +178,18 @@ class GaussianPointCloudTrainer:
                         camera_info.camera_intrinsics,
                         (camera_info.camera_width, camera_info.camera_height)
                         )
-                
-                depth_map_numpy = depth_map.detach().cpu().numpy().transpose()
+                 
+                # DEBUG -------------------------------------
+                depth_map_numpy = depth_map.cpu().numpy()
+                depth_map_numpy = (depth_map_numpy + 1) / np.max(depth_map_numpy + 1)
+                for i in range(96):
+                    print(depth_map_numpy[i, :])
                 image = Image.fromarray(((depth_map_numpy* (2**8-1)).astype(np.uint8) ) , 'L')
                 image.save("debug.jpeg")
+                image_png = write_png(depth_map_numpy, camera_info.camera_width, camera_info.camera_height)
+                with open("my_image.png", 'wb') as fh:
+                    fh.write(image_png)
+                # -------------------------------------------
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=self.scene.point_cloud,
                 point_cloud_features=self.scene.point_cloud_features,
@@ -202,11 +213,13 @@ class GaussianPointCloudTrainer:
             # hxwx3->3xhxw
             image_pred = image_pred.permute(2, 0, 1)
             
+            depth_mask = torch.where(depth_map >= 0, True, False)
             loss, l1_loss, ssim_loss, depth_loss, smooth_loss = self.loss_function(
                 image_pred, 
                 image_gt, 
                 image_depth,
-                depth_gt,
+                depth_map, # depth_gt,
+                depth_mask, 
                 point_invalid_mask=self.scene.point_invalid_mask,
                 pointcloud_features=self.scene.point_cloud_features)
             

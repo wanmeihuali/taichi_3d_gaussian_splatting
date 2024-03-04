@@ -715,8 +715,9 @@ def write_png(buf, width, height):
 
     # reverse the vertical line order and add null bytes at the start
     width_byte_4 = width * 4
+    buf = buf.tobytes()
     raw_data = b''.join(
-        b'\x00' + buf[span:span + width_byte_4]
+        b'\x00' + buf[span:span + int(width_byte_4)]
         for span in range((height - 1) * width_byte_4, -1, - width_byte_4)
     )
 
