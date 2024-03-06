@@ -74,8 +74,12 @@ class GaussianPointCloudTrainer:
             dataset_json_path=self.config.train_dataset_json_path)
         self.val_dataset = ImagePoseDataset(
             dataset_json_path=self.config.val_dataset_json_path)
+        transform = np.array([[-0.07453163,  0.11889557, -0.4673894,  -1.59774687],
+                    [0.48178008,  0.03977281 ,-0.06670892,  0.4059509 ],
+                    [0.02184015 ,-0.47162058, -0.12345461, -0.21347023],
+                    [0.    ,     0.  ,        0.  ,        1.        ]])
         self.scene = GaussianPointCloudScene.from_parquet(
-            self.config.pointcloud_parquet_path, config=self.config.gaussian_point_cloud_scene_config)
+            self.config.pointcloud_parquet_path, config=self.config.gaussian_point_cloud_scene_config, transform=transform)
         self.scene = self.scene.cuda()
         self.adaptive_controller = GaussianPointAdaptiveController(
             config=self.config.adaptive_controller_config,
@@ -179,20 +183,22 @@ class GaussianPointCloudTrainer:
                         (camera_info.camera_width, camera_info.camera_height)
                         )
                  
-                # DEBUG -------------------------------------
-                depth_map_numpy = depth_map.cpu().numpy()
-                depth_map_numpy = (depth_map_numpy + 1) / np.max(depth_map_numpy + 1)
-
-                image = Image.fromarray(((depth_map_numpy* (2**8-1)).astype(np.uint8) ) , 'L')
-                image.save("debug.jpeg")
-                depth_gt = depth_gt.cpu().numpy()
-                depth_gt = depth_gt / (2**15-1)
-                depth_gt_image = Image.fromarray((depth_gt* (2**8-1)).astype(np.uint8), 'L')
-                depth_gt_image.save("depth_gt_image.jpeg")
-                image_png = write_png(depth_map_numpy, camera_info.camera_width, camera_info.camera_height)
-                with open("my_image.png", 'wb') as fh:
-                    fh.write(image_png)
-                # -------------------------------------------
+                # # DEBUG -------------------------------------
+                # depth_map_numpy = depth_map.cpu().numpy()
+                # depth_map_numpy = (depth_map_numpy + 1) / np.max(depth_map_numpy + 1)
+                # # depth_map_numpy = np.flip(depth_map_numpy, axis=1)
+                
+                # image = Image.fromarray(((depth_map_numpy* (2**8-1)).astype(np.uint8) ) , 'L')
+                # image.save("debug.jpeg")
+                # depth_gt_numpy = depth_gt.cpu().numpy()
+                # depth_gt_numpy = np.squeeze(depth_gt_numpy)
+                # depth_gt_numpy = depth_gt_numpy / np.max(depth_gt_numpy)
+                # depth_gt_image = Image.fromarray((depth_gt_numpy * (2**8-1)).astype(np.uint8), 'L')
+                # depth_gt_image.save("depth_gt_image.jpeg")
+                # image_png = write_png(depth_map_numpy, camera_info.camera_width, camera_info.camera_height)
+                # with open("my_image.png", 'wb') as fh:
+                #     fh.write(image_png)
+                # # -------------------------------------------
             gaussian_point_cloud_rasterisation_input = GaussianPointCloudRasterisation.GaussianPointCloudRasterisationInput(
                 point_cloud=self.scene.point_cloud,
                 point_cloud_features=self.scene.point_cloud_features,
@@ -217,11 +223,12 @@ class GaussianPointCloudTrainer:
             image_pred = image_pred.permute(2, 0, 1)
             
             depth_mask = torch.where(depth_map >= 0, True, False)
+            depth_map = depth_map / torch.max(depth_map)
             loss, l1_loss, ssim_loss, depth_loss, smooth_loss = self.loss_function(
                 image_pred, 
                 image_gt, 
                 image_depth,
-                depth_map, # depth_gt,
+                depth_map, 
                 depth_mask, 
                 point_invalid_mask=self.scene.point_invalid_mask,
                 pointcloud_features=self.scene.point_cloud_features)
@@ -261,8 +268,9 @@ class GaussianPointCloudTrainer:
                     "train/l1 loss", l1_loss.item(), iteration)
                 self.writer.add_scalar(
                     "train/ssim loss", ssim_loss.item(), iteration)
-                self.writer.add_scalar(
-                    "train/depth loss", depth_loss.item(), iteration)
+                if(depth_loss.item()>0):
+                    self.writer.add_scalar(
+                        "train/depth loss", depth_loss.item(), iteration)
                 self.writer.add_scalar(
                      "train/smooth_loss", smooth_loss, iteration)
                 
@@ -404,9 +412,8 @@ class GaussianPointCloudTrainer:
             for idx, val_data in enumerate(tqdm(val_data_loader)):
                 start_event = torch.cuda.Event(enable_timing=True)
                 end_event = torch.cuda.Event(enable_timing=True)
-                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt, lidar_pcd, t_lidar_camera = val_data
+                image_gt, q_pointcloud_camera, t_pointcloud_camera, camera_info, depth_gt, lidar_pcd, t_lidar_camera, T_pointcloud_camera  = val_data
                 image_gt = image_gt.cuda()
-                # depth_gt = (depth_gt - np.min(depth_gt)) / np.max(depth_gt - np.min(depth_gt))
                 depth_gt = depth_gt.cuda() 
                 q_pointcloud_camera = q_pointcloud_camera.cuda()
                 t_pointcloud_camera = t_pointcloud_camera.cuda()
@@ -440,11 +447,33 @@ class GaussianPointCloudTrainer:
                 image_depth = image_depth / torch.max(image_depth)
                 depth_gt = depth_gt / torch.max(depth_gt)
 
+                T_pointcloud_camera = T_pointcloud_camera.cuda()
+                depth_map = torch.full((camera_info.camera_height, camera_info.camera_width), -1.0, device="cuda")
                 
+                if lidar_pcd is not None:
+                    lidar_measurement = Lidar(lidar_pcd.cuda(), t_lidar_camera.cuda())
+                    visible_points = lidar_measurement.lidar_points_visible(
+                            lidar_measurement.point_cloud, 
+                            T_pointcloud_camera, 
+                            camera_info.camera_intrinsics,
+                            (camera_info.camera_width, camera_info.camera_height))
+                
+                    depth_map  = lidar_measurement.lidar_points_to_camera(
+                            visible_points,
+                            T_pointcloud_camera,
+                            camera_info.camera_intrinsics,
+                            (camera_info.camera_width, camera_info.camera_height)
+                            )
+                    
+                    
+                    
+                depth_mask = torch.where(depth_map >= 0, True, False)
+                depth_map = depth_map / torch.max(depth_map)
                 loss, _, _, _, _ = self.loss_function(image_pred, 
                                                       image_gt,
                                                       image_depth,
-                                                      depth_gt
+                                                      depth_map, 
+                                                      depth_mask, 
                                                       )
 
                 psnr_score, ssim_score = self._compute_pnsr_and_ssim(
@@ -457,6 +486,9 @@ class GaussianPointCloudTrainer:
                 image_depth_3_channels = self._easy_cmap(image_depth)
                 depth_gt = torch.squeeze(depth_gt)     
                 depth_gt_3_channels = self._easy_cmap(depth_gt)
+                
+                depth_map = torch.squeeze(depth_map)     
+                depth_gt_3_channels = self._easy_cmap(depth_map)
                 
                 grid = make_grid([image_pred, image_gt, image_depth_3_channels, depth_gt_3_channels, pixel_valid_point_count, image_diff], nrow=2)
                 if self.config.log_validation_image:

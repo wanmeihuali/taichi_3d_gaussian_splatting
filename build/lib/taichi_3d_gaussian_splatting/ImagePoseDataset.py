@@ -111,6 +111,10 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             lidar_pcd = o3d.io.read_point_cloud(self.df.iloc[idx]['lidar_path'])
             lidar_pcd = torch.tensor(lidar_pcd.points)
             t_lidar_camera =  self._pandas_field_to_tensor(self.df.iloc[idx]['T_camera_lidar'])
+            
+            if len(lidar_pcd) <= 0:
+                lidar_pcd = None
+                t_lidar_camera = None
         else:
             lidar_pcd = None
             t_lidar_camera = None

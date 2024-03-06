@@ -33,11 +33,19 @@ def add_lidar(json_path:str, lidar_folder_path:str, lidar_frequency:int, noisy_l
         if match:
             frame_number = int(match.group(1))
         lidar_path = None
-        if frame_number%lidar_frequency == 0:
-            if not noisy_lidar_measurements:
-                lidar_file = [s for s in lidar_files if f"_{frame_number+1}" in s][0]
-            else:
-                lidar_file = [s for s in noisy_lidar_files if f"{frame_number+1}" in s][0]
+        # if frame_number%lidar_frequency == 0:
+        if not noisy_lidar_measurements:
+            try:
+                lidar_file = [s for s in lidar_files if f"_{frame_number+1}." in s][0]
+            except:
+                lidar_file = None
+        else:
+            try:
+                lidar_file = [s for s in noisy_lidar_files if f"_{frame_number+1}_" in s][0]
+            except:
+                lidar_file = None
+        
+        if lidar_file:
             lidar_path =  os.path.join(lidar_folder_path, lidar_file)
             
 

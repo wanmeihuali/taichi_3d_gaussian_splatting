@@ -12,15 +12,22 @@ def add_groundtruth_camera_trajectory(json_path:str, groundtruth_json_path: str)
 
     groundtruth_dictionaries = [entry for entry in groundtruth_data["frames"]]
 
+    flip_x = np.array([
+            [1, 0, 0, 0],
+            [0, -1, 0, 0],
+            [0, 0, -1, 0],
+            [0, 0, 0, 1]
+        ], dtype=np.float32)
     for entry in data:
         image_path = entry.get("image_path", "")
         match = re.search(r'frame(\d+).jpg$', image_path)
         
-        #gt_match = re.search(r'train/(\d+).png$', groundtruth_file_paths)
         if match:
             frame_number = int(match.group(1))
         index = next((i for i, d in enumerate(groundtruth_dictionaries) if d["file_path"] == f"train/{frame_number+1:04d}.png"), None)
-        groundtruth_transform = np.array(groundtruth_dictionaries[index]["transform_matrix"])
+        print(index)
+        groundtruth_transform =  np.array(groundtruth_dictionaries[index]["transform_matrix"]) @ flip_x
+        print(groundtruth_transform)
         entry["T_pointcloud_camera"] = groundtruth_transform.tolist()
         
     json_object = json.dumps(data, indent=4)

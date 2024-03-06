@@ -33,8 +33,13 @@ class LossFunction(nn.Module):
         L1 = torch.abs(predicted_image - ground_truth_image).mean()
         LD_SSIM = 1 - ssim(predicted_image, ground_truth_image,
                            data_range=1, size_average=True)
+        
         masked_difference = torch.abs(predicted_depth - ground_truth_depth)[depth_mask]
         L_DEPTH = masked_difference.mean()
+        if len(masked_difference) == 0:
+            L_DEPTH = torch.tensor(0)  
+        
+        
         L_SMOOTH = self.smoothing_loss(ground_truth_image, predicted_depth)
         L = (1 - self.config.lambda_value) * L1 + \
             self.config.lambda_value * LD_SSIM  + \

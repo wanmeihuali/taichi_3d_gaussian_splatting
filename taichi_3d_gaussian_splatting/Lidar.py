@@ -31,21 +31,13 @@ class Lidar:
         uv = uv1[:2, :]
         
         u = torch.floor(uv[0, :]).long()
-        u = u.flip(0)
         v = torch.floor(uv[1, :]).long()
     
 
         depth_map = torch.full((image_size[1], image_size[0]), -1.0, dtype=lidar_point_cloud.dtype,device="cuda")
-        depth_map[v[:], u[:]] = -lidar_point_cloud[:, 2]
+        depth_map[v[:], u[:]] = lidar_point_cloud[:, 2]
+        # depth_map = torch.flip(depth_map, [1])
 
-        # depth_map = torch.ones((image_size[0],image_size[1]))*(-1)
-        # depth_map = depth_map.cuda()
-        # for i in range(uv.shape[1]):
-        #     u = (uv[1, i]) 
-        #     v = (uv[0, i]) 
-        #     depth_map[math.floor(v), math.floor(u)] = -lidar_point_cloud[i,2]
-        
-        # depth_map = torch.transpose(depth_map, 0, 1)
         return depth_map
     
     def lidar_points_visible(self,
@@ -72,23 +64,20 @@ class Lidar:
         
         # Check if the point is within image boundaries
         image_size = list(image_size)
-        print("image_size")
-        print(image_size)
-        # image_size[0] = 720
-        # image_size[1] = 405
-        is_visible_x = (0 <= normalized_point[0]) & (normalized_point[0] < image_size[0]) & (transformed_points[2] < 0.001) & (transformed_points[2] > -1000.)
-        is_visible_y = (0 <= normalized_point[1]) & (normalized_point[1] < image_size[1])  & (transformed_points[2] < 0.001) & (transformed_points[2] > -1000.)
+
+        is_visible_x = (0 <= normalized_point[0]) & (normalized_point[0] < image_size[0]) & (transformed_points[2] > 0.001) & (transformed_points[2] < 1000.)
+        is_visible_y = (0 <= normalized_point[1]) & (normalized_point[1] < image_size[1])  & (transformed_points[2] > 0.001) & (transformed_points[2] < 1000.)
         is_visible = is_visible_x & is_visible_y
         
         transformed_points = torch.transpose(transformed_points, 0, 1)
         visible_points = transformed_points[is_visible]
         
-        lidar = o3d.geometry.PointCloud()
-        lidar.points = o3d.utility.Vector3dVector(transformed_points.detach().cpu().numpy())
-        o3d.io.write_point_cloud("debug_camera_frame.ply", lidar)
+        # lidar = o3d.geometry.PointCloud()
+        # lidar.points = o3d.utility.Vector3dVector(transformed_points.detach().cpu().numpy())
+        # o3d.io.write_point_cloud("debug_camera_frame.ply", lidar)
         
-        lidar = o3d.geometry.PointCloud()
-        lidar.points = o3d.utility.Vector3dVector(visible_points.detach().cpu().numpy())
-        o3d.io.write_point_cloud("debug_visible_points.ply", lidar)
+        # lidar = o3d.geometry.PointCloud()
+        # lidar.points = o3d.utility.Vector3dVector(visible_points.detach().cpu().numpy())
+        # o3d.io.write_point_cloud("debug_visible_points.ply", lidar)
         
         return visible_points

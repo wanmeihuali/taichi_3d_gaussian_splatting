@@ -149,11 +149,13 @@ class GaussianPoint3D:
         t = T_camera_world @ ti.math.vec4(
             [self.translation.x, self.translation.y, self.translation.z, 1])
         K = projective_transform
+
         # d_uv_d_translation_camera = \left[\begin{matrix}\frac{K_{0, 0}}{t_{2, 0}} & \frac{K_{0, 1}}{t_{2, 0}} & \frac{- K_{0, 0} t_{0, 0} - K_{0, 1} t_{1, 0}}{t_{2, 0}^{2}}\\\frac{K_{1, 0}}{t_{2, 0}} & \frac{K_{1, 1}}{t_{2, 0}} & \frac{- K_{1, 0} t_{0, 0} - K_{1, 1} t_{1, 0}}{t_{2, 0}^{2}}\end{matrix}\right]
         d_uv_d_translation_camera = mat2x3f([
             [K[0, 0] / t.z, K[0, 1] / t.z,
                 (-K[0, 0] * t.x - K[0, 1] * t.y) / (t.z * t.z)],
             [K[1, 0] / t.z, K[1, 1] / t.z, (-K[1, 0] * t.x - K[1, 1] * t.y) / (t.z * t.z)]])
+
         d_translation_camera_d_translation = W
         d_uv_d_translation = d_uv_d_translation_camera @ d_translation_camera_d_translation  # 2 x 3
         return d_uv_d_translation

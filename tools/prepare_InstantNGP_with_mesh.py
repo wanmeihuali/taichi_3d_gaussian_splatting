@@ -109,24 +109,24 @@ if __name__ == "__main__":
     sampled_points = vertices[sampled_indices]
     sampled_colors = colors[sampled_indices]
     
-    point_cloud_df = pd.DataFrame({
-        'x': sampled_points[:, 0],
-        'y': sampled_points[:, 1],
-        'z': sampled_points[:, 2],
-        'r': sampled_colors[:, 0],
-        'g': sampled_colors[:, 1],
-        'b': sampled_colors[:, 2]
-    })
+    # point_cloud_df = pd.DataFrame({
+    #     'x': sampled_points[:, 0],
+    #     'y': sampled_points[:, 1],
+    #     'z': sampled_points[:, 2],
+    #     'r': sampled_colors[:, 0],
+    #     'g': sampled_colors[:, 1],
+    #     'b': sampled_colors[:, 2]
+    # })
     
-    subsampled_point_cloud = o3d.geometry.PointCloud()
-    subsampled_point_cloud.points = o3d.utility.Vector3dVector(sampled_points)
-    subsampled_point_cloud.colors = o3d.utility.Vector3dVector(sampled_colors / 255)
+    # subsampled_point_cloud = o3d.geometry.PointCloud()
+    # subsampled_point_cloud.points = o3d.utility.Vector3dVector(sampled_points)
+    # subsampled_point_cloud.colors = o3d.utility.Vector3dVector(sampled_colors / 255)
 
-    o3d.io.write_point_cloud(os.path.join(
-        args.output_path, "point_cloud.ply"), subsampled_point_cloud)
+    # o3d.io.write_point_cloud(os.path.join(
+    #     args.output_path, "point_cloud.ply"), subsampled_point_cloud)
 
-    point_cloud_df.to_parquet(os.path.join(
-        args.output_path, "point_cloud.parquet"))
+    # point_cloud_df.to_parquet(os.path.join(
+    #     args.output_path, "point_cloud.parquet"))
 
 
 

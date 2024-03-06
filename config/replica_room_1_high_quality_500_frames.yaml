@@ -43,6 +43,6 @@ rasterisation-config:
   far-plane: 1000.0
   near-plane: 0.001
 summary-writer-log-dir: 'logs/replica_colmap/room_1_high_quality_500_frames'
-train-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/train_groundtruth.json'
-val-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/val_groundtruth.json'
+train-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/train.json'
+val-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/val.json'
 val-interval: 1000

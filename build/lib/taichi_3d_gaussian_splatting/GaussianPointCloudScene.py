@@ -7,7 +7,7 @@ from scipy.spatial import cKDTree
 from typing import Optional, Union
 from dataclass_wizard import YAMLWizard
 from plyfile import PlyData, PlyElement
-
+import open3d as o3d
 
 class GaussianPointCloudScene(torch.nn.Module):
 
@@ -180,7 +180,7 @@ class GaussianPointCloudScene(torch.nn.Module):
         PlyData([el]).write(path)
 
     @staticmethod
-    def from_parquet(path: str, config=PointCloudSceneConfig()):
+    def from_parquet(path: str, config=PointCloudSceneConfig(), transform: np.array = None):
         scene_df = pd.read_parquet(path)
         feature_columns = [f"cov_q{i}" for i in range(4)] + \
             [f"cov_s{i}" for i in range(3)] + \
@@ -195,6 +195,16 @@ class GaussianPointCloudScene(torch.nn.Module):
         df_has_color = "r" in scene_df.columns and "g" in scene_df.columns and "b" in scene_df.columns
         point_cloud = scene_df[["x", "y", "z"]].to_numpy()
 
+        if isinstance(transform, np.ndarray):
+            ones = np.ones((point_cloud.shape[0],1))
+            point_cloud = np.hstack((point_cloud, ones))
+            point_cloud = np.transpose(np.matmul( transform, np.transpose(point_cloud)))
+            point_cloud = point_cloud[:, :3]
+            
+            lidar = o3d.geometry.PointCloud()
+            lidar.points = o3d.utility.Vector3dVector(point_cloud)
+            o3d.io.write_point_cloud("debug_point_cloud.ply", lidar)
+            
         if not set(feature_columns).issubset(set(scene_df.columns)):
             scene = GaussianPointCloudScene(
                 point_cloud, config)
