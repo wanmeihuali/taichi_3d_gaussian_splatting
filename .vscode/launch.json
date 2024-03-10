@@ -194,5 +194,30 @@
             ],
             "preLaunchTask": "install", 
         },
+        {
+            "name": "torch playground",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/torch_playground.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "preLaunchTask": "install", 
+        },
+
+        {
+            "name": "3dgs playground",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/3dgs_playground.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--parquet-path",
+                "logs/replica_colmap/room_1_high_quality_500_frames/best_scene.parquet",
+                "--output-path",
+                "scripts/3dgs_playground_output/",
+            ],
+            "preLaunchTask": "install", 
+        },
     ]
 }

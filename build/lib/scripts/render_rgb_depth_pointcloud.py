@@ -1,5 +1,3 @@
-import sys
-#sys.path.insert(0, '/home/mroncoroni/git/taichi_3d_gaussian_splatting/taichi_3d_gaussian_splatting')
 import argparse
 import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo

@@ -106,11 +106,13 @@ class GaussianPointCloudTrainer:
         camera_height = camera_info.camera_height // downsample_factor
         camera_width = camera_info.camera_width // downsample_factor
         image = transforms.functional.resize(image, size=(camera_height, camera_width), antialias=True)
-        depth = transforms.functional.resize(depth, size=(camera_height, camera_width), antialias=True)
+        if depth is not None:
+            depth = transforms.functional.resize(depth, size=(camera_height, camera_width), antialias=True)
         camera_width = camera_width - camera_width % 16
         camera_height = camera_height - camera_height % 16
         image = image[:3, :camera_height, :camera_width].contiguous()
-        depth = depth[:3, :camera_height, :camera_width].contiguous()
+        if depth is not None:
+            depth = depth[:3, :camera_height, :camera_width].contiguous()
         camera_intrinsics = camera_info.camera_intrinsics
         camera_intrinsics = camera_intrinsics.clone()
         camera_intrinsics[0, 0] /= downsample_factor

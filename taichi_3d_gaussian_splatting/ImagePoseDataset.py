@@ -43,14 +43,16 @@ class ImagePoseDataset(torch.utils.data.Dataset):
         if camera_info.camera_height <= MAX_RESOLUTION_TRAIN and camera_info.camera_width <= MAX_RESOLUTION_TRAIN:
             return image, camera_info, depth
         image = transforms.functional.resize(image, size=1024, max_size=1600, antialias=True)
-        depth = transforms.functional.resize(depth, size=1024, max_size=1600, antialias=True)
+        if depth is not None:
+            depth = transforms.functional.resize(depth, size=1024, max_size=1600, antialias=True)
         _, camera_height, camera_width = image.shape
         scale_x = camera_width / camera_info.camera_width
         scale_y = camera_height / camera_info.camera_height
         camera_width = camera_width - camera_width % TILE_WIDTH
         camera_height = camera_height - camera_height % TILE_HEIGHT
         image = image[:, :camera_height, :camera_width].contiguous()
-        depth = depth[:, :camera_height, :camera_width].contiguous()
+        if depth is not None:
+            depth = depth[:, :camera_height, :camera_width].contiguous()
         camera_intrinsics = camera_info.camera_intrinsics.clone()
         camera_intrinsics[0, 0] *= scale_x
         camera_intrinsics[1, 1] *= scale_y
