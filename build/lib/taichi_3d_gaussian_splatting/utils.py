@@ -4,6 +4,7 @@ import taichi.math as tm
 import torch
 from .Camera import CameraInfo
 from typing import Tuple
+import torch.nn.functional as F
 
 data_type = ti.f32
 torch_type = torch.float32
@@ -732,3 +733,37 @@ def write_png(buf, width, height):
         png_pack(b'IHDR', struct.pack("!2I5B", width, height, 8, 6, 0, 0, 0)),
         png_pack(b'IDAT', zlib.compress(raw_data, 9)),
         png_pack(b'IEND', b'')])
+    
+def perturb_pose_quaternion_translation_torch(q: torch.tensor, t: torch.tensor, std_dev_q, std_dev_t):
+    # Generate random noise for quaternion and translation
+    noise_q = torch.normal(mean=0.0, std=std_dev_q, size=q.shape, device=q.device, dtype=q.dtype)
+    noise_t = torch.normal(mean=0.0, std=std_dev_t, size=t.shape, device=t.device, dtype=t.dtype)
+
+    # Add noise to the original quaternion and translation
+    perturbed_q = F.normalize(q + noise_q, p=2, dim=-1)
+    perturbed_t = t + noise_t
+
+    return perturbed_q, perturbed_t
+
+
+def axis_angle_perturbation(axis_angle, std_dev):
+    """
+    Perturb an axis-angle rotation.
+
+    Parameters:
+    - axis_angle (numpy array): Axis-angle representation of the original rotation.
+    - std_dev (float): Standard deviation of the perturbation.
+
+    Returns:
+    - perturbed_rotation (numpy array): Perturbed axis-angle representation of the rotation.
+    """
+    # Generate random perturbation with zero mean and specified standard deviation
+    perturbation = np.random.normal(loc=0.0, scale=std_dev, size=3)
+
+    # Normalize perturbation vector to ensure it represents a valid rotation
+    perturbation /= np.linalg.norm(perturbation)
+
+    # Add perturbation to the original axis-angle rotation
+    perturbed_rotation = axis_angle + perturbation
+
+    return perturbed_rotation

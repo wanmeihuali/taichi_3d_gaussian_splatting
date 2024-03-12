@@ -46,3 +46,5 @@ summary-writer-log-dir: 'logs/replica_colmap/room_1_high_quality_500_frames'
 train-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/train.json'
 val-dataset-json-path: 'data/replica_colmap/room_1_high_quality_500_frames/val.json'
 val-interval: 1000
+noise-std-q: 0.05
+noise-std-t: 0.2

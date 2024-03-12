@@ -7,7 +7,7 @@ import torchvision
 import torchvision.transforms as transforms
 from .Camera import CameraInfo
 from typing import Any
-from .utils import SE3_to_quaternion_and_translation_torch
+from .utils import SE3_to_quaternion_and_translation_torch, perturb_pose_quaternion_translation_torch
 from .GaussianPointCloudRasterisation import TILE_WIDTH, TILE_HEIGHT
 import open3d as o3d
 
@@ -18,14 +18,16 @@ class ImagePoseDataset(torch.utils.data.Dataset):
     A dataset that contains images and poses, and camera intrinsics.
     """
 
-    def __init__(self, dataset_json_path: str):
+    def __init__(self, dataset_json_path: str, noise_std_q: float, noise_std_t: float):
         super().__init__()
         required_columns = ["image_path", "T_pointcloud_camera",
                             "camera_intrinsics", "camera_height", "camera_width", "camera_id"]
         self.df = pd.read_json(dataset_json_path, orient="records")
         for column in required_columns:
             assert column in self.df.columns, f"column {column} is not in the dataset"
-
+        self.noise_std_q = noise_std_q
+        self.noise_std_t = noise_std_t
+        
     def __len__(self):
         # return 1 # for debugging
         return len(self.df)
@@ -74,6 +76,7 @@ class ImagePoseDataset(torch.utils.data.Dataset):
             self.df.iloc[idx]["T_pointcloud_camera"])
         q_pointcloud_camera, t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
             T_pointcloud_camera.unsqueeze(0))
+        q_pointcloud_camera, t_pointcloud_camera = perturb_pose_quaternion_translation_torch(q_pointcloud_camera, t_pointcloud_camera, self.noise_std_q, self.noise_std_t)
         camera_intrinsics = self._pandas_field_to_tensor(
             self.df.iloc[idx]["camera_intrinsics"])
         base_camera_height = self.df.iloc[idx]["camera_height"]

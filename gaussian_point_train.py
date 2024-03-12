@@ -21,47 +21,53 @@ if __name__ == "__main__":
     config = GaussianPointCloudTrainer.TrainConfig.from_yaml_file(
         args.train_config)
 
-    # Create log dir and paste config file
-    os.makedirs(config.summary_writer_log_dir, exist_ok=True)
-    file_name = os.path.basename(args.train_config)
-    shutil.copy2(args.train_config, os.path.join(config.summary_writer_log_dir, file_name))
+    # # Create log dir and paste config file
+    # os.makedirs(config.summary_writer_log_dir, exist_ok=True)
+    # file_name = os.path.basename(args.train_config)
+    # shutil.copy2(args.train_config, os.path.join(config.summary_writer_log_dir, file_name))
     
-    trainer = GaussianPointCloudTrainer(config)
-    trainer.train()
+    # trainer = GaussianPointCloudTrainer(config)
+    # trainer.train()
     
-    # # Parameter sweep
-    # lambda_depth_values = np.array([0, 0.05, 0.1, 0.15, 0.2]) 
-    # lambda_smooth_values= np.array([0, 0.0005, 0.001, 0.003, 0.005])
+    # Noise Parameter sweep
+    std_noise_q_values = np.array([0.0, 0.05, 0.1, 0.15]) 
+    std_noise_t_values= np.array([0.0,  0.05, 0.1, 0.2, 0.3])
     
-    # summary_writer_log_dir_base = config.summary_writer_log_dir
-    # count = 6
-    # for i in range(1, len(lambda_depth_values)):
-    #     for j in range(len(lambda_smooth_values)):
-    #         config.output_model_dir = summary_writer_log_dir_base + f"_{count}"
-    #         config.summary_writer_log_dir = summary_writer_log_dir_base + f"_{count}"
-    #         config.loss_function_config.lambda_depth_value = float(lambda_depth_values[i])
-    #         config.loss_function_config.lambda_smooth_value = float(lambda_smooth_values[j])
-    #         output_dir = f"/media/scratch1/logs/replica/{os.path.basename(config.summary_writer_log_dir)}"
-            
-    #         # Save config as yaml file
-    #         os.makedirs(config.summary_writer_log_dir, exist_ok=True)
-    #         file=open(os.path.join(config.summary_writer_log_dir, "replica_room_1_high_quality_500_frames.yaml"),"w")
-    #         yaml.dump(config,file)
-    #         file.close()
-            
-    #         print("########################################################################")
-    #         print("lambda depth: ", config.loss_function_config.lambda_depth_value)
-    #         print("lambda smooth: ", config.loss_function_config.lambda_smooth_value)
-    #         print("Output dir: ", output_dir)
-    #         print("########################################################################")
-            
-    #         os.path.join(config.summary_writer_log_dir, "depth parameters.txt")
-    #         trainer = GaussianPointCloudTrainer(config)
-    #         trainer.train()
-            
-    #         print("###########################################################")
-    #         print("Finished training")
-    #         count+=1
-    #         # memory issues: move to /media/scratch1            
-    #         shutil.move(config.summary_writer_log_dir, output_dir)     
-            
+    q_t_noise_values = (np.array([0.0, 0.3]),
+                        np.array([0.05, 0.0]), 
+                        np.array([0.1, 0.0]),
+                        np.array([0.15, 0.0]),
+                        np.array([0.05, 0.05]), 
+                        np.array([0.1, 0.2]))
+    
+    summary_writer_log_dir_base = config.summary_writer_log_dir
+
+    for q_t_noise_std in q_t_noise_values:
+        config.noise_std_q = float(q_t_noise_std[0])
+        config.noise_std_t = float(q_t_noise_std[1])
+        config.summary_writer_log_dir = summary_writer_log_dir_base + f"_q_{config.noise_std_q}_t_{config.noise_std_t}"
+        config.output_model_dir = summary_writer_log_dir_base + f"_q_{config.noise_std_q}_t_{config.noise_std_t}"
+        output_dir = f"/media/scratch1/mroncoroni/git/taichi_3d_gaussian_splatting/logs/replica_colmap/{os.path.basename(config.summary_writer_log_dir)}"
+        
+        # Save config as yaml file
+        os.makedirs(config.summary_writer_log_dir, exist_ok=True)
+        file=open(os.path.join(config.summary_writer_log_dir, "replica_room_1_high_quality_500_frames.yaml"),"w")
+        yaml.dump(config,file)
+        file.close()
+        
+        print("########################################################################")
+        print("config.std_noise_q: ", config.noise_std_q)
+        print("config.std_noise_t: ", config.noise_std_t)
+        print("Output dir: ", config.summary_writer_log_dir)
+        print("########################################################################")
+        
+        os.path.join(config.summary_writer_log_dir, "depth parameters.txt")
+        trainer = GaussianPointCloudTrainer(config)
+        trainer.train()
+        
+        print("###########################################################")
+        print("Finished training")
+
+        # memory issues: move to /media/scratch1            
+        # shutil.move(config.summary_writer_log_dir, output_dir)     
+        

@@ -1,18 +1,21 @@
 # Given a rendered scene, how can I estimate the camera pose of a novel image?
 
 import argparse
+import json
 import taichi as ti
 from taichi_3d_gaussian_splatting.Camera import CameraInfo
 from taichi_3d_gaussian_splatting.GaussianPointCloudRasterisation import filter_point_in_camera, generate_point_attributes_in_camera_plane, \
     generate_num_overlap_tiles, generate_point_sort_key_by_num_overlap_tiles, find_tile_start_and_end, gaussian_point_rasterisation, load_point_cloud_row_into_gaussian_point_3d
 from taichi_3d_gaussian_splatting.GaussianPointCloudScene import GaussianPointCloudScene
 from taichi_3d_gaussian_splatting.GaussianPoint3D import rotation_matrix_from_quaternion, transform_matrix_from_quaternion_and_translation
-from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_from_conic, inverse_SE3_qt_torch, SE3_to_quaternion_and_translation_torch, quaternion_to_rotation_matrix_torch, quaternion_multiply_torch, quaternion_conjugate_torch
+from taichi_3d_gaussian_splatting.utils import grad_point_probability_density_from_conic, inverse_SE3_qt_torch, SE3_to_quaternion_and_translation_torch,\
+    quaternion_to_rotation_matrix_torch, perturb_pose_quaternion_translation_torch
 from dataclasses import dataclass
 from typing import List, Tuple
 import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import torch.nn.functional as F
 # %%
 import os
 import PIL.Image
@@ -426,7 +429,7 @@ def torchImage2tiImage(field: ti.template(), data: ti.types.ndarray()):
         field[col, data.shape[0] - row -
               1] = ti.math.vec3(data[row, col, 0], data[row, col, 1], data[row, col, 2])
 
-
+@ti.func
 def quaternion_to_rotation_matrix_torch_jacobian(q):
     qx, qy, qz, qw = q
     dR_dqx = mat3x3f([
@@ -729,7 +732,6 @@ class PoseModel(torch.nn.Module):
             @staticmethod
             def backward(ctx, grad_rasterized_image, grad_rasterized_depth,
                          grad_pixel_valid_point_count, grad_pixel_accumulated_alpha):
-                # Gotta implement this bish :D
                 grad_pointcloud = grad_pointcloud_features = grad_q_pointcloud_camera = grad_t_pointcloud_camera = None
                 if ctx.needs_input_grad[0] or ctx.needs_input_grad[1]:
                     pointcloud, \
@@ -964,7 +966,8 @@ class PoseEstimator():
             [0.0, -0.8953956365585327, -0.44527140259742737, 0.],
             [0.0, 0.0, 0.0, 1.0]])
         image_path_list: List[str] = None
-
+        json_file_path: str = None
+        
     @dataclass
     class ExtraSceneInfo:
         start_offset: int
@@ -1043,81 +1046,137 @@ class PoseEstimator():
 
     def start(self):
         d = self.config.image_path_list
-        initial_guess_q_pointcloud_camera = torch.tensor(
-            self.initial_guess_q_pointcloud_camera.clone().detach(), requires_grad=True)
-        initial_guess_t_pointcloud_camera = torch.tensor(
-            self.initial_guess_t_pointcloud_camera.clone().detach(), requires_grad=True)
-
-        optimizer = torch.optim.Adam(
-            [initial_guess_q_pointcloud_camera, initial_guess_t_pointcloud_camera], lr=0.0001)
-
-        num_epochs = 10_000
-        for epoch in range(num_epochs):
-            
-
+        count = 0
+        with open(self.config.json_file_path) as f:
+            d = json.load(f)
             for view in d:
-                optimizer.zero_grad()
-                ground_truth_image_path = view
-                ground_truth_image = np.array(
+                # Load groundtruth image
+                ground_truth_image_path = view["image_path"]
+                print(f"Loading image {ground_truth_image_path}")
+                ground_truth_image_numpy = np.array(
                     PIL.Image.open(ground_truth_image_path))
                 ground_truth_image = torchvision.transforms.functional.to_tensor(
-                    ground_truth_image)
+                    ground_truth_image_numpy)
 
                 ground_truth_image, resized_camera_info, _ = GaussianPointCloudTrainer._downsample_image_and_camera_info(ground_truth_image,
-                                                                                                                         None,
-                                                                                                                         self.camera_info,
-                                                                                                                         1)
+                                                                                                                        None,
+                                                                                                                        self.camera_info,
+                                                                                                                        1)
                 ground_truth_image = ground_truth_image.cuda()
+                
                 self.camera_info = resized_camera_info
+                groundtruth_T_pointcloud_camera = torch.tensor(
+                    view["T_pointcloud_camera"],
+                    device="cuda")
 
-                predicted_image, _, _, _ = self.rasteriser(
-                    PoseModel.PoseModelInput(
-                        point_cloud=self.scene.point_cloud,
-                        point_cloud_features=self.scene.point_cloud_features,
-                        point_invalid_mask=self.scene.point_invalid_mask,
-                        point_object_id=self.scene.point_object_id,                    
-                        q_pointcloud_camera=initial_guess_q_pointcloud_camera,
-                        t_pointcloud_camera=initial_guess_t_pointcloud_camera,
-                        camera_info=self.camera_info,
-                        color_max_sh_band=3,
+                groundtruth_T_pointcloud_camera = groundtruth_T_pointcloud_camera.unsqueeze(
+                    0)
+                groundtruth_q_pointcloud_camera, groundtruth_t_pointcloud_camera = SE3_to_quaternion_and_translation_torch(
+                    groundtruth_T_pointcloud_camera)
+                print(f"Ground truth q: \n\t {groundtruth_q_pointcloud_camera}")
+                print(f"Ground truth t: \n\t {groundtruth_t_pointcloud_camera}")
+                initial_guess_q_pointcloud_camera, initial_guess_t_pointcloud_camera = perturb_pose_quaternion_translation_torch(groundtruth_q_pointcloud_camera,\
+                    groundtruth_t_pointcloud_camera,\
+                        0.05, 0.3)
+                initial_guess_q_pointcloud_camera = torch.tensor([ [0.6749, 0.5794,  -0.3524, -0.2909]], device="cuda")
+                initial_guess_t_pointcloud_camera = torch.tensor([ [0.2528, 0.1397,  -0.0454]], device="cuda")
+                initial_guess_q_pointcloud_camera.requires_grad = True
+                initial_guess_t_pointcloud_camera.requires_grad = True
+                print(f"Ground truth transformation world to camera, in camera frame: \n\t {groundtruth_T_pointcloud_camera}")
+                print(f"Initial guess q: \n\t {initial_guess_q_pointcloud_camera}")
+                print(f"Initial guess t: \n\t {initial_guess_t_pointcloud_camera}")
+                
+                # Save groundtruth image
+                im = PIL.Image.fromarray((ground_truth_image_numpy).astype(np.uint8))
+                if not os.path.exists(os.path.join(self.output_path,f'groundtruth/')):
+                    os.makedirs(os.path.join(self.output_path,'groundtruth/'))
+                im.save(os.path.join(self.output_path,f'groundtruth/groundtruth_{count}.png'))
+                
+                # Optimization starts
+                optimizer_q = torch.optim.Adam(
+                   [initial_guess_q_pointcloud_camera], lr=0.001)
+                optimizer_t = torch.optim.Adam(
+                    [initial_guess_t_pointcloud_camera], lr=0.001)
+                
+                num_epochs = 20000
+                for epoch in range(num_epochs):          
+                    optimizer_q.zero_grad()
+                    optimizer_t.zero_grad()
+                    
+                    predicted_image, _, _, _ = self.rasteriser(
+                        PoseModel.PoseModelInput(
+                            point_cloud=self.scene.point_cloud,
+                            point_cloud_features=self.scene.point_cloud_features,
+                            point_invalid_mask=self.scene.point_invalid_mask,
+                            point_object_id=self.scene.point_object_id,                    
+                            q_pointcloud_camera=initial_guess_q_pointcloud_camera,
+                            t_pointcloud_camera=initial_guess_t_pointcloud_camera,
+                            camera_info=self.camera_info,
+                            color_max_sh_band=3,
+                        )
                     )
-                )
-                predicted_image = predicted_image.permute(2, 0, 1)
-                L1 = torch.abs(predicted_image - ground_truth_image).mean()
-                L1.backward()
+                    predicted_image = predicted_image.permute(2, 0, 1)
+                    L1 = torch.abs(predicted_image - ground_truth_image).mean()
+                    L1.backward()
 
-                torch.nn.utils.clip_grad_norm_(
-                    initial_guess_q_pointcloud_camera, 10000)
-                torch.nn.utils.clip_grad_norm_(
-                    initial_guess_t_pointcloud_camera, 10000)
-                optimizer.step()
-
-            if (epoch + 1) % 100 == 0:
-                with torch.no_grad():
-                    print(L1)
-                    q_pointcloud_camera = F.normalize(initial_guess_q_pointcloud_camera, p=2, dim=-1)
-                    R = quaternion_to_rotation_matrix_torch(
-                        q_pointcloud_camera)
-                    print(R)
-                    print(initial_guess_t_pointcloud_camera)
-
-                    image_np = predicted_image.cpu().detach().numpy()
-                    im = PIL.Image.fromarray(
-                        (image_np.transpose(1, 2, 0)*255).astype(np.uint8))
-                    if not os.path.exists(os.path.join(self.output_path, f'epochs/')):
-                        os.makedirs(os.path.join(self.output_path, 'epochs/'))
-                    im.save(os.path.join(self.output_path,
-                            f'epochs/epoch_{epoch}.png'))
-
+                    if not torch.isnan(initial_guess_t_pointcloud_camera.grad).any():                      
+                        torch.nn.utils.clip_grad_norm_(
+                            initial_guess_t_pointcloud_camera, max_norm=1.0)
+                        optimizer_t.step()
+                    else:
+                        print("Skipped epoch ", epoch)
+                        print(previous_initial_guess_t_pointcloud_camera)
+                        print(previous_initial_guess_t_pointcloud_camera)
+                        # image_np = predicted_image.cpu().detach().numpy()
+                        # im = PIL.Image.fromarray(
+                        #     (image_np.transpose(1, 2, 0)*255).astype(np.uint8))
+                        # if not os.path.exists(os.path.join(self.output_path, f'epochs/')):
+                        #     os.makedirs(os.path.join(self.output_path, 'epochs/'))
+                        # im.save(os.path.join(self.output_path,
+                        #         f'epochs/epoch_{epoch}_problematic.png'))
+                    
+                    if not torch.isnan(initial_guess_q_pointcloud_camera.grad).any():
+                        torch.nn.utils.clip_grad_norm_(
+                            initial_guess_q_pointcloud_camera, max_norm=1.0)
+                        optimizer_q.step()
+                        
+                        
+                    if (epoch + 1) % 50 == 0 and epoch > 100:
+                        with torch.no_grad():
+                            print(f"============== epoch {epoch + 1} ==========================")
+                            print(f"loss:{L1}")
+                            q_pointcloud_camera = F.normalize(initial_guess_q_pointcloud_camera, p=2, dim=-1)
+                            R = quaternion_to_rotation_matrix_torch(
+                                q_pointcloud_camera)
+                            print("Estimated rotation")
+                            print(R)
+                            print(f"Estimated translation: \n\t {initial_guess_t_pointcloud_camera}")
+                            print(f"Gradient translation: \n\t {initial_guess_t_pointcloud_camera.grad}")
+                            print("Ground truth transformation world to camera, in camera frame:")
+                            print(groundtruth_T_pointcloud_camera)
+                            image_np = predicted_image.cpu().detach().numpy()
+                            im = PIL.Image.fromarray(
+                                (image_np.transpose(1, 2, 0)*255).astype(np.uint8))
+                            if not os.path.exists(os.path.join(self.output_path, f'epochs/')):
+                                os.makedirs(os.path.join(self.output_path, 'epochs/'))
+                            im.save(os.path.join(self.output_path,
+                                    f'epochs/epoch_{epoch}.png'))
+                            np.savetxt(os.path.join(self.output_path, f'epochs/epoch_{epoch}_q.txt'), q_pointcloud_camera.cpu().detach().numpy())
+                            np.savetxt(os.path.join(self.output_path, f'epochs/epoch_{epoch}_t.txt'), initial_guess_t_pointcloud_camera.cpu().detach().numpy())
+                    previous_initial_guess_t_pointcloud_camera = initial_guess_t_pointcloud_camera.clone().detach()
+                    previous_grad_t_pointcloud_camera = initial_guess_t_pointcloud_camera.grad
+                break # Only optimize on the first image
+                count += 1
 
 parser = argparse.ArgumentParser(description='Parquet file path')
-parser.add_argument('--parquet-path', type=str, help='Parquet file path')
+parser.add_argument('--parquet_path', type=str, help='Parquet file path')
 # parser.add_argument('--images-path', type=str, help='Images file path')
-parser.add_argument('--output-path', type=str, help='Output folder path')
+parser.add_argument('--json_file_path', type=str, help='Json trajectory file path')
+parser.add_argument('--output_path', type=str, help='Output folder path')
 
-# Let's keep things easy with just 1 picture for now
-image_path = [
-    "/media/scratch1/mroncoroni/colmap_projects/replica/room_1_high_quality_500_frames/images/frame000000.jpg"]
+# # Let's keep things easy with just 1 picture for now
+# image_path = [
+#     "/media/scratch1/mroncoroni/colmap_projects/replica/room_1_high_quality_500_frames/images/frame000000.jpg"]
 args = parser.parse_args()
 
 print("Opening parquet file ", args.parquet_path)
@@ -1125,6 +1184,6 @@ parquet_path_list = args.parquet_path
 ti.init(arch=ti.cuda, device_memory_GB=4, kernel_profiler=True)
 visualizer = PoseEstimator(args.output_path, config=PoseEstimator.PoseEstimatorConfig(
     parquet_path=parquet_path_list,
-    image_path_list=image_path
+    json_file_path=args.json_file_path
 ))
 visualizer.start()
